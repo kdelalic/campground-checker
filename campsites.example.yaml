@@ -1,0 +1,99 @@
+# campsites.example.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Campsite availability checker config.
+# Copy this file to campsites.yaml and fill in your campground IDs.
+#
+# Run: python check_campsites.py
+#
+# Each entry under 'campsites' defines one search target.
+#
+# Required (at least one of):
+#   campground_id   - The booking-service campground/facility ID
+#   recreation_area - The recreation area ID (searches all campgrounds within)
+#
+# Optional:
+#   name            - Label shown in output. Default: "Unnamed"
+#   provider        - Booking service. Default: RecreationDotGov
+#                     Options: RecreationDotGov | Yellowstone | GoingToCamp | ReserveCalifornia
+#   campsite_id     - Specific site ID (int or list) to narrow the search
+#   nights          - Minimum consecutive nights required. Default: 1
+#   weekends_only   - true/false. Default: false
+#
+# Date range is set via CLI flags, not here:
+#   --start / --end       Override the search window
+#   --day Friday Saturday Show specific weekdays (default: Saturday only)
+#   --all-days            Show all days of the week
+#
+# Telegram notifications (optional):
+#   telegram.bot_token  - Telegram bot token from @BotFather
+#   telegram.chat_id    - Your Telegram chat/user ID
+#   Credentials can also be provided via CLI flags or environment variables
+#   (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID). Priority: CLI > env > config file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# telegram:
+#   bot_token: "123456789:ABCdefGHI..."
+#   chat_id: "987654321"
+
+campsites:
+
+  # ── Recreation.gov ────────────────────────────────────────────────────────
+  # Find campground IDs at recreation.gov: visit the campground page,
+  # the URL contains facilityId=XXXXX. Or run:
+  #   camply campgrounds --provider RecreationDotGov --search "campground name"
+
+  - name: "Yosemite - Upper Pines Campground"
+    provider: RecreationDotGov
+    campground_id: 232447
+    nights: 2
+    weekends_only: false
+
+  - name: "Glacier NP - Many Glacier"
+    provider: RecreationDotGov
+    campground_id: 251869
+    nights: 1
+    weekends_only: false
+
+  - name: "Olympic NP - All Campgrounds (area-wide search)"
+    provider: RecreationDotGov
+    recreation_area: 2902          # Searches all campgrounds within this rec area
+    nights: 1
+    weekends_only: false
+
+  - name: "Rocky Mountain NP - Multiple areas"
+    provider: RecreationDotGov
+    recreation_area:
+      - 2907                       # Rocky Mountain NP
+      - 1074                       # A second area
+    nights: 2
+
+  - name: "Joshua Tree - Specific site"
+    provider: RecreationDotGov
+    campground_id: 234429
+    campsite_id: 7834              # Pin to one specific site
+    nights: 1
+
+  # ── Yellowstone ───────────────────────────────────────────────────────────
+  # Find IDs with: camply campgrounds --provider Yellowstone
+
+  - name: "Yellowstone - Canyon Campground"
+    provider: Yellowstone
+    campground_id: 72
+    nights: 2
+
+  # ── California State Parks ────────────────────────────────────────────────
+  # Find IDs with: camply campgrounds --provider ReserveCalifornia --search "park name"
+
+  - name: "Emerald Bay SP - Eagle Point"
+    provider: ReserveCalifornia
+    campground_id: 608
+    nights: 1
+
+  # ── GoingToCamp (Canadian Provincial Parks) ───────────────────────────────
+  # Find rec area IDs with: camply recreation-areas --provider GoingToCamp --search "park name"
+
+  - name: "Algonquin Provincial Park"
+    provider: GoingToCamp
+    recreation_area: 1
+    campground_id: 1
+    nights: 2
