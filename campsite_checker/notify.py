@@ -76,3 +76,15 @@ def result_keys(
     filtered = filter_results(results, day_filter)
     name = get_facility_name(filtered) if filtered else "Unknown"
     return frozenset((name, r.campsite_id, r.booking_date.date()) for r in filtered)
+
+
+def filter_new_results(
+    entry: dict,
+    results: List[AvailableCampsite],
+    day_filter: Optional[Set[int]],
+    prev_keys: Set[Tuple[str, int, date]],
+) -> List[AvailableCampsite]:
+    """Return only results whose keys are not in *prev_keys*."""
+    filtered = filter_results(results, day_filter)
+    name = get_facility_name(filtered) if filtered else "Unknown"
+    return [r for r in filtered if (name, r.campsite_id, r.booking_date.date()) not in prev_keys]
