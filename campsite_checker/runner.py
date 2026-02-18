@@ -11,6 +11,7 @@ from camply.containers import AvailableCampsite, SearchWindow
 from .config import compute_date_range, load_config, parse_args, resolve_day_filter
 from .notify import (
     build_telegram_message,
+    filter_new_results,
     get_telegram_creds,
     result_keys,
     send_telegram,
@@ -147,9 +148,10 @@ def run_forever(
             )
 
             new_entries = [
-                (entry, results)
+                (entry, new_results)
                 for entry, results in found_entries
-                if result_keys(entry, results, day_filter) - prev_keys
+                for new_results in [filter_new_results(entry, results, day_filter, prev_keys)]
+                if new_results
             ]
 
             if new_entries and tg_token and tg_chat_id:
@@ -157,7 +159,7 @@ def run_forever(
                 send_telegram(tg_token, tg_chat_id, msg)
                 print(f"   \u2709 Telegram notification sent ({len(new_entries)} campground(s))")
 
-            prev_keys = current_keys
+            prev_keys |= current_keys
             _save_sent_keys(SENT_KEYS_FILE, prev_keys)
 
             print(f"\n   Next check in {args.interval} minute(s). Press Ctrl+C to stop.\n")
