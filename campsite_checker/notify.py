@@ -8,7 +8,7 @@ from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
 
-from .results import filter_results, get_booking_url
+from .results import filter_results, get_booking_url, get_facility_name
 
 
 def get_telegram_creds(
@@ -52,7 +52,7 @@ def build_telegram_message(
         results = filter_results(results, day_filter)
         if not results:
             continue
-        name = entry.get("name", "Unnamed")
+        name = get_facility_name(results)
         by_date: Dict[date, Set] = defaultdict(set)
         for r in results:
             by_date[r.booking_date.date()].add(r.campsite_id)
@@ -74,5 +74,5 @@ def result_keys(
 ) -> FrozenSet[Tuple[str, int, date]]:
     """Return a frozenset of (name, campsite_id, booking_date) for deduplication."""
     filtered = filter_results(results, day_filter)
-    name = entry.get("name", "Unnamed")
+    name = get_facility_name(filtered) if filtered else "Unknown"
     return frozenset((name, r.campsite_id, r.booking_date.date()) for r in filtered)

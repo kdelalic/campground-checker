@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from camply.containers import AvailableCampsite, SearchWindow
 
 from .providers import PROVIDER_DISPLAY, PROVIDER_MAP
+from .results import get_facility_name
 
 
 def build_searcher(entry: dict, search_window: SearchWindow, args):
@@ -56,19 +57,19 @@ def run_search(
         )
         return results or [], None
     except Exception as exc:
-        name = entry.get("name", "unknown")
-        return [], f"  [WARNING] Search failed for '{name}': {exc}"
+        label = entry.get("campground_id", "unknown")
+        return [], f"  [WARNING] Search failed for campground {label}: {exc}"
 
 
 def search_entry(
     entry: dict, search_window: SearchWindow, args
 ) -> Tuple[dict, List[AvailableCampsite], Optional[str]]:
     """Build and run a single campsite search. Safe to call from a thread."""
-    name = entry.get("name", "Unnamed")
+    label = entry.get("campground_id", "unknown")
     try:
         searcher = build_searcher(entry, search_window, args)
     except TypeError as exc:
-        return entry, [], f"[ERROR] Could not create searcher for '{name}': {exc}"
+        return entry, [], f"[ERROR] Could not create searcher for campground {label}: {exc}"
     results, error = run_search(entry, searcher, verbose=args.verbose)
     return entry, results, error
 
@@ -87,7 +88,7 @@ def execute_searches(
         for future in concurrent.futures.as_completed(future_to_index):
             i = future_to_index[future]
             entry, results, error = future.result()
-            name = entry.get("name", "Unnamed")
+            name = get_facility_name(results) if results else f"campground {entry.get('campground_id', '?')}"
             provider = entry.get("provider", "RecreationDotGov")
             provider_label = PROVIDER_DISPLAY.get(provider, provider.lower())
             suffix = " [ERROR]" if error and error.startswith("[ERROR]") else ""

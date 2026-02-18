@@ -5,6 +5,15 @@ from typing import Dict, List, Optional, Set
 from camply.containers import AvailableCampsite
 
 
+def get_facility_name(results: List[AvailableCampsite]) -> str:
+    """Extract facility name from the first result that has one."""
+    for r in results:
+        name = getattr(r, "facility_name", "")
+        if name:
+            return name
+    return "Unknown"
+
+
 def get_booking_url(results: List[AvailableCampsite]) -> str:
     """Extract booking URL from the first result that has one."""
     for r in results:
@@ -70,7 +79,7 @@ def format_results(
     if not results:
         return None
 
-    name = entry.get("name", "Unnamed")
+    name = get_facility_name(results)
 
     by_date: Dict[date, Set] = defaultdict(set)
     for r in results:

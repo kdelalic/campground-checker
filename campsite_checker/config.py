@@ -107,7 +107,7 @@ def load_config(path: str) -> Tuple[List[dict], dict]:
         sys.exit("Error: 'campsites' must be a non-empty list")
 
     for i, entry in enumerate(entries):
-        label = entry.get("name", f"entry #{i+1}")
+        label = f"entry #{i+1}"
         if not entry.get("campground_id") and not entry.get("recreation_area"):
             sys.exit(
                 f"Error in '{label}': must specify 'campground_id' or 'recreation_area'"
@@ -139,7 +139,7 @@ def compute_date_range(args: argparse.Namespace) -> Tuple[datetime, datetime]:
         except ValueError:
             sys.exit(f"Error: --end must be YYYY-MM-DD, got: {args.end}")
     else:
-        future = today + timedelta(days=91)
+        future = today + timedelta(days=181)
         end_dt = datetime(future.year, future.month, future.day)
 
     if end_dt <= start_dt:
