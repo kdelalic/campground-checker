@@ -5,8 +5,13 @@ from typing import Dict, List, Optional, Set
 from camply.containers import AvailableCampsite
 
 
-def get_entry_url(entry: dict) -> str:
-    return entry.get("url", "")
+def get_booking_url(results: List[AvailableCampsite]) -> str:
+    """Extract booking URL from the first result that has one."""
+    for r in results:
+        url = getattr(r, "booking_url", "")
+        if url:
+            return url.replace("Web/Default.aspx#!", "")
+    return ""
 
 
 def count_matching_dates(
@@ -72,11 +77,12 @@ def format_results(
         by_date[r.booking_date.date()].add(r.campsite_id)
 
     total = sum(len(sites) for sites in by_date.values())
-    url = get_entry_url(entry)
+    url = get_booking_url(results)
 
     lines = [f"\n**{name}** — {total} open site(s)"]
     for d in sorted(by_date):
         count = len(by_date[d])
         lines.append(f"  \U0001f4c5 {d.strftime('%a, %b %-d')}: {count} site(s)")
-    lines.append(f"  \U0001f517 {url}")
+    if url:
+        lines.append(f"  \U0001f517 {url}")
     return "\n".join(lines)

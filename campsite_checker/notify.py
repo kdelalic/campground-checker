@@ -8,7 +8,7 @@ from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
 
-from .results import filter_results, get_entry_url
+from .results import filter_results, get_booking_url
 
 
 def get_telegram_creds(
@@ -57,7 +57,7 @@ def build_telegram_message(
         for r in results:
             by_date[r.booking_date.date()].add(r.campsite_id)
         total = sum(len(s) for s in by_date.values())
-        url = get_entry_url(entry)
+        url = get_booking_url(results)
 
         lines = [f"\n<b>{name}</b> \u2014 {total} open site(s)"]
         for d in sorted(by_date):

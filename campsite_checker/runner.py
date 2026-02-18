@@ -1,7 +1,9 @@
+import json
 import logging
 import sys
 import time
 from datetime import date, datetime
+from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite, SearchWindow
@@ -97,6 +99,37 @@ def run_once(
     return current_keys, found_entries
 
 
+SENT_KEYS_FILE = Path(".campsite_sent_keys.json")
+
+
+def _load_sent_keys(path: Path) -> Set[Tuple[str, int, date]]:
+    """Load previously sent keys from disk, pruning dates before today."""
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text())
+        today = date.today()
+        keys = set()
+        for name, cid, d in data:
+            dt = date.fromisoformat(d)
+            if dt >= today:
+                keys.add((name, cid, dt))
+        return keys
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return set()
+
+
+def _save_sent_keys(path: Path, keys: Set[Tuple[str, int, date]]) -> None:
+    """Save sent keys to disk, pruning dates before today."""
+    today = date.today()
+    data = sorted(
+        [name, cid, d.isoformat()]
+        for name, cid, d in keys
+        if d >= today
+    )
+    path.write_text(json.dumps(data))
+
+
 def run_forever(
     entries: List[dict],
     args,
@@ -104,7 +137,7 @@ def run_forever(
     tg_token: Optional[str],
     tg_chat_id: Optional[str],
 ) -> None:
-    prev_keys: Set[Tuple[str, int, date]] = set()
+    prev_keys = _load_sent_keys(SENT_KEYS_FILE)
     scan_num = 0
     try:
         while True:
@@ -125,6 +158,7 @@ def run_forever(
                 print(f"   \u2709 Telegram notification sent ({len(new_entries)} campground(s))")
 
             prev_keys = current_keys
+            _save_sent_keys(SENT_KEYS_FILE, prev_keys)
 
             print(f"\n   Next check in {args.interval} minute(s). Press Ctrl+C to stop.\n")
             sys.stdout.flush()
