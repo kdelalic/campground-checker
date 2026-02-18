@@ -6,11 +6,16 @@ from camply.containers import AvailableCampsite
 
 
 def get_facility_name(results: List[AvailableCampsite]) -> str:
-    """Extract facility name from the first result that has one."""
+    """Extract recreation area + facility name from the first result that has one."""
     for r in results:
-        name = getattr(r, "facility_name", "")
-        if name:
-            return name
+        facility = getattr(r, "facility_name", "") or ""
+        rec_area = getattr(r, "recreation_area", "") or ""
+        if rec_area and facility:
+            return f"{rec_area} — {facility}"
+        if rec_area:
+            return rec_area
+        if facility:
+            return facility
     return "Unknown"
 
 

@@ -5,16 +5,16 @@
 #
 # Run: python check_campsites.py
 #
-# Each entry under 'campsites' defines one search target.
+# Campsites are grouped by provider under the 'campsites' key.
 # Campground names are fetched automatically from the booking service.
+#
+# Providers: RecreationDotGov | Yellowstone | GoingToCamp | ReserveCalifornia
 #
 # Required (at least one of):
 #   campground_id   - The booking-service campground/facility ID
 #   recreation_area - The recreation area ID (searches all campgrounds within)
 #
 # Optional:
-#   provider        - Booking service. Default: RecreationDotGov
-#                     Options: RecreationDotGov | Yellowstone | GoingToCamp | ReserveCalifornia
 #   campsite_id     - Specific site ID (int or list) to narrow the search
 #   nights          - Minimum consecutive nights required. Default: 1
 #   weekends_only   - true/false. Default: false
@@ -37,55 +37,51 @@
 
 campsites:
 
-  # ── Recreation.gov ────────────────────────────────────────────────────────
+  # ── Recreation.gov ──────────────────────────────────────────────────────────
   # Find campground IDs at recreation.gov: visit the campground page,
   # the URL contains facilityId=XXXXX. Or run:
   #   camply campgrounds --provider RecreationDotGov --search "campground name"
 
-  - provider: RecreationDotGov
-    campground_id: 232447
-    nights: 2
-    weekends_only: false
+  RecreationDotGov:
+    - campground_id: 232447
+      nights: 2
+      weekends_only: false
 
-  - provider: RecreationDotGov
-    campground_id: 251869
-    nights: 1
-    weekends_only: false
+    - campground_id: 251869
+      nights: 1
+      weekends_only: false
 
-  - provider: RecreationDotGov
-    recreation_area: 2902          # Searches all campgrounds within this rec area
-    nights: 1
-    weekends_only: false
+    - recreation_area: 2902          # Searches all campgrounds within this rec area
+      nights: 1
+      weekends_only: false
 
-  - provider: RecreationDotGov
-    recreation_area:
-      - 2907                       # Rocky Mountain NP
-      - 1074                       # A second area
-    nights: 2
+    - recreation_area:
+        - 2907                       # Rocky Mountain NP
+        - 1074                       # A second area
+      nights: 2
 
-  - provider: RecreationDotGov
-    campground_id: 234429
-    campsite_id: 7834              # Pin to one specific site
-    nights: 1
+    - campground_id: 234429
+      campsite_id: 7834              # Pin to one specific site
+      nights: 1
 
-  # ── Yellowstone ───────────────────────────────────────────────────────────
+  # ── Yellowstone ─────────────────────────────────────────────────────────────
   # Find IDs with: camply campgrounds --provider Yellowstone
 
-  - provider: Yellowstone
-    campground_id: 72
-    nights: 2
+  Yellowstone:
+    - campground_id: 72
+      nights: 2
 
-  # ── California State Parks ────────────────────────────────────────────────
+  # ── California State Parks ──────────────────────────────────────────────────
   # Find IDs with: camply campgrounds --provider ReserveCalifornia --search "park name"
 
-  - provider: ReserveCalifornia
-    campground_id: 608
-    nights: 1
+  ReserveCalifornia:
+    - campground_id: 608
+      nights: 1
 
-  # ── GoingToCamp (Canadian Provincial Parks) ───────────────────────────────
+  # ── GoingToCamp (Canadian Provincial Parks) ─────────────────────────────────
   # Find rec area IDs with: camply recreation-areas --provider GoingToCamp --search "park name"
 
-  - provider: GoingToCamp
-    recreation_area: 1
-    campground_id: 1
-    nights: 2
+  GoingToCamp:
+    - recreation_area: 1
+      campground_id: 1
+      nights: 2

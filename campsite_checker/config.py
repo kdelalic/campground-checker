@@ -100,11 +100,33 @@ def load_config(path: str) -> Tuple[List[dict], dict]:
         sys.exit(f"Error: invalid YAML in {path}: {exc}")
 
     if not isinstance(raw, dict) or "campsites" not in raw:
-        sys.exit("Error: config must have a top-level 'campsites' list")
+        sys.exit("Error: config must have a top-level 'campsites' key")
 
-    entries = raw["campsites"]
-    if not isinstance(entries, list) or len(entries) == 0:
-        sys.exit("Error: 'campsites' must be a non-empty list")
+    campsites_raw = raw["campsites"]
+
+    # Support two formats:
+    #   1. Dict keyed by provider name → list of entries (new format)
+    #   2. Flat list of entries, each with an optional 'provider' key (legacy)
+    entries: list = []
+    if isinstance(campsites_raw, dict):
+        for provider, items in campsites_raw.items():
+            if provider not in PROVIDER_MAP:
+                sys.exit(
+                    f"Error: unknown provider '{provider}'. "
+                    f"Valid providers: {', '.join(PROVIDER_MAP)}"
+                )
+            if not isinstance(items, list) or len(items) == 0:
+                sys.exit(f"Error: provider '{provider}' must contain a non-empty list")
+            for entry in items:
+                entry["provider"] = provider
+                entries.append(entry)
+    elif isinstance(campsites_raw, list):
+        entries = campsites_raw
+    else:
+        sys.exit("Error: 'campsites' must be a dict of providers or a list of entries")
+
+    if len(entries) == 0:
+        sys.exit("Error: no campsite entries found")
 
     for i, entry in enumerate(entries):
         label = f"entry #{i+1}"
