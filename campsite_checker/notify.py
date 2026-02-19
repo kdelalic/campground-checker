@@ -32,7 +32,7 @@ def get_telegram_creds(
 def send_telegram(token: str, chat_id: str, text: str) -> None:
     """Send a message via the Telegram Bot API (HTML parse mode)."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "HTML"}).encode()
+    payload = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "HTML", "link_preview_options": {"is_disabled": True}}).encode()
     req = urllib.request.Request(
         url, data=payload, headers={"Content-Type": "application/json"}
     )
