@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import sys
@@ -52,13 +53,15 @@ def build_telegram_message(
         if grouped is None:
             continue
         name, by_date, total, url = grouped
+        safe_name = html.escape(name)
 
-        lines = [f"\n<b>{name}</b> \u2014 {total} open site(s)"]
+        lines = [f"\n<b>{safe_name}</b> — {total} open site(s)"]
         for d in sorted(by_date):
             count = len(by_date[d])
             lines.append(f"  \U0001f4c5 {d.strftime('%a, %b %-d')}: {count} site(s)")
         if url:
-            lines.append(f'  \U0001f517 <a href="{url}">Book now</a>')
+            safe_url = html.escape(url)
+            lines.append(f'  \U0001f517 <a href="{safe_url}">Book now</a>')
         parts.append("\n".join(lines))
     return "\n".join(parts)
 
