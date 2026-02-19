@@ -186,7 +186,10 @@ def _lookup_campground_names(
             provider = provider_cls()
             facilities = provider.find_campgrounds(campground_id=ids)
             for f in facilities:
-                names[(prov, f.facility_id)] = f.facility_name
+                label = f.facility_name
+                if f.recreation_area:
+                    label = f"{label}, {f.recreation_area}"
+                names[(prov, f.facility_id)] = label
         except Exception as exc:
             logger.debug("Name lookup failed for %s: %s", prov, exc)
     return names
