@@ -1,11 +1,30 @@
 import logging
 import re
 import threading
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import telebot
 
 from .providers import PROVIDER_MAP
+
+# Maps provider name to the camply provider class used for metadata lookups.
+_CAMPLY_PROVIDER_CLASS = {}
+try:
+    from camply.providers.recreation_dot_gov.recdotgov_camps import (
+        RecreationDotGov as _RecDotGovProvider,
+    )
+
+    _CAMPLY_PROVIDER_CLASS["RecreationDotGov"] = _RecDotGovProvider
+except ImportError:
+    pass
+try:
+    from camply.providers.usedirect.variations import (
+        ReserveCalifornia as _ReserveCAProvider,
+    )
+
+    _CAMPLY_PROVIDER_CLASS["ReserveCalifornia"] = _ReserveCAProvider
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +72,15 @@ def _parse_add_remove_args(args: list) -> Tuple[Optional[str], Optional[int]]:
     return None, None
 
 
-def _append_to_yaml(config_path: str, provider: str, campground_id: int) -> None:
+def _append_to_yaml(
+    config_path: str, provider: str, campground_id: int, name: Optional[str] = None
+) -> None:
     """Append a campground entry to the YAML file, preserving comments."""
     with open(config_path) as f:
         lines = f.readlines()
 
-    new_line = f"    - campground_id: {campground_id}\n"
+    comment = f" # {name}" if name else ""
+    new_line = f"    - campground_id: {campground_id}{comment}\n"
 
     # Find the provider section and its last entry
     in_provider = False
@@ -139,6 +161,62 @@ def _parse_yaml_comments(config_path: str) -> dict:
     return names
 
 
+def _lookup_campground_names(
+    entries: List[dict],
+) -> Dict[Tuple[str, int], str]:
+    """Look up campground names from camply providers.
+
+    Returns dict mapping (provider, campground_id) -> facility name.
+    """
+    names: Dict[Tuple[str, int], str] = {}
+    # Group IDs by provider
+    by_provider: Dict[str, List[int]] = {}
+    for e in entries:
+        cid = e.get("campground_id")
+        if not cid:
+            continue
+        prov = e.get("provider", "RecreationDotGov")
+        by_provider.setdefault(prov, []).append(cid)
+
+    for prov, ids in by_provider.items():
+        provider_cls = _CAMPLY_PROVIDER_CLASS.get(prov)
+        if not provider_cls:
+            continue
+        try:
+            provider = provider_cls()
+            facilities = provider.find_campgrounds(campground_id=ids)
+            for f in facilities:
+                names[(prov, f.facility_id)] = f.facility_name
+        except Exception as exc:
+            logger.debug("Name lookup failed for %s: %s", prov, exc)
+    return names
+
+
+def _update_yaml_comment(
+    config_path: str, provider: str, campground_id: int, name: str
+) -> None:
+    """Add an inline comment to an existing campground entry in the YAML file."""
+    with open(config_path) as f:
+        lines = f.readlines()
+
+    in_provider = False
+    for i, line in enumerate(lines):
+        stripped = line.rstrip()
+        if re.match(r"^  \S+:\s*$", stripped):
+            in_provider = stripped.strip().rstrip(":") == provider
+        elif in_provider and re.match(
+            rf"^\s+- campground_id:\s+{campground_id}\s*$", stripped
+        ):
+            # Line has no comment yet — append one
+            lines[i] = stripped + f" # {name}\n"
+            break
+    else:
+        return  # not found
+
+    with open(config_path, "w") as f:
+        f.writelines(lines)
+
+
 def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
     """Register all bot command handlers."""
 
@@ -169,6 +247,24 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             return
 
         names = _parse_yaml_comments(config_path)
+
+        # Find entries missing names and look them up from the provider API.
+        missing = [
+            e
+            for e in entries
+            if e.get("campground_id")
+            and (e.get("provider", "RecreationDotGov"), e["campground_id"])
+            not in names
+        ]
+        if missing:
+            resolved = _lookup_campground_names(missing)
+            names.update(resolved)
+            # Backfill resolved names as YAML comments for next time.
+            for (prov, cid), rname in resolved.items():
+                try:
+                    _update_yaml_comment(config_path, prov, cid, rname)
+                except Exception:
+                    pass
 
         by_provider: dict = {}
         for e in entries:
@@ -222,14 +318,22 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             state.entries.append(new_entry)
             cs = state.raw_config.setdefault("campsites", {})
             cs.setdefault(provider, []).append({"campground_id": campground_id})
+
+            # Look up the human-readable name from the provider API.
+            resolved = _lookup_campground_names([new_entry])
+            name = resolved.get((provider, campground_id))
+
             try:
-                _append_to_yaml(state.config_path, provider, campground_id)
+                _append_to_yaml(
+                    state.config_path, provider, campground_id, name=name
+                )
             except Exception as exc:
                 logger.warning("Failed to write YAML: %s", exc)
 
+        label = f"{name} ({campground_id})" if name else str(campground_id)
         bot.send_message(
             message.chat.id,
-            f"Added {provider} campground {campground_id}.\n"
+            f"Added {provider} campground {label}.\n"
             "Will be included in the next scan.",
         )
 
