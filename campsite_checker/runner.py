@@ -147,11 +147,11 @@ def run_forever(
         start_bot_polling(bot)
         print("   Telegram bot commands active (/help for commands)")
 
+    prev_keys = _load_sent_keys(SENT_KEYS_FILE)
     scan_num = 0
     try:
         while True:
             scan_num += 1
-            prev_keys = _load_sent_keys(SENT_KEYS_FILE)
 
             with state.lock:
                 current_entries = list(state.entries)
@@ -172,7 +172,8 @@ def run_forever(
                 send_telegram(tg_token, tg_chat_id, msg)
                 print(f"   \u2709 Telegram notification sent ({len(new_entries)} campground(s))")
 
-            _save_sent_keys(SENT_KEYS_FILE, current_keys)
+            prev_keys |= current_keys
+            _save_sent_keys(SENT_KEYS_FILE, prev_keys)
 
             print(f"\n   Next check in {args.interval} minute(s). Press Ctrl+C to stop.\n")
             sys.stdout.flush()
