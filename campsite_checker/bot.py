@@ -114,6 +114,31 @@ def _remove_from_yaml(config_path: str, provider: str, campground_id: int) -> No
             f.writelines(lines)
 
 
+def _parse_yaml_comments(config_path: str) -> dict:
+    """Parse inline comments from the YAML file to get human-readable names.
+
+    Returns dict mapping (provider, campground_id) -> comment string.
+    """
+    names = {}
+    current_provider = None
+    try:
+        with open(config_path) as f:
+            for line in f:
+                stripped = line.rstrip()
+                # Provider header like "  RecreationDotGov:"
+                if re.match(r"^  \S+:\s*$", stripped):
+                    current_provider = stripped.strip().rstrip(":")
+                elif current_provider and "#" in line:
+                    m = re.match(r"\s+- campground_id:\s+(\d+)\s+#\s*(.+)", stripped)
+                    if m:
+                        cid = int(m.group(1))
+                        comment = m.group(2).strip()
+                        names[(current_provider, cid)] = comment
+    except Exception:
+        pass
+    return names
+
+
 def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
     """Register all bot command handlers."""
 
@@ -138,9 +163,12 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             return
         with state.lock:
             entries = list(state.entries)
+            config_path = state.config_path
         if not entries:
             bot.send_message(message.chat.id, "No campgrounds being monitored.")
             return
+
+        names = _parse_yaml_comments(config_path)
 
         by_provider: dict = {}
         for e in entries:
@@ -153,7 +181,11 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             for item in items:
                 cid = item.get("campground_id")
                 if cid:
-                    lines.append(f"  • {cid}")
+                    name = names.get((prov, cid))
+                    if name:
+                        lines.append(f"  • {name} ({cid})")
+                    else:
+                        lines.append(f"  • {cid}")
                 else:
                     ra = item.get("recreation_area", "?")
                     lines.append(f"  • rec area {ra}")
