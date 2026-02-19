@@ -2,6 +2,7 @@ import html
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from datetime import date
 from typing import FrozenSet, List, Optional, Set, Tuple
@@ -38,6 +39,11 @@ def send_telegram(token: str, chat_id: str, text: str) -> None:
     )
     try:
         urllib.request.urlopen(req, timeout=10)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        print(f"  [WARNING] Telegram notification failed: {exc}", file=sys.stderr)
+        print(f"  [DEBUG] Response body: {body}", file=sys.stderr)
+        print(f"  [DEBUG] Sent payload: {payload.decode()}", file=sys.stderr)
     except Exception as exc:
         print(f"  [WARNING] Telegram notification failed: {exc}", file=sys.stderr)
 
