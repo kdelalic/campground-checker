@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
 
@@ -74,24 +74,37 @@ def filter_results(
     return results
 
 
+def group_results(
+    results: List[AvailableCampsite],
+    day_filter: Optional[Set[int]],
+) -> Optional[Tuple[str, Dict[date, Set], int, str]]:
+    """Filter results and group by date.
+
+    Returns None if no results remain after filtering, otherwise returns
+    (facility_name, by_date, total_sites, booking_url).
+    """
+    filtered = filter_results(results, day_filter)
+    if not filtered:
+        return None
+    name = get_facility_name(filtered)
+    by_date: Dict[date, Set] = defaultdict(set)
+    for r in filtered:
+        by_date[r.booking_date.date()].add(r.campsite_id)
+    total = sum(len(s) for s in by_date.values())
+    url = get_booking_url(filtered)
+    return name, by_date, total, url
+
+
 def format_results(
     entry: dict,
     results: List[AvailableCampsite],
     day_filter: Optional[Set[int]],
 ) -> Optional[str]:
     """Returns formatted string if there are results, None otherwise."""
-    results = filter_results(results, day_filter)
-    if not results:
+    grouped = group_results(results, day_filter)
+    if grouped is None:
         return None
-
-    name = get_facility_name(results)
-
-    by_date: Dict[date, Set] = defaultdict(set)
-    for r in results:
-        by_date[r.booking_date.date()].add(r.campsite_id)
-
-    total = sum(len(sites) for sites in by_date.values())
-    url = get_booking_url(results)
+    name, by_date, total, url = grouped
 
     lines = [f"\n**{name}** — {total} open site(s)"]
     for d in sorted(by_date):

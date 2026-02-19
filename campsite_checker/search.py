@@ -57,7 +57,7 @@ def run_search(
         )
         return results or [], None
     except Exception as exc:
-        label = entry.get("campground_id", "unknown")
+        label = entry.get("campground_id") or entry.get("recreation_area") or "unknown"
         return [], f"  [WARNING] Search failed for campground {label}: {exc}"
 
 
@@ -65,7 +65,7 @@ def search_entry(
     entry: dict, search_window: SearchWindow, args
 ) -> Tuple[dict, List[AvailableCampsite], Optional[str]]:
     """Build and run a single campsite search. Safe to call from a thread."""
-    label = entry.get("campground_id", "unknown")
+    label = entry.get("campground_id") or entry.get("recreation_area") or "unknown"
     try:
         searcher = build_searcher(entry, search_window, args)
     except TypeError as exc:

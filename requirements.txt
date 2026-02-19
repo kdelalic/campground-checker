@@ -1,2 +1,2 @@
-camply
-pyyaml
+camply==0.34.0
+PyYAML==6.0.3

@@ -2,13 +2,12 @@ import json
 import os
 import sys
 import urllib.request
-from collections import defaultdict
 from datetime import date
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import FrozenSet, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
 
-from .results import filter_results, get_booking_url, get_facility_name
+from .results import filter_results, get_facility_name, group_results
 
 
 def get_telegram_creds(
@@ -49,15 +48,10 @@ def build_telegram_message(
     """Format a Telegram HTML message for found availability."""
     parts = ["\U0001f3d5 <b>Campsite Availability Found!</b>"]
     for entry, results in entries_with_results:
-        results = filter_results(results, day_filter)
-        if not results:
+        grouped = group_results(results, day_filter)
+        if grouped is None:
             continue
-        name = get_facility_name(results)
-        by_date: Dict[date, Set] = defaultdict(set)
-        for r in results:
-            by_date[r.booking_date.date()].add(r.campsite_id)
-        total = sum(len(s) for s in by_date.values())
-        url = get_booking_url(results)
+        name, by_date, total, url = grouped
 
         lines = [f"\n<b>{name}</b> \u2014 {total} open site(s)"]
         for d in sorted(by_date):

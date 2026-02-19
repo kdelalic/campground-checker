@@ -24,8 +24,6 @@ logging.basicConfig(
     level=logging.WARNING,
     format="%(levelname)s: %(message)s",
 )
-log = logging.getLogger(__name__)
-
 
 def print_scan_header(
     entries: List[dict],
@@ -62,8 +60,8 @@ def run_once(
     tg_token: Optional[str],
     tg_chat_id: Optional[str],
     scan_num: Optional[int] = None,
-) -> Set[Tuple[str, int, date]]:
-    """Run one scan. Returns the set of result keys found."""
+) -> Tuple[Set[Tuple[str, int, date]], List[Tuple[dict, List[AvailableCampsite]]]]:
+    """Run one scan. Returns (current_keys, found_entries)."""
     start_dt, end_dt = compute_date_range(args)
     search_window = SearchWindow(start_date=start_dt, end_date=end_dt)
 
@@ -138,11 +136,12 @@ def run_forever(
     tg_token: Optional[str],
     tg_chat_id: Optional[str],
 ) -> None:
-    prev_keys = _load_sent_keys(SENT_KEYS_FILE)
     scan_num = 0
     try:
         while True:
             scan_num += 1
+            prev_keys = _load_sent_keys(SENT_KEYS_FILE)
+
             current_keys, found_entries = run_once(
                 entries, args, day_filter, tg_token, tg_chat_id, scan_num
             )
@@ -159,8 +158,7 @@ def run_forever(
                 send_telegram(tg_token, tg_chat_id, msg)
                 print(f"   \u2709 Telegram notification sent ({len(new_entries)} campground(s))")
 
-            prev_keys |= current_keys
-            _save_sent_keys(SENT_KEYS_FILE, prev_keys)
+            _save_sent_keys(SENT_KEYS_FILE, current_keys)
 
             print(f"\n   Next check in {args.interval} minute(s). Press Ctrl+C to stop.\n")
             sys.stdout.flush()
