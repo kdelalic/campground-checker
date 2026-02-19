@@ -131,19 +131,33 @@ def _save_sent_keys(path: Path, keys: Set[Tuple[str, int, date]]) -> None:
 
 def run_forever(
     entries: List[dict],
+    raw_config: dict,
+    config_path: str,
     args,
     day_filter: Optional[Set[int]],
     tg_token: Optional[str],
     tg_chat_id: Optional[str],
 ) -> None:
+    from .bot import ConfigState, create_bot, start_bot_polling
+
+    state = ConfigState(entries, raw_config, config_path, tg_chat_id or "")
+
+    if tg_token and tg_chat_id:
+        bot = create_bot(tg_token, state)
+        start_bot_polling(bot)
+        print("   Telegram bot commands active (/help for commands)")
+
     scan_num = 0
     try:
         while True:
             scan_num += 1
             prev_keys = _load_sent_keys(SENT_KEYS_FILE)
 
+            with state.lock:
+                current_entries = list(state.entries)
+
             current_keys, found_entries = run_once(
-                entries, args, day_filter, tg_token, tg_chat_id, scan_num
+                current_entries, args, day_filter, tg_token, tg_chat_id, scan_num
             )
 
             new_entries = [
@@ -184,7 +198,7 @@ def main() -> None:
         )
 
     if args.forever:
-        run_forever(entries, args, day_filter, tg_token, tg_chat_id)
+        run_forever(entries, config, args.config, args, day_filter, tg_token, tg_chat_id)
     else:
         current_keys, found_entries = run_once(
             entries, args, day_filter, tg_token, tg_chat_id
