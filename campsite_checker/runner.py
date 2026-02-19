@@ -168,8 +168,9 @@ def run_forever(
             ]
 
             if new_entries and tg_token and tg_chat_id:
-                msg = build_telegram_message(new_entries, day_filter)
-                send_telegram(tg_token, tg_chat_id, msg)
+                msgs = build_telegram_message(new_entries, day_filter)
+                for msg in msgs:
+                    send_telegram(tg_token, tg_chat_id, msg)
                 print(f"   \u2709 Telegram notification sent ({len(new_entries)} campground(s))")
 
             prev_keys |= current_keys
@@ -205,6 +206,7 @@ def main() -> None:
             entries, args, day_filter, tg_token, tg_chat_id
         )
         if found_entries and tg_token and tg_chat_id:
-            msg = build_telegram_message(found_entries, day_filter)
-            send_telegram(tg_token, tg_chat_id, msg)
+            msgs = build_telegram_message(found_entries, day_filter)
+            for msg in msgs:
+                send_telegram(tg_token, tg_chat_id, msg)
             print(f"   \u2709 Telegram notification sent ({len(found_entries)} campground(s))")
