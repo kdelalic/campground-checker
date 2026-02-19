@@ -48,12 +48,22 @@ def send_telegram(token: str, chat_id: str, text: str) -> None:
         print(f"  [WARNING] Telegram notification failed: {exc}", file=sys.stderr)
 
 
+_MAX_TG_LEN = 4096
+
+
 def build_telegram_message(
     entries_with_results: List[Tuple[dict, List[AvailableCampsite]]],
     day_filter: Optional[Set[int]],
-) -> str:
-    """Format a Telegram HTML message for found availability."""
-    parts = ["\U0001f3d5 <b>Campsite Availability Found!</b>"]
+) -> List[str]:
+    """Format Telegram HTML messages for found availability.
+
+    Returns a list of messages, each within Telegram's 4096-character limit.
+    Campground sections are kept intact; a new message is started whenever
+    adding the next section would exceed the limit.
+    """
+    header = "\U0001f3d5 <b>Campsite Availability Found!</b>"
+
+    sections: List[str] = []
     for entry, results in entries_with_results:
         grouped = group_results(results, day_filter)
         if grouped is None:
@@ -68,8 +78,28 @@ def build_telegram_message(
         if url:
             safe_url = html.escape(url)
             lines.append(f'  \U0001f517 <a href="{safe_url}">Book now</a>')
-        parts.append("\n".join(lines))
-    return "\n".join(parts)
+        sections.append("\n".join(lines))
+
+    if not sections:
+        return []
+
+    messages: List[str] = []
+    current_parts: List[str] = [header]
+    current_len = len(header)
+
+    for section in sections:
+        # Each section is joined to the rest with a single "\n" separator.
+        needed = 1 + len(section)
+        if len(current_parts) > 1 and current_len + needed > _MAX_TG_LEN:
+            messages.append("\n".join(current_parts))
+            current_parts = [header, section]
+            current_len = len(header) + needed
+        else:
+            current_parts.append(section)
+            current_len += needed
+
+    messages.append("\n".join(current_parts))
+    return messages
 
 
 def result_keys(
