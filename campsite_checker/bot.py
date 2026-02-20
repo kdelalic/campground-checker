@@ -452,12 +452,17 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
         if len(args) == 0:
             with state.lock:
                 entries = list(state.entries)
+                config_path = state.config_path
+            names = _parse_yaml_comments(config_path)
             lines = ["<b>Alert status:</b>"]
             for e in entries:
                 cid = e.get("campground_id", "?")
+                prov = e.get("provider", "RecreationDotGov")
                 enabled = e.get("alert", False)
                 status = "ON" if enabled else "OFF"
-                lines.append(f"  {cid}: {status}")
+                name = names.get((prov, cid))
+                label = f"{name} ({cid})" if name else str(cid)
+                lines.append(f"  {label}: {status}")
             lines.append("\n/alert <i>&lt;campground_id&gt;</i> — toggle alerts")
             bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
             return
