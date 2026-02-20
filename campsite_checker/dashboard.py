@@ -1,7 +1,7 @@
 import html
 from collections import defaultdict
 from datetime import date, datetime
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 from camply.containers import AvailableCampsite
 
@@ -22,18 +22,6 @@ def get_dashboard_path(args, config: dict) -> Optional[str]:
     return dash_cfg.get("output_path")
 
 
-def _build_alert_sites_map(
-    entries_with_results: List[Tuple[dict, List[AvailableCampsite]]],
-) -> Dict[int, Set[str]]:
-    """Build a map of entry index -> set of alert_site IDs (as strings)."""
-    mapping: Dict[int, Set[str]] = {}
-    for i, (entry, _) in enumerate(entries_with_results):
-        alert_sites = entry.get("alert_sites")
-        if alert_sites:
-            mapping[i] = {str(s) for s in alert_sites}
-    return mapping
-
-
 def build_dashboard_html(
     entries_with_results: List[Tuple[dict, List[AvailableCampsite]]],
     day_filter: Optional[Set[int]],
@@ -43,17 +31,14 @@ def build_dashboard_html(
     if scan_timestamp is None:
         scan_timestamp = datetime.now()
 
-    alert_map = _build_alert_sites_map(entries_with_results)
-
     cards_html = []
-    for i, (entry, results) in enumerate(entries_with_results):
+    for entry, results in entries_with_results:
         filtered = filter_results(results, day_filter)
         if not filtered:
             continue
 
         name = get_facility_name(filtered)
         url = get_booking_url(filtered)
-        alert_set = alert_map.get(i)
 
         by_date: Dict[date, List[AvailableCampsite]] = defaultdict(list)
         for r in filtered:
@@ -64,26 +49,12 @@ def build_dashboard_html(
 
         rows_html = []
         for d in sorted(by_date):
-            sites = by_date[d]
-            count = len(sites)
+            count = len(by_date[d])
             date_str = html.escape(d.strftime("%a, %b %-d"))
-
-            watched_badge = ""
-            if alert_set:
-                watched_count = sum(
-                    1 for r in sites if str(r.campsite_id) in alert_set
-                )
-                if watched_count > 0:
-                    watched_badge = (
-                        f'<span class="watched-badge">'
-                        f"{watched_count} watched</span>"
-                    )
-
-            row_class = "watched-row" if watched_badge else ""
             rows_html.append(
-                f"<tr class=\"{row_class}\">"
+                f"<tr>"
                 f"<td>{date_str}</td>"
-                f"<td>{count} site(s) {watched_badge}</td>"
+                f"<td>{count} site(s)</td>"
                 f"</tr>"
             )
 
@@ -141,14 +112,6 @@ h1{{font-size:1.5rem;margin:0 0 4px}}
 table{{width:100%;border-collapse:collapse;font-size:0.9rem}}
 th{{text-align:left;padding:6px 8px;border-bottom:2px solid #e7e5e4;color:#78716c;font-weight:600}}
 td{{padding:6px 8px;border-bottom:1px solid #f5f5f4}}
-tr.watched-row td{{background:#fffbeb}}
-.watched-badge{{
-  display:inline-block;
-  background:#f59e0b;color:#fff;
-  font-size:0.75rem;font-weight:600;
-  padding:1px 6px;border-radius:10px;margin-left:6px;
-  vertical-align:middle;
-}}
 .book-link{{
   display:inline-block;margin-top:10px;
   color:#16a34a;font-weight:600;font-size:0.9rem;text-decoration:none;

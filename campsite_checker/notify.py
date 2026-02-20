@@ -111,29 +111,18 @@ def result_keys(
     return frozenset((name, r.campsite_id, r.booking_date.date()) for r in filtered)
 
 
-def filter_by_alert_sites(
-    entry: dict,
-    results: List[AvailableCampsite],
-) -> List[AvailableCampsite]:
-    """Filter results to only those matching alert_sites, if configured.
-
-    When alert_sites is absent or empty, all results pass through unchanged.
-    """
-    alert_sites = entry.get("alert_sites")
-    if not alert_sites:
-        return results
-    alert_set = {str(s) for s in alert_sites}
-    return [r for r in results if str(r.campsite_id) in alert_set]
-
-
 def filter_new_results(
     entry: dict,
     results: List[AvailableCampsite],
     day_filter: Optional[Set[int]],
     prev_keys: Set[Tuple[str, int, date]],
 ) -> List[AvailableCampsite]:
-    """Return only results whose keys are not in *prev_keys* and match alert_sites."""
+    """Return only results whose keys are not in *prev_keys*.
+
+    Returns an empty list if the entry has alert disabled (``alert: false``).
+    """
+    if not entry.get("alert", False):
+        return []
     filtered = filter_results(results, day_filter)
     name = get_facility_name(filtered) if filtered else "Unknown"
-    new = [r for r in filtered if (name, r.campsite_id, r.booking_date.date()) not in prev_keys]
-    return filter_by_alert_sites(entry, new)
+    return [r for r in filtered if (name, r.campsite_id, r.booking_date.date()) not in prev_keys]

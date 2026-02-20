@@ -159,13 +159,9 @@ def load_config(path: str) -> Tuple[List[dict], dict]:
                 f"Error in '{label}': unknown provider '{provider}'. "
                 f"Valid providers: {', '.join(PROVIDER_MAP)}"
             )
-        alert_sites = entry.get("alert_sites")
-        if alert_sites is not None:
-            if not isinstance(alert_sites, list):
-                sys.exit(f"Error in '{label}': alert_sites must be a list of campsite IDs")
-            for sid in alert_sites:
-                if not isinstance(sid, (int, str)):
-                    sys.exit(f"Error in '{label}': alert_sites entries must be integers or strings")
+        alert = entry.get("alert")
+        if alert is not None and not isinstance(alert, bool):
+            sys.exit(f"Error in '{label}': alert must be true or false")
 
     return entries, raw
 

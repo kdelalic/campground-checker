@@ -221,10 +221,10 @@ def _update_yaml_comment(
         f.writelines(lines)
 
 
-def _update_alert_sites_yaml(
-    config_path: str, provider: str, campground_id: int, alert_sites: list
+def _update_alert_yaml(
+    config_path: str, provider: str, campground_id: int, alert: bool
 ) -> None:
-    """Update or remove the alert_sites field for a campground entry in the YAML file."""
+    """Update or remove the alert field for a campground entry in the YAML file."""
     with open(config_path) as f:
         lines = f.readlines()
 
@@ -243,20 +243,21 @@ def _update_alert_sites_yaml(
     if entry_idx is None:
         return
 
-    # Check if there's already an alert_sites line right after the entry
+    # Check if there's already an alert line right after the entry
     alert_line_idx = None
     if entry_idx + 1 < len(lines):
         next_line = lines[entry_idx + 1].rstrip()
-        if re.match(r"^\s+alert_sites:", next_line):
+        if re.match(r"^\s+alert:", next_line):
             alert_line_idx = entry_idx + 1
 
-    if alert_sites:
-        new_line = f"      alert_sites: {alert_sites}\n"
+    if not alert:
+        new_line = "      alert: false\n"
         if alert_line_idx is not None:
             lines[alert_line_idx] = new_line
         else:
             lines.insert(entry_idx + 1, new_line)
     elif alert_line_idx is not None:
+        # alert: true is the default — just remove the line
         del lines[alert_line_idx]
 
     with open(config_path, "w") as f:
@@ -275,7 +276,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             "/list — Show monitored campgrounds\n"
             "/add <i>[provider]</i> <i>&lt;campground_id&gt;</i> — Add a campground\n"
             "/remove <i>[provider]</i> <i>&lt;campground_id&gt;</i> — Remove a campground\n"
-            "/alert <i>&lt;campground_id&gt;</i> <i>[campsite_id]</i> — Manage alert sites\n"
+            "/alert <i>&lt;campground_id&gt;</i> — Toggle alerts for a campground\n"
             "/status — Show checker status\n\n"
             "Provider defaults to RecreationDotGov if omitted.\n"
             f"Valid providers: {', '.join(PROVIDER_MAP)}"
@@ -447,44 +448,21 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             return
         args = message.text.split()[1:]
 
+        # /alert — show alert status for all campgrounds
         if len(args) == 0:
-            bot.send_message(
-                message.chat.id,
-                "Usage:\n"
-                "/alert <i>&lt;campground_id&gt;</i> — list alert sites\n"
-                "/alert <i>&lt;campground_id&gt;</i> <i>&lt;campsite_id&gt;</i> — toggle alert\n"
-                "/alert clear <i>&lt;campground_id&gt;</i> — clear all alerts",
-                parse_mode="HTML",
-            )
-            return
-
-        # /alert clear <campground_id>
-        if args[0] == "clear" and len(args) == 2:
-            try:
-                campground_id = int(args[1])
-            except ValueError:
-                bot.send_message(message.chat.id, "Invalid campground ID.")
-                return
-
             with state.lock:
-                entry = next(
-                    (e for e in state.entries if e.get("campground_id") == campground_id),
-                    None,
-                )
-                if entry is None:
-                    bot.send_message(message.chat.id, f"Campground {campground_id} not found.")
-                    return
-                entry.pop("alert_sites", None)
-                provider = entry.get("provider", "RecreationDotGov")
-                try:
-                    _update_alert_sites_yaml(state.config_path, provider, campground_id, [])
-                except Exception as exc:
-                    logger.warning("Failed to write YAML: %s", exc)
-
-            bot.send_message(message.chat.id, f"Cleared all alert sites for campground {campground_id}.")
+                entries = list(state.entries)
+            lines = ["<b>Alert status:</b>"]
+            for e in entries:
+                cid = e.get("campground_id", "?")
+                enabled = e.get("alert", False)
+                status = "ON" if enabled else "OFF"
+                lines.append(f"  {cid}: {status}")
+            lines.append("\n/alert <i>&lt;campground_id&gt;</i> — toggle alerts")
+            bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
             return
 
-        # /alert <campground_id> — list current alert sites
+        # /alert <campground_id> — toggle alerts for that campground
         if len(args) == 1:
             try:
                 campground_id = int(args[0])
@@ -500,67 +478,25 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
                 if entry is None:
                     bot.send_message(message.chat.id, f"Campground {campground_id} not found.")
                     return
-                current = entry.get("alert_sites", [])
 
-            if current:
-                sites_str = ", ".join(str(s) for s in current)
-                bot.send_message(
-                    message.chat.id,
-                    f"Alert sites for campground {campground_id}: {sites_str}",
-                )
-            else:
-                bot.send_message(
-                    message.chat.id,
-                    f"No alert sites set for campground {campground_id} (all sites trigger alerts).",
-                )
-            return
-
-        # /alert <campground_id> <campsite_id> — toggle
-        if len(args) == 2:
-            try:
-                campground_id = int(args[0])
-                campsite_id = int(args[1])
-            except ValueError:
-                bot.send_message(message.chat.id, "Invalid ID(s). Both must be integers.")
-                return
-
-            with state.lock:
-                entry = next(
-                    (e for e in state.entries if e.get("campground_id") == campground_id),
-                    None,
-                )
-                if entry is None:
-                    bot.send_message(message.chat.id, f"Campground {campground_id} not found.")
-                    return
-
-                current = entry.get("alert_sites", [])
-                if campsite_id in current:
-                    current.remove(campsite_id)
-                    action = "Removed"
-                else:
-                    current.append(campsite_id)
-                    action = "Added"
-
-                if current:
-                    entry["alert_sites"] = current
-                else:
-                    entry.pop("alert_sites", None)
+                current = entry.get("alert", False)
+                new_val = not current
+                entry["alert"] = new_val
 
                 provider = entry.get("provider", "RecreationDotGov")
                 try:
-                    _update_alert_sites_yaml(state.config_path, provider, campground_id, current)
+                    _update_alert_yaml(state.config_path, provider, campground_id, new_val)
                 except Exception as exc:
                     logger.warning("Failed to write YAML: %s", exc)
 
-            sites_str = ", ".join(str(s) for s in current) if current else "none (all sites trigger alerts)"
+            status = "ON" if new_val else "OFF"
             bot.send_message(
                 message.chat.id,
-                f"{action} site {campsite_id} for campground {campground_id}.\n"
-                f"Current alert sites: {sites_str}",
+                f"Alerts for campground {campground_id}: {status}",
             )
             return
 
-        bot.send_message(message.chat.id, "Invalid usage. Send /alert for help.")
+        bot.send_message(message.chat.id, "Usage: /alert [campground_id]")
 
 
 def create_bot(token: str, state: ConfigState) -> telebot.TeleBot:
@@ -572,7 +508,7 @@ def create_bot(token: str, state: ConfigState) -> telebot.TeleBot:
             telebot.types.BotCommand("list", "Show monitored campgrounds"),
             telebot.types.BotCommand("add", "Add a campground to monitor"),
             telebot.types.BotCommand("remove", "Remove a monitored campground"),
-            telebot.types.BotCommand("alert", "Manage site-specific alerts"),
+            telebot.types.BotCommand("alert", "Toggle alerts for a campground"),
             telebot.types.BotCommand("status", "Show checker status"),
             telebot.types.BotCommand("help", "Show help message"),
         ]

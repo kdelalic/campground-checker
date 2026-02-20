@@ -11,7 +11,6 @@ from camply.containers import AvailableCampsite, SearchWindow
 from .config import compute_date_range, load_config, parse_args, resolve_day_filter
 from .notify import (
     build_telegram_message,
-    filter_by_alert_sites,
     filter_new_results,
     get_telegram_creds,
     result_keys,
@@ -238,17 +237,16 @@ def main() -> None:
             dashboard_path=dashboard_path,
         )
         if found_entries and tg_token and tg_chat_id:
-            alert_filtered = [
-                (entry, filtered)
+            alert_entries = [
+                (entry, results)
                 for entry, results in found_entries
-                for filtered in [filter_by_alert_sites(entry, results)]
-                if filtered
+                if entry.get("alert", False)
             ]
-            if alert_filtered:
-                msgs = build_telegram_message(alert_filtered, day_filter)
+            if alert_entries:
+                msgs = build_telegram_message(alert_entries, day_filter)
                 for msg in msgs:
                     send_telegram(tg_token, tg_chat_id, msg)
-                print(f"   \u2709 Telegram notification sent ({len(alert_filtered)} campground(s))")
+                print(f"   \u2709 Telegram notification sent ({len(alert_entries)} campground(s))")
 
         if dashboard_path:
             from .upload import get_r2_config, upload_to_r2

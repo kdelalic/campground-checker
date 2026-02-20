@@ -18,9 +18,9 @@
 #   campsite_id     - Specific site ID (int or list) to narrow the search
 #   nights          - Minimum consecutive nights required. Default: 1
 #   weekends_only   - true/false. Default: false
-#   alert_sites     - List of campsite IDs that trigger Telegram alerts.
-#                     When set, only these sites send notifications;
-#                     all sites still appear on the dashboard and terminal.
+#   alert           - true/false. Default: false
+#                     Set to true to enable Telegram alerts for this campground.
+#                     All campgrounds still appear on the dashboard and terminal.
 #
 # Date range is set via CLI flags, not here:
 #   --start / --end       Override the search window
@@ -79,7 +79,7 @@ campsites:
 
     - campground_id: 234429
       campsite_id: 7834              # Pin to one specific site
-      alert_sites: [7834]            # Only alert on this site via Telegram
+      alert: true                    # Enable Telegram alerts for this campground
       nights: 1
 
   # ── Yellowstone ─────────────────────────────────────────────────────────────
