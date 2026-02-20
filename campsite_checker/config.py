@@ -86,6 +86,25 @@ def parse_args() -> argparse.Namespace:
         metavar="ID",
         help="Telegram chat ID (or set TELEGRAM_CHAT_ID env var, or telegram.chat_id in config)",
     )
+    parser.add_argument(
+        "--dashboard",
+        metavar="FILE",
+        nargs="?",
+        const="dashboard.html",
+        default=None,
+        help="Generate HTML dashboard (default path: dashboard.html)",
+    )
+    parser.add_argument(
+        "--no-dashboard",
+        action="store_true",
+        default=False,
+        help="Disable dashboard generation even if configured in YAML",
+    )
+    parser.add_argument(
+        "--r2-bucket",
+        metavar="BUCKET",
+        help="Cloudflare R2 bucket name for dashboard upload",
+    )
     return parser.parse_args()
 
 
@@ -140,6 +159,13 @@ def load_config(path: str) -> Tuple[List[dict], dict]:
                 f"Error in '{label}': unknown provider '{provider}'. "
                 f"Valid providers: {', '.join(PROVIDER_MAP)}"
             )
+        alert_sites = entry.get("alert_sites")
+        if alert_sites is not None:
+            if not isinstance(alert_sites, list):
+                sys.exit(f"Error in '{label}': alert_sites must be a list of campsite IDs")
+            for sid in alert_sites:
+                if not isinstance(sid, (int, str)):
+                    sys.exit(f"Error in '{label}': alert_sites entries must be integers or strings")
 
     return entries, raw
 

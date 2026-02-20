@@ -20,6 +20,9 @@ python check_campsites.py --all-days
 python check_campsites.py --nights 2
 python check_campsites.py --forever --interval 10
 python check_campsites.py --verbose   # show camply internal logs
+python check_campsites.py --dashboard              # generate dashboard.html
+python check_campsites.py --dashboard /tmp/out.html # custom path
+python check_campsites.py --no-dashboard           # disable even if YAML enables it
 ```
 
 No test suite exists in this project.
@@ -34,8 +37,10 @@ The project is a thin wrapper around the [camply](https://github.com/juftin/camp
 - `campsite_checker/providers.py` — Maps provider name strings (`RecreationDotGov`, `Yellowstone`, `GoingToCamp`, `ReserveCalifornia`) to camply search classes; weekday name → integer mapping.
 - `campsite_checker/search.py` — Builds camply searcher objects from config entries (`build_searcher`) and runs all searches in parallel via `ThreadPoolExecutor` (`execute_searches`). Handles a provider-specific quirk: `ReserveCalifornia` requires a `recreation_area` positional arg even when only `campground_id` is given, so an empty list is passed in that case.
 - `campsite_checker/results.py` — Post-search filtering: excludes boat/hike-in sites, applies day-of-week filter, formats terminal output.
-- `campsite_checker/notify.py` — Telegram notification logic: credential resolution (CLI > env vars > YAML), deduplication via `result_keys`, sends HTML-formatted messages via Telegram Bot API.
-- `campsite_checker/runner.py` — Orchestrates single-run (`run_once`) and polling loop (`run_forever`). In `--forever` mode, persists sent notification keys to `.campsite_sent_keys.json` to avoid duplicate Telegram alerts across scans.
+- `campsite_checker/notify.py` — Telegram notification logic: credential resolution (CLI > env vars > YAML), deduplication via `result_keys`, `alert_sites` filtering (`filter_by_alert_sites`), sends HTML-formatted messages via Telegram Bot API.
+- `campsite_checker/dashboard.py` — Static HTML dashboard generation. Produces a self-contained HTML file with availability tables per campground, highlighting watched sites from `alert_sites`.
+- `campsite_checker/upload.py` — Optional Cloudflare R2 upload for the dashboard. Uses boto3 S3-compatible API. Credentials resolved via env vars or YAML `dashboard.r2` section.
+- `campsite_checker/runner.py` — Orchestrates single-run (`run_once`) and polling loop (`run_forever`). In `--forever` mode, persists sent notification keys to `.campsite_sent_keys.json` to avoid duplicate Telegram alerts across scans. Generates dashboard and uploads to R2 after each scan if configured.
 
 **Key design decisions:**
 
@@ -43,3 +48,5 @@ The project is a thin wrapper around the [camply](https://github.com/juftin/camp
 - Telegram deduplication in `--forever` mode: a key is `(facility_name, campsite_id, booking_date)`. Keys are persisted to disk and pruned of past dates on each load.
 - Day-of-week filtering (default: Saturday only) is applied in post-processing, not in the camply search itself.
 - Telegram credential priority: CLI flags > `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` env vars > `telegram.bot_token`/`telegram.chat_id` in YAML config.
+- Site-specific alerts: per-entry `alert_sites` list filters Telegram notifications to specific campsite IDs. Terminal output and dashboard still show all sites. Manageable via `/alert` bot command in `--forever` mode.
+- Dashboard: `--dashboard` flag or `dashboard.output_path` in YAML generates a static HTML file after each scan. Optional R2 upload via `dashboard.r2` config or `R2_*` env vars. `boto3` is required only for R2 upload (lazy import).

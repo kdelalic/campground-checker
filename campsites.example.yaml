@@ -18,6 +18,9 @@
 #   campsite_id     - Specific site ID (int or list) to narrow the search
 #   nights          - Minimum consecutive nights required. Default: 1
 #   weekends_only   - true/false. Default: false
+#   alert_sites     - List of campsite IDs that trigger Telegram alerts.
+#                     When set, only these sites send notifications;
+#                     all sites still appear on the dashboard and terminal.
 #
 # Date range is set via CLI flags, not here:
 #   --start / --end       Override the search window
@@ -34,6 +37,20 @@
 # telegram:
 #   bot_token: "123456789:ABCdefGHI..."
 #   chat_id: "987654321"
+
+# Dashboard (optional):
+#   Generates a static HTML dashboard after each scan.
+#   Use --dashboard on the CLI, or configure here:
+#
+# dashboard:
+#   output_path: "dashboard.html"
+#   r2:                                  # Upload to Cloudflare R2 (optional)
+#     account_id: "your_cf_account_id"
+#     access_key_id: "your_r2_key"
+#     secret_access_key: "your_r2_secret"
+#     bucket_name: "my-bucket"
+#     object_key: "index.html"
+#     custom_domain: "https://campsites.example.com"
 
 campsites:
 
@@ -62,6 +79,7 @@ campsites:
 
     - campground_id: 234429
       campsite_id: 7834              # Pin to one specific site
+      alert_sites: [7834]            # Only alert on this site via Telegram
       nights: 1
 
   # ── Yellowstone ─────────────────────────────────────────────────────────────

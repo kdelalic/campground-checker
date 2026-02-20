@@ -11,6 +11,7 @@ from camply.containers import AvailableCampsite, SearchWindow
 from .config import compute_date_range, load_config, parse_args, resolve_day_filter
 from .notify import (
     build_telegram_message,
+    filter_by_alert_sites,
     filter_new_results,
     get_telegram_creds,
     result_keys,
@@ -60,6 +61,7 @@ def run_once(
     tg_token: Optional[str],
     tg_chat_id: Optional[str],
     scan_num: Optional[int] = None,
+    dashboard_path: Optional[str] = None,
 ) -> Tuple[Set[Tuple[str, int, date]], List[Tuple[dict, List[AvailableCampsite]]]]:
     """Run one scan. Returns (current_keys, found_entries)."""
     start_dt, end_dt = compute_date_range(args)
@@ -94,6 +96,12 @@ def run_once(
 
     for error in errors:
         print(error, file=sys.stderr)
+
+    if dashboard_path:
+        from .dashboard import generate_dashboard
+
+        generate_dashboard(found_entries, day_filter, dashboard_path)
+        print(f"   Dashboard written to {dashboard_path}")
 
     return current_keys, found_entries
 
@@ -137,6 +145,7 @@ def run_forever(
     day_filter: Optional[Set[int]],
     tg_token: Optional[str],
     tg_chat_id: Optional[str],
+    dashboard_path: Optional[str] = None,
 ) -> None:
     from .bot import ConfigState, create_bot, start_bot_polling
 
@@ -149,6 +158,13 @@ def run_forever(
 
     prev_keys = _load_sent_keys(SENT_KEYS_FILE)
     scan_num = 0
+
+    r2_config = None
+    if dashboard_path:
+        from .upload import get_r2_config
+
+        r2_config = get_r2_config(args, raw_config)
+
     try:
         while True:
             scan_num += 1
@@ -157,8 +173,16 @@ def run_forever(
                 current_entries = list(state.entries)
 
             current_keys, found_entries = run_once(
-                current_entries, args, day_filter, tg_token, tg_chat_id, scan_num
+                current_entries, args, day_filter, tg_token, tg_chat_id, scan_num,
+                dashboard_path=dashboard_path,
             )
+
+            if dashboard_path and r2_config:
+                from .upload import upload_to_r2
+
+                url = upload_to_r2(dashboard_path, r2_config)
+                if url:
+                    print(f"   Dashboard uploaded to {url}")
 
             new_entries = [
                 (entry, new_results)
@@ -199,14 +223,38 @@ def main() -> None:
             "Error: both --telegram-token and --telegram-chat-id (or both env vars) are required"
         )
 
+    from .dashboard import get_dashboard_path
+
+    dashboard_path = get_dashboard_path(args, config)
+
     if args.forever:
-        run_forever(entries, config, args.config, args, day_filter, tg_token, tg_chat_id)
+        run_forever(
+            entries, config, args.config, args, day_filter, tg_token, tg_chat_id,
+            dashboard_path=dashboard_path,
+        )
     else:
         current_keys, found_entries = run_once(
-            entries, args, day_filter, tg_token, tg_chat_id
+            entries, args, day_filter, tg_token, tg_chat_id,
+            dashboard_path=dashboard_path,
         )
         if found_entries and tg_token and tg_chat_id:
-            msgs = build_telegram_message(found_entries, day_filter)
-            for msg in msgs:
-                send_telegram(tg_token, tg_chat_id, msg)
-            print(f"   \u2709 Telegram notification sent ({len(found_entries)} campground(s))")
+            alert_filtered = [
+                (entry, filtered)
+                for entry, results in found_entries
+                for filtered in [filter_by_alert_sites(entry, results)]
+                if filtered
+            ]
+            if alert_filtered:
+                msgs = build_telegram_message(alert_filtered, day_filter)
+                for msg in msgs:
+                    send_telegram(tg_token, tg_chat_id, msg)
+                print(f"   \u2709 Telegram notification sent ({len(alert_filtered)} campground(s))")
+
+        if dashboard_path:
+            from .upload import get_r2_config, upload_to_r2
+
+            r2_config = get_r2_config(args, config)
+            if r2_config:
+                url = upload_to_r2(dashboard_path, r2_config)
+                if url:
+                    print(f"   Dashboard uploaded to {url}")
