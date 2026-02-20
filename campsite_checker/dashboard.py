@@ -1,7 +1,7 @@
 import html
 from collections import defaultdict
 from datetime import date, datetime
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
 
