@@ -68,7 +68,7 @@ def search_entry(
     label = entry.get("campground_id") or entry.get("recreation_area") or "unknown"
     try:
         searcher = build_searcher(entry, search_window, args)
-    except TypeError as exc:
+    except Exception as exc:
         return entry, [], f"[ERROR] Could not create searcher for campground {label}: {exc}"
     results, error = run_search(entry, searcher, verbose=args.verbose)
     return entry, results, error
