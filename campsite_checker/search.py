@@ -66,15 +66,19 @@ def run_search(
 
 def search_entry(
     entry: dict, search_window: SearchWindow, args
-) -> Tuple[dict, List[AvailableCampsite], Optional[str]]:
-    """Build and run a single campsite search. Safe to call from a thread."""
+) -> Tuple[dict, List[AvailableCampsite], Optional[str], float]:
+    """Build and run a single campsite search. Safe to call from a thread.
+
+    Returns (entry, results, error, elapsed_seconds).
+    """
+    start = time.monotonic()
     label = entry.get("campground_id") or entry.get("recreation_area") or "unknown"
     try:
         searcher = build_searcher(entry, search_window, args)
     except Exception as exc:
-        return entry, [], f"[ERROR] Could not create searcher for campground {label}: {exc}"
+        return entry, [], f"[ERROR] Could not create searcher for campground {label}: {exc}", time.monotonic() - start
     results, error = run_search(entry, searcher, verbose=args.verbose)
-    return entry, results, error
+    return entry, results, error, time.monotonic() - start
 
 
 def execute_searches(
@@ -94,22 +98,20 @@ def execute_searches(
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         search_delay = getattr(args, 'search_delay', 0.0)
         future_to_index = {}
-        future_start_times = {}
         for i, entry in enumerate(entries):
             future = executor.submit(search_entry, entry, search_window, args)
             future_to_index[future] = i
-            future_start_times[future] = time.monotonic()
             if search_delay > 0 and i < len(entries) - 1:
                 time.sleep(search_delay)
         for future in concurrent.futures.as_completed(future_to_index):
             i = future_to_index[future]
-            elapsed = time.monotonic() - future_start_times[future]
             try:
-                entry, results, error = future.result()
+                entry, results, error, elapsed = future.result()
             except Exception as exc:
                 entry = entries[i]
                 results = []
                 error = f"[ERROR] Unexpected crash during search: {exc}"
+                elapsed = 0.0
 
             name = get_facility_name(results) if results else f"campground {entry.get('campground_id', '?')}"
             provider = entry.get("provider", "RecreationDotGov")
