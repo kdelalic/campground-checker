@@ -33,11 +33,18 @@ def build_calendar_html(all_availabilities: Dict[date, int]) -> str:
     cal = calendar.Calendar(firstweekday=6) # Sunday start
     
     months_html = []
+    month_options = []
     curr_year = min_date.year
     curr_month = min_date.month
     
+    month_idx = 0
     while (curr_year, curr_month) <= (max_date.year, max_date.month):
         month_name = calendar.month_name[curr_month]
+        month_id = f"cal-month-{month_idx}"
+        month_label = f"{month_name} {curr_year}"
+        
+        month_options.append(f'<option value="{month_id}">{month_label}</option>')
+        
         weeks = cal.monthdatescalendar(curr_year, curr_month)
         
         rows = []
@@ -49,14 +56,14 @@ def build_calendar_html(all_availabilities: Dict[date, int]) -> str:
                 else:
                     count = all_availabilities.get(d, 0)
                     if count > 0:
-                        cells.append(f'<td class="calendar-available" title="{count} site(s) available">{d.day}</td>')
+                        cells.append(f'<td class="calendar-available" data-date="{d.isoformat()}" title="{count} site(s) available">{d.day}</td>')
                     else:
                         cells.append(f'<td class="calendar-day">{d.day}</td>')
             rows.append(f"<tr>{''.join(cells)}</tr>")
             
+        display_style = 'style="display: none;"' if month_idx > 0 else ''
         month_html = (
-            f'<div class="calendar-month">'
-            f'<h4>{month_name} {curr_year}</h4>'
+            f'<div class="calendar-month" id="{month_id}" {display_style}>'
             f'<table class="calendar-table">'
             f'<thead><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody>'
@@ -69,8 +76,16 @@ def build_calendar_html(all_availabilities: Dict[date, int]) -> str:
         if curr_month > 12:
             curr_month = 1
             curr_year += 1
+        month_idx += 1
             
-    return f'<div class="calendar-container">{"".join(months_html)}</div>\n'
+    header_html = (
+        f'<div class="calendar-controls">'
+        f'<select id="month-selector">{"".join(month_options)}</select>'
+        f'<button id="clear-date-filter" style="display: none;">Clear Filter</button>'
+        f'</div>'
+    )
+            
+    return f'<div class="calendar-container">{header_html}{"".join(months_html)}</div>\n'
 
 
 def build_dashboard_html(
@@ -110,7 +125,7 @@ def build_dashboard_html(
             count = len(by_date[d])
             date_str = html.escape(d.strftime("%a, %b %-d"))
             rows_html.append(
-                f"<tr>"
+                f"<tr data-date=\"{d.isoformat()}\">"
                 f"<td>{date_str}</td>"
                 f"<td><span class=\"available-badge\">{count} site(s)</span></td>"
                 f"</tr>"
@@ -199,24 +214,53 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
 
 .calendar-container {{
   display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 20px;
+  padding: 24px;
   margin-bottom: 32px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}}
+.calendar-controls {{
+  display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}}
+.calendar-controls select {{
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  font-size: 1rem;
+  background: #fff;
+  cursor: pointer;
+  outline: none;
+}}
+.calendar-controls select:focus {{
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}}
+.calendar-controls button {{
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--primary);
+  background: #fff;
+  color: var(--primary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}}
+.calendar-controls button:hover {{
+  background: var(--primary);
+  color: #fff;
 }}
 .calendar-month {{
-  min-width: 220px;
-}}
-.calendar-month h4 {{
-  margin: 0 0 12px 0;
-  text-align: center;
-  color: #334155;
-  font-size: 1.05rem;
+  width: 100%;
+  max-width: 400px;
 }}
 .calendar-table {{
   width: 100%;
@@ -244,8 +288,15 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
   color: #fff !important;
   font-weight: 600;
   border-radius: 6px;
-  cursor: help;
+  cursor: pointer;
   font-size: 0.9rem;
+  transition: transform 0.1s, box-shadow 0.1s;
+}}
+.calendar-available:hover {{
+  transform: scale(1.1);
+}}
+.calendar-available.selected-date {{
+  box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 4px var(--primary);
 }}
 
 .card{{
@@ -306,6 +357,71 @@ tr:last-child td {{border-bottom:none;}}
 {nav_content}
 {body_content}
 </div>
+<script>
+document.addEventListener("DOMContentLoaded", () => {{
+  const monthSelector = document.getElementById("month-selector");
+  const clearBtn = document.getElementById("clear-date-filter");
+  const allMonths = document.querySelectorAll(".calendar-month");
+  const availCells = document.querySelectorAll(".calendar-available");
+  const allCards = document.querySelectorAll(".card");
+  
+  if (monthSelector) {{
+    monthSelector.addEventListener("change", (e) => {{
+      allMonths.forEach(m => m.style.display = "none");
+      const selectedMonth = document.getElementById(e.target.value);
+      if (selectedMonth) {{
+        selectedMonth.style.display = "block";
+      }}
+    }});
+  }}
+  
+  function filterByDate(dateStr) {{
+    allCards.forEach(card => {{
+      const rows = card.querySelectorAll("tbody tr");
+      let cardHasMatch = false;
+      rows.forEach(row => {{
+        if (!dateStr || row.getAttribute("data-date") === dateStr) {{
+          row.style.display = "";
+          cardHasMatch = true;
+        }} else {{
+          row.style.display = "none";
+        }}
+      }});
+      if (cardHasMatch) {{
+        card.style.display = "";
+      }} else {{
+        card.style.display = "none";
+      }}
+    }});
+    
+    availCells.forEach(cell => {{
+      if (dateStr && cell.getAttribute("data-date") === dateStr) {{
+        cell.classList.add("selected-date");
+      }} else {{
+        cell.classList.remove("selected-date");
+      }}
+    }});
+    
+    if (dateStr) {{
+      if(clearBtn) clearBtn.style.display = "inline-block";
+    }} else {{
+      if(clearBtn) clearBtn.style.display = "none";
+    }}
+  }}
+  
+  availCells.forEach(cell => {{
+    cell.addEventListener("click", () => {{
+      filterByDate(cell.getAttribute("data-date"));
+    }});
+  }});
+  
+  if (clearBtn) {{
+    clearBtn.addEventListener("click", () => {{
+      filterByDate(null);
+    }});
+  }}
+}});
+</script>
 </body>
 </html>"""
 
