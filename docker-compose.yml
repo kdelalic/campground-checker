@@ -1,0 +1,8 @@
+services:
+  campsite-checker:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./campsites.yaml:/app/campsites.yaml
+    ports:
+      - "8000:8000"
