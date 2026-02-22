@@ -153,6 +153,7 @@ def run_forever(
     dashboard_path: Optional[str] = None,
 ) -> None:
     from .bot import ConfigState, create_bot, start_bot_polling
+    from .server import start_healthcheck_server
 
     state = ConfigState(entries, raw_config, config_path, tg_chat_id or "")
 
@@ -160,6 +161,8 @@ def run_forever(
         bot = create_bot(tg_token, state)
         start_bot_polling(bot)
         print("   Telegram bot commands active (/help for commands)")
+
+    start_healthcheck_server()
 
     prev_keys = _load_sent_keys(SENT_KEYS_FILE)
     scan_num = 0
