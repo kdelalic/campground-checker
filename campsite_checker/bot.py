@@ -1,10 +1,10 @@
 import logging
-import re
 import threading
 from typing import Dict, List, Optional, Tuple
 
 import telebot
 
+from . import yaml_editor
 from .providers import PROVIDER_MAP
 
 # Maps provider name to the camply provider class used for metadata lookups.
@@ -72,95 +72,6 @@ def _parse_add_remove_args(args: list) -> Tuple[Optional[str], Optional[int]]:
     return None, None
 
 
-def _append_to_yaml(
-    config_path: str, provider: str, campground_id: int, name: Optional[str] = None
-) -> None:
-    """Append a campground entry to the YAML file, preserving comments."""
-    with open(config_path) as f:
-        lines = f.readlines()
-
-    comment = f" # {name}" if name else ""
-    new_line = f"    - campground_id: {campground_id}{comment}\n"
-
-    # Find the provider section and its last entry
-    in_provider = False
-    last_entry_idx = None
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-        # Provider header like "  RecreationDotGov:"
-        if re.match(r"^  \S+:$", stripped):
-            if stripped == f"  {provider}:":
-                in_provider = True
-            elif in_provider:
-                # Hit the next provider section, stop
-                break
-        elif in_provider and stripped.startswith("    - campground_id:"):
-            last_entry_idx = i
-
-    if last_entry_idx is not None:
-        lines.insert(last_entry_idx + 1, new_line)
-    else:
-        # Provider section doesn't exist yet — append at end of file
-        if lines and not lines[-1].endswith("\n"):
-            lines[-1] += "\n"
-        lines.append(f"\n  {provider}:\n")
-        lines.append(new_line)
-
-    with open(config_path, "w") as f:
-        f.writelines(lines)
-
-
-def _remove_from_yaml(config_path: str, provider: str, campground_id: int) -> None:
-    """Remove a campground entry from the YAML file, preserving comments."""
-    with open(config_path) as f:
-        lines = f.readlines()
-
-    in_provider = False
-    remove_idx = None
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-        if re.match(r"^  \S+:$", stripped):
-            if stripped == f"  {provider}:":
-                in_provider = True
-            elif in_provider:
-                break
-        elif in_provider and re.match(
-            rf"^\s+- campground_id:\s+{campground_id}\b", stripped
-        ):
-            remove_idx = i
-            break
-
-    if remove_idx is not None:
-        del lines[remove_idx]
-        with open(config_path, "w") as f:
-            f.writelines(lines)
-
-
-def _parse_yaml_comments(config_path: str) -> dict:
-    """Parse inline comments from the YAML file to get human-readable names.
-
-    Returns dict mapping (provider, campground_id) -> comment string.
-    """
-    names = {}
-    current_provider = None
-    try:
-        with open(config_path) as f:
-            for line in f:
-                stripped = line.rstrip()
-                # Provider header like "  RecreationDotGov:"
-                if re.match(r"^  \S+:\s*$", stripped):
-                    current_provider = stripped.strip().rstrip(":")
-                elif current_provider and "#" in line:
-                    m = re.match(r"\s+- campground_id:\s+(\d+)\s+#\s*(.+)", stripped)
-                    if m:
-                        cid = int(m.group(1))
-                        comment = m.group(2).strip()
-                        names[(current_provider, cid)] = comment
-    except Exception:
-        pass
-    return names
-
-
 def _lookup_campground_names(
     entries: List[dict],
 ) -> Dict[Tuple[str, int], str]:
@@ -196,74 +107,6 @@ def _lookup_campground_names(
     return names
 
 
-def _update_yaml_comment(
-    config_path: str, provider: str, campground_id: int, name: str
-) -> None:
-    """Add an inline comment to an existing campground entry in the YAML file."""
-    with open(config_path) as f:
-        lines = f.readlines()
-
-    in_provider = False
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-        if re.match(r"^  \S+:\s*$", stripped):
-            in_provider = stripped.strip().rstrip(":") == provider
-        elif in_provider and re.match(
-            rf"^\s+- campground_id:\s+{campground_id}\s*$", stripped
-        ):
-            # Line has no comment yet — append one
-            lines[i] = stripped + f" # {name}\n"
-            break
-    else:
-        return  # not found
-
-    with open(config_path, "w") as f:
-        f.writelines(lines)
-
-
-def _update_alert_yaml(
-    config_path: str, provider: str, campground_id: int, alert: bool
-) -> None:
-    """Update or remove the alert field for a campground entry in the YAML file."""
-    with open(config_path) as f:
-        lines = f.readlines()
-
-    in_provider = False
-    entry_idx = None
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-        if re.match(r"^  \S+:\s*$", stripped):
-            in_provider = stripped.strip().rstrip(":") == provider
-        elif in_provider and re.match(
-            rf"^\s+- campground_id:\s+{campground_id}\b", stripped
-        ):
-            entry_idx = i
-            break
-
-    if entry_idx is None:
-        return
-
-    # Check if there's already an alert line right after the entry
-    alert_line_idx = None
-    if entry_idx + 1 < len(lines):
-        next_line = lines[entry_idx + 1].rstrip()
-        if re.match(r"^\s+alert:", next_line):
-            alert_line_idx = entry_idx + 1
-
-    if not alert:
-        new_line = "      alert: false\n"
-        if alert_line_idx is not None:
-            lines[alert_line_idx] = new_line
-        else:
-            lines.insert(entry_idx + 1, new_line)
-    elif alert_line_idx is not None:
-        # alert: true is the default — just remove the line
-        del lines[alert_line_idx]
-
-    with open(config_path, "w") as f:
-        f.writelines(lines)
-
-
 def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
     """Register all bot command handlers."""
 
@@ -294,7 +137,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             bot.send_message(message.chat.id, "No campgrounds being monitored.")
             return
 
-        names = _parse_yaml_comments(config_path)
+        names = yaml_editor.parse_yaml_comments(config_path)
 
         # Find entries missing names and look them up from the provider API.
         missing = [
@@ -310,7 +153,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             # Backfill resolved names as YAML comments for next time.
             for (prov, cid), rname in resolved.items():
                 try:
-                    _update_yaml_comment(config_path, prov, cid, rname)
+                    yaml_editor.update_campground_comment(config_path, prov, cid, rname)
                 except Exception:
                     pass
 
@@ -366,17 +209,16 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             state.entries.append(new_entry)
             cs = state.raw_config.setdefault("campsites", {})
             cs.setdefault(provider, []).append({"campground_id": campground_id})
+            config_path = state.config_path
 
-            # Look up the human-readable name from the provider API.
-            resolved = _lookup_campground_names([new_entry])
-            name = resolved.get((provider, campground_id))
+        # Network I/O and file I/O outside the lock
+        resolved = _lookup_campground_names([new_entry])
+        name = resolved.get((provider, campground_id))
 
-            try:
-                _append_to_yaml(
-                    state.config_path, provider, campground_id, name=name
-                )
-            except Exception as exc:
-                logger.warning("Failed to write YAML: %s", exc)
+        try:
+            yaml_editor.append_campground(config_path, provider, campground_id, name=name)
+        except Exception as exc:
+            logger.warning("Failed to write YAML: %s", exc)
 
         label = f"{name} ({campground_id})" if name else str(campground_id)
         bot.send_message(
@@ -421,10 +263,13 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             state.raw_config["campsites"][provider] = [
                 e for e in prov_list if e.get("campground_id") != campground_id
             ]
-            try:
-                _remove_from_yaml(state.config_path, provider, campground_id)
-            except Exception as exc:
-                logger.warning("Failed to write YAML: %s", exc)
+            config_path = state.config_path
+
+        # File I/O outside the lock
+        try:
+            yaml_editor.remove_campground(config_path, provider, campground_id)
+        except Exception as exc:
+            logger.warning("Failed to write YAML: %s", exc)
 
         bot.send_message(
             message.chat.id,
@@ -453,7 +298,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             with state.lock:
                 entries = list(state.entries)
                 config_path = state.config_path
-            names = _parse_yaml_comments(config_path)
+            names = yaml_editor.parse_yaml_comments(config_path)
             lines = ["<b>Alert status:</b>"]
             for e in entries:
                 cid = e.get("campground_id", "?")
@@ -489,10 +334,13 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
                 entry["alert"] = new_val
 
                 provider = entry.get("provider", "RecreationDotGov")
-                try:
-                    _update_alert_yaml(state.config_path, provider, campground_id, new_val)
-                except Exception as exc:
-                    logger.warning("Failed to write YAML: %s", exc)
+                config_path = state.config_path
+
+            # File I/O outside the lock
+            try:
+                yaml_editor.update_alert_field(config_path, provider, campground_id, new_val)
+            except Exception as exc:
+                logger.warning("Failed to write YAML: %s", exc)
 
             status = "ON" if new_val else "OFF"
             bot.send_message(

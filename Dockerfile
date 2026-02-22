@@ -28,4 +28,9 @@ COPY . .
 
 RUN chmod +x check_campsites.py
 
-CMD ["python", "check_campsites.py", "--forever", "--dashboard", "--workers", "10"]
+# Tunable via Railway / docker run -e WORKERS=2
+ENV WORKERS="10"
+ENV INTERVAL="5"
+ENV SEARCH_DELAY="0"
+
+CMD ["sh", "-c", "python check_campsites.py --forever --dashboard --workers $WORKERS --interval $INTERVAL --search-delay $SEARCH_DELAY"]

@@ -35,7 +35,7 @@ docker build -t campsite-checker .
 docker run -v $(pwd)/campsites.yaml:/app/campsites.yaml campsite-checker
 ```
 
-The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim.
+The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim. Runtime tunables via env vars: `WORKERS` (default 10), `INTERVAL` (default 5), `SEARCH_DELAY` (default 0). Set `SENT_KEYS_PATH` to persist dedup keys across container restarts (e.g. a mounted volume).
 
 ## Finding Campground IDs
 
@@ -59,10 +59,12 @@ The project is a thin wrapper around the [camply](https://github.com/juftin/camp
 - `campsite_checker/search.py` — Builds camply searcher objects from config entries (`build_searcher`) and runs all searches in parallel via `ThreadPoolExecutor` (`execute_searches`). Handles a provider-specific quirk: `ReserveCalifornia` requires a `recreation_area` positional arg even when only `campground_id` is given, so an empty list is passed in that case.
 - `campsite_checker/results.py` — Post-search filtering: excludes boat/hike-in sites, applies day-of-week filter, formats terminal output.
 - `campsite_checker/notify.py` — Telegram notification logic: credential resolution (CLI > env vars > YAML), deduplication via `result_keys`, per-campground alert filtering, sends HTML-formatted messages via Telegram Bot API.
-- `campsite_checker/bot.py` — Telegram bot command handlers (`/list`, `/add`, `/remove`, `/alert`, `/status`, `/help`). `ConfigState` holds thread-safe shared state (entries, raw config, config path) mutated live by bot commands. YAML helper functions (`_append_to_yaml`, `_remove_from_yaml`, `_update_alert_yaml`) persist changes while preserving comments. Only active in `--forever` mode when Telegram credentials are set.
+- `campsite_checker/yaml_editor.py` — Round-trip YAML editing via `ruamel.yaml`. Preserves comments and formatting when adding/removing campgrounds or toggling alerts. Used by `bot.py`.
+- `campsite_checker/bot.py` — Telegram bot command handlers (`/list`, `/add`, `/remove`, `/alert`, `/status`, `/help`). `ConfigState` holds thread-safe shared state (entries, raw config, config path) mutated live by bot commands. Lock is held only for in-memory mutations; file I/O and network calls happen outside the lock. Only active in `--forever` mode when Telegram credentials are set.
 - `campsite_checker/dashboard.py` — Static HTML dashboard generation. Produces a self-contained HTML file with availability tables per campground.
 - `campsite_checker/upload.py` — Optional Cloudflare R2 upload for the dashboard. Uses boto3 S3-compatible API. Credentials resolved via env vars or YAML `dashboard.r2` section.
-- `campsite_checker/runner.py` — Orchestrates single-run (`run_once`) and polling loop (`run_forever`). In `--forever` mode, individual scan failures are caught and logged without stopping the loop. Persists sent notification keys to `.campsite_sent_keys.json` to avoid duplicate Telegram alerts across scans. Generates dashboard and uploads to R2 after each scan if configured.
+- `campsite_checker/server.py` — Health check HTTP server. Returns JSON with scan count, error count, last scan time, uptime. Returns 503 if the scanner appears stuck. Runs on `PORT` env var (default 8000).
+- `campsite_checker/runner.py` — Orchestrates single-run (`run_once`) and polling loop (`run_forever`). In `--forever` mode, individual scan failures are caught and logged without stopping the loop. Persists sent notification keys to `SENT_KEYS_PATH` (default `.campsite_sent_keys.json`) to avoid duplicate Telegram alerts across scans. Telegram sends use `_send_notifications()` helper with retry logic. Generates dashboard and uploads to R2 after each scan if configured.
 
 **Key design decisions:**
 

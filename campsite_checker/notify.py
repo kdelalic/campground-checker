@@ -1,7 +1,8 @@
 import html
 import json
+import logging
 import os
-import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import date
@@ -10,6 +11,8 @@ from typing import FrozenSet, List, Optional, Set, Tuple
 from camply.containers import AvailableCampsite
 
 from .results import filter_results, get_facility_name, group_results
+
+logger = logging.getLogger(__name__)
 
 
 def get_telegram_creds(
@@ -30,22 +33,38 @@ def get_telegram_creds(
     return token, str(chat_id) if chat_id is not None else None
 
 
-def send_telegram(token: str, chat_id: str, text: str) -> None:
-    """Send a message via the Telegram Bot API (HTML parse mode)."""
+def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> None:
+    """Send a message via the Telegram Bot API (HTML parse mode).
+
+    Retries on rate-limiting (HTTP 429) and transient network errors.
+    """
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "HTML", "link_preview_options": {"is_disabled": True}}).encode()
-    req = urllib.request.Request(
-        url, data=payload, headers={"Content-Type": "application/json"}
-    )
-    try:
-        urllib.request.urlopen(req, timeout=10)
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        print(f"  [WARNING] Telegram notification failed: {exc}", file=sys.stderr)
-        print(f"  [DEBUG] Response body: {body}", file=sys.stderr)
-        print(f"  [DEBUG] Sent payload: {payload.decode()}", file=sys.stderr)
-    except Exception as exc:
-        print(f"  [WARNING] Telegram notification failed: {exc}", file=sys.stderr)
+
+    for attempt in range(max_retries):
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}
+        )
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            return
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < max_retries - 1:
+                delay = 2 ** attempt
+                logger.warning("Telegram rate-limited, retrying in %ds...", delay)
+                time.sleep(delay)
+                continue
+            body = exc.read().decode("utf-8", errors="replace")
+            logger.warning("Telegram notification failed: %s", exc)
+            logger.debug("Response body: %s", body)
+            return  # Non-retryable HTTP error
+        except Exception as exc:
+            if attempt < max_retries - 1:
+                delay = 2 ** attempt
+                logger.warning("Telegram send failed, retrying in %ds: %s", delay, exc)
+                time.sleep(delay)
+                continue
+            logger.warning("Telegram notification failed after %d attempts: %s", max_retries, exc)
 
 
 _MAX_TG_LEN = 4096

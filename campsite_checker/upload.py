@@ -1,6 +1,8 @@
+import logging
 import os
-import sys
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def get_r2_config(args, config: dict) -> Optional[dict]:
@@ -44,10 +46,7 @@ def upload_to_r2(file_path: str, r2_config: dict) -> Optional[str]:
     try:
         import boto3
     except ImportError:
-        print(
-            "  [WARNING] boto3 is required for R2 upload: pip install boto3",
-            file=sys.stderr,
-        )
+        logger.warning("boto3 is required for R2 upload: pip install boto3")
         return None
 
     endpoint_url = f"https://{r2_config['account_id']}.r2.cloudflarestorage.com"
@@ -76,5 +75,5 @@ def upload_to_r2(file_path: str, r2_config: dict) -> Optional[str]:
         return None
 
     except Exception as exc:
-        print(f"  [WARNING] R2 upload failed: {exc}", file=sys.stderr)
+        logger.warning("R2 upload failed: %s", exc)
         return None

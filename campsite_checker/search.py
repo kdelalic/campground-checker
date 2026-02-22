@@ -1,6 +1,6 @@
 import concurrent.futures
 import inspect
-import sys
+import logging
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -8,6 +8,8 @@ from camply.containers import AvailableCampsite, SearchWindow
 
 from .providers import PROVIDER_DISPLAY, PROVIDER_MAP
 from .results import get_facility_name
+
+logger = logging.getLogger(__name__)
 
 
 def build_searcher(entry: dict, search_window: SearchWindow, args):
@@ -83,8 +85,7 @@ def execute_searches(
 
     # Limit max_workers to avoid OOM on smaller container instances
     max_workers = min(getattr(args, 'workers', 2), len(entries))
-    print(f"   \u23f3 Starting {len(entries)} searches (parallelism: {max_workers})...")
-    sys.stdout.flush()
+    logger.info("\u23f3 Starting %d searches (parallelism: %d)...", len(entries), max_workers)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         search_delay = getattr(args, 'search_delay', 0.0)
@@ -107,10 +108,9 @@ def execute_searches(
             provider = entry.get("provider", "RecreationDotGov")
             provider_label = PROVIDER_DISPLAY.get(provider, provider.lower())
             suffix = " [ERROR]" if error and error.startswith("[ERROR]") else ""
-            print(f"   \u21b3 {name} ({provider_label}){suffix}")
+            logger.info("\u21b3 %s (%s)%s", name, provider_label, suffix)
             if error and error.startswith("[WARNING]"):
-                 print(f"     {error.strip()}")
-            sys.stdout.flush()
+                logger.warning(error.strip())
             results_by_index[i] = (entry, results, error)
 
     return results_by_index

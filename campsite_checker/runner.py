@@ -1,6 +1,7 @@
 import gc
 import json
 import logging
+import os
 import sys
 import time
 from datetime import date, datetime, timedelta
@@ -22,9 +23,14 @@ from .results import count_matching_dates, format_results
 from .search import execute_searches
 
 logging.basicConfig(
-    level=logging.WARNING,
-    format="%(levelname)s: %(message)s",
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
 )
+# Suppress camply's chatty logs unless --verbose is passed
+logging.getLogger("camply").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 def print_scan_header(
     entries: List[dict],
@@ -46,12 +52,11 @@ def print_scan_header(
     prefix = f"[scan #{scan_num}] " if scan_num is not None else ""
     timestamp = f" — {datetime.now().strftime('%H:%M:%S')}" if scan_num is not None else ""
 
-    print(
-        f"\U0001f3d5  {prefix}Checking {len(entries)} campgrounds "
-        f"for {day_label} availability{timestamp}"
+    logger.info(
+        "\U0001f3d5  %sChecking %d campgrounds for %s availability%s",
+        prefix, len(entries), day_label, timestamp,
     )
-    print(f"   {start_dt.date()} \u2192 {end_dt.date()} ({n_dates} dates)")
-    sys.stdout.flush()
+    logger.info("   %s \u2192 %s (%d dates)", start_dt.date(), end_dt.date(), n_dates)
 
 
 def run_once(
@@ -88,25 +93,25 @@ def run_once(
             found_entries.append((entry, results))
 
     if outputs:
-        print("\U0001f3d5  Campsite Availability Found!")
+        logger.info("\U0001f3d5  Campsite Availability Found!")
         for output in outputs:
-            print(output)
+            logger.info(output)
     else:
-        print("\U0001f3d5  No availability found.")
+        logger.info("\U0001f3d5  No availability found.")
 
     for error in errors:
-        print(error, file=sys.stderr)
+        logger.warning(error)
 
     if dashboard_path:
         from .dashboard import generate_dashboard
 
         generate_dashboard(found_entries, day_filter, dashboard_path)
-        print(f"   Dashboard written to {dashboard_path}")
+        logger.info("   Dashboard written to %s", dashboard_path)
 
     return current_keys, found_entries
 
 
-SENT_KEYS_FILE = Path(".campsite_sent_keys.json")
+SENT_KEYS_FILE = Path(os.environ.get("SENT_KEYS_PATH", ".campsite_sent_keys.json"))
 
 
 _SENT_KEYS_MAX_AGE_DAYS = 14  # Only keep keys for dates within this window
@@ -142,6 +147,46 @@ def _save_sent_keys(path: Path, keys: Set[Tuple[str, int, date]]) -> None:
     path.write_text(json.dumps(data))
 
 
+def _send_notifications(
+    found_entries: List[Tuple[dict, List[AvailableCampsite]]],
+    day_filter: Optional[Set[int]],
+    tg_token: Optional[str],
+    tg_chat_id: Optional[str],
+    prev_keys: Optional[Set[Tuple[str, int, date]]] = None,
+) -> int:
+    """Filter and send Telegram notifications. Returns count of campgrounds notified.
+
+    When *prev_keys* is provided (forever mode), only new results are sent.
+    When *prev_keys* is None (single-run mode), all entries with alert=True are sent.
+    """
+    if not tg_token or not tg_chat_id or not found_entries:
+        return 0
+
+    if prev_keys is not None:
+        alert_entries = [
+            (entry, new_results)
+            for entry, results in found_entries
+            for new_results in [filter_new_results(entry, results, day_filter, prev_keys)]
+            if new_results
+        ]
+    else:
+        alert_entries = [
+            (entry, results)
+            for entry, results in found_entries
+            if entry.get("alert", False)
+        ]
+
+    if not alert_entries:
+        return 0
+
+    msgs = build_telegram_message(alert_entries, day_filter)
+    for msg in msgs:
+        send_telegram(tg_token, tg_chat_id, msg)
+
+    logger.info("\u2709 Telegram notification sent (%d campground(s))", len(alert_entries))
+    return len(alert_entries)
+
+
 def run_forever(
     entries: List[dict],
     raw_config: dict,
@@ -153,14 +198,16 @@ def run_forever(
     dashboard_path: Optional[str] = None,
 ) -> None:
     from .bot import ConfigState, create_bot, start_bot_polling
-    from .server import start_healthcheck_server
+    from .server import scan_status, start_healthcheck_server
+
+    scan_status.interval_minutes = args.interval
 
     state = ConfigState(entries, raw_config, config_path, tg_chat_id or "")
 
     if tg_token and tg_chat_id:
         bot = create_bot(tg_token, state)
         start_bot_polling(bot)
-        print("   Telegram bot commands active (/help for commands)")
+        logger.info("Telegram bot commands active (/help for commands)")
 
     start_healthcheck_server()
 
@@ -191,50 +238,39 @@ def run_forever(
 
                     url = upload_to_r2(dashboard_path, r2_config)
                     if url:
-                        print(f"   Dashboard uploaded to {url}")
+                        logger.info("Dashboard uploaded to %s", url)
 
-                new_entries = [
-                    (entry, new_results)
-                    for entry, results in found_entries
-                    for new_results in [filter_new_results(entry, results, day_filter, prev_keys)]
-                    if new_results
-                ]
-
-                if new_entries and tg_token and tg_chat_id:
-                    msgs = build_telegram_message(new_entries, day_filter)
-                    for msg in msgs:
-                        send_telegram(tg_token, tg_chat_id, msg)
-                    print(f"   \u2709 Telegram notification sent ({len(new_entries)} campground(s))")
+                _send_notifications(found_entries, day_filter, tg_token, tg_chat_id, prev_keys)
 
                 prev_keys |= current_keys
                 _save_sent_keys(SENT_KEYS_FILE, prev_keys)
 
+                scan_status.update(entries_count=len(current_entries))
+
                 # Free scan-local data before sleeping
-                del current_keys, found_entries, new_entries, current_entries
+                del current_keys, found_entries, current_entries
 
             except Exception as exc:
-                print(f"\n[ERROR] Scan #{scan_num} failed: {exc}", file=sys.stderr)
-                import traceback
-                traceback.print_exc()
+                logger.error("Scan #%d failed: %s", scan_num, exc, exc_info=True)
+                scan_status.update(entries_count=0, error=True)
 
             # Force garbage collection between scans so Python returns memory
             # to the OS.  camply searchers, HTTP sessions, and pandas DataFrames
             # from the just-finished scan become unreachable here.
             gc.collect()
 
-            print(f"\n   Next check in {args.interval} minute(s). Press Ctrl+C to stop.\n")
-            sys.stdout.flush()
+            logger.info("Next check in %d minute(s). Press Ctrl+C to stop.", args.interval)
             time.sleep(args.interval * 60)
 
     except KeyboardInterrupt:
-        print("\n\U0001f3d5  Stopped.")
+        logger.info("\U0001f3d5  Stopped.")
 
 
 def main() -> None:
     args = parse_args()
 
     if args.verbose:
-        logging.getLogger().setLevel(logging.INFO)
+        logging.getLogger("camply").setLevel(logging.INFO)
 
     entries, config = load_config(args.config)
     day_filter = resolve_day_filter(args)
@@ -259,17 +295,7 @@ def main() -> None:
             entries, args, day_filter, tg_token, tg_chat_id,
             dashboard_path=dashboard_path,
         )
-        if found_entries and tg_token and tg_chat_id:
-            alert_entries = [
-                (entry, results)
-                for entry, results in found_entries
-                if entry.get("alert", False)
-            ]
-            if alert_entries:
-                msgs = build_telegram_message(alert_entries, day_filter)
-                for msg in msgs:
-                    send_telegram(tg_token, tg_chat_id, msg)
-                print(f"   \u2709 Telegram notification sent ({len(alert_entries)} campground(s))")
+        _send_notifications(found_entries, day_filter, tg_token, tg_chat_id)
 
         if dashboard_path:
             from .upload import get_r2_config, upload_to_r2
@@ -278,4 +304,4 @@ def main() -> None:
             if r2_config:
                 url = upload_to_r2(dashboard_path, r2_config)
                 if url:
-                    print(f"   Dashboard uploaded to {url}")
+                    logger.info("Dashboard uploaded to %s", url)
