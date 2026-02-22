@@ -422,7 +422,7 @@ document.addEventListener("DOMContentLoaded", () => {{
           row.style.display = "none";
         }}
       }});
-      const navItem = document.querySelector(`.quick-nav li[data-ref="${card.id}"]`);
+      const navItem = document.querySelector(`.quick-nav li[data-ref="${{card.id}}"]`);
       if (cardHasMatch) {{
         card.style.display = "";
         if (navItem) navItem.style.display = "";
