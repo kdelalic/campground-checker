@@ -482,7 +482,8 @@ def generate_dashboard(
     day_filter: Optional[Set[int]],
     output_path: str,
 ) -> str:
-    """Build HTML, write to disk, return the path written."""
+    """Build HTML, write to disk, and immediately free the string."""
     content = build_dashboard_html(entries_with_results, day_filter)
     write_dashboard(content, output_path)
+    del content
     return output_path

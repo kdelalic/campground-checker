@@ -80,8 +80,10 @@ def execute_searches(
     """Run all searches in parallel. Returns results keyed by entry index."""
     results_by_index: Dict[int, Tuple[dict, List[AvailableCampsite], Optional[str]]] = {}
 
-    # Limit max_workers to avoid OOM on smaller container instances
-    max_workers = min(5, len(entries))
+    # Limit max_workers to reduce peak memory on small container instances.
+    # Each worker holds a camply searcher (with pandas DataFrames, HTTP sessions,
+    # etc.) so fewer concurrent workers = significantly lower peak RSS.
+    max_workers = min(2, len(entries))
     print(f"   \u23f3 Starting {len(entries)} searches (parallelism: {max_workers})...")
     sys.stdout.flush()
 
