@@ -1,8 +1,9 @@
+import gc
 import json
 import logging
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
@@ -108,17 +109,21 @@ def run_once(
 SENT_KEYS_FILE = Path(".campsite_sent_keys.json")
 
 
+_SENT_KEYS_MAX_AGE_DAYS = 14  # Only keep keys for dates within this window
+
+
 def _load_sent_keys(path: Path) -> Set[Tuple[str, int, date]]:
-    """Load previously sent keys from disk, pruning dates before today."""
+    """Load previously sent keys from disk, pruning stale entries."""
     if not path.exists():
         return set()
     try:
         data = json.loads(path.read_text())
         today = date.today()
+        cutoff = today + timedelta(days=_SENT_KEYS_MAX_AGE_DAYS)
         keys = set()
         for name, cid, d in data:
             dt = date.fromisoformat(d)
-            if dt >= today:
+            if today <= dt <= cutoff:
                 keys.add((name, cid, dt))
         return keys
     except (json.JSONDecodeError, ValueError, TypeError):
@@ -126,12 +131,13 @@ def _load_sent_keys(path: Path) -> Set[Tuple[str, int, date]]:
 
 
 def _save_sent_keys(path: Path, keys: Set[Tuple[str, int, date]]) -> None:
-    """Save sent keys to disk, pruning dates before today."""
+    """Save sent keys to disk, pruning stale entries."""
     today = date.today()
+    cutoff = today + timedelta(days=_SENT_KEYS_MAX_AGE_DAYS)
     data = sorted(
         [name, cid, d.isoformat()]
         for name, cid, d in keys
-        if d >= today
+        if today <= d <= cutoff
     )
     path.write_text(json.dumps(data))
 
@@ -200,10 +206,18 @@ def run_forever(
                 prev_keys |= current_keys
                 _save_sent_keys(SENT_KEYS_FILE, prev_keys)
 
+                # Free scan-local data before sleeping
+                del current_keys, found_entries, new_entries, current_entries
+
             except Exception as exc:
                 print(f"\n[ERROR] Scan #{scan_num} failed: {exc}", file=sys.stderr)
                 import traceback
                 traceback.print_exc()
+
+            # Force garbage collection between scans so Python returns memory
+            # to the OS.  camply searchers, HTTP sessions, and pandas DataFrames
+            # from the just-finished scan become unreachable here.
+            gc.collect()
 
             print(f"\n   Next check in {args.interval} minute(s). Press Ctrl+C to stop.\n")
             sys.stdout.flush()
