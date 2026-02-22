@@ -125,7 +125,7 @@ def build_dashboard_html(
             count = len(by_date[d])
             date_str = html.escape(d.strftime("%a, %b %-d"))
             rows_html.append(
-                f"<tr data-date=\"{d.isoformat()}\">"
+                f"<tr data-date=\"{d.isoformat()}\" data-count=\"{count}\">"
                 f"<td>{date_str}</td>"
                 f"<td><span class=\"available-badge\">{count} site(s)</span></td>"
                 f"</tr>"
@@ -414,18 +414,24 @@ document.addEventListener("DOMContentLoaded", () => {{
     allCards.forEach(card => {{
       const rows = card.querySelectorAll("tbody tr");
       let cardHasMatch = false;
+      let visibleCount = 0;
       rows.forEach(row => {{
         if (!dateStr || row.getAttribute("data-date") === dateStr) {{
           row.style.display = "";
           cardHasMatch = true;
+          visibleCount += parseInt(row.getAttribute("data-count") || "0", 10);
         }} else {{
           row.style.display = "none";
         }}
       }});
       const navItem = document.querySelector(`.quick-nav li[data-ref="${{card.id}}"]`);
+      const siteCountSpan = card.querySelector(".site-count");
+      const navCountSpan = navItem ? navItem.querySelector(".nav-count") : null;
       if (cardHasMatch) {{
         card.style.display = "";
         if (navItem) navItem.style.display = "";
+        if (siteCountSpan) siteCountSpan.textContent = `${{visibleCount}} open site(s)`;
+        if (navCountSpan) navCountSpan.textContent = visibleCount;
       }} else {{
         card.style.display = "none";
         if (navItem) navItem.style.display = "none";
