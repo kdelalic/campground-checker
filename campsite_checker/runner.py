@@ -5,6 +5,7 @@ import os
 import sys
 import time
 from datetime import date, datetime, timedelta
+from time import monotonic
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
@@ -19,7 +20,7 @@ from .notify import (
     send_telegram,
 )
 from .providers import WEEKDAY_NAMES
-from .results import count_matching_dates, format_results
+from .results import count_matching_dates, group_results
 from .search import execute_searches
 
 logging.basicConfig(
@@ -69,6 +70,7 @@ def run_once(
     dashboard_path: Optional[str] = None,
 ) -> Tuple[Set[Tuple[str, int, date]], List[Tuple[dict, List[AvailableCampsite]]]]:
     """Run one scan. Returns (current_keys, found_entries)."""
+    scan_start = monotonic()
     start_dt, end_dt = compute_date_range(args)
     search_window = SearchWindow(start_date=start_dt, end_date=end_dt)
 
@@ -77,9 +79,9 @@ def run_once(
     results_by_index = execute_searches(entries, search_window, args)
 
     errors: List[str] = []
-    outputs: List[str] = []
     found_entries: List[Tuple[dict, List[AvailableCampsite]]] = []
     current_keys: Set[Tuple[str, int, date]] = set()
+    total_sites = 0
 
     for i, entry in enumerate(entries):
         entry, results, error = results_by_index[i]
@@ -87,20 +89,23 @@ def run_once(
             errors.append(error)
             continue
         current_keys |= result_keys(entry, results, day_filter)
-        output = format_results(entry, results, day_filter)
-        if output:
-            outputs.append(output)
+        grouped = group_results(results, day_filter)
+        if grouped:
+            _name, _by_date, count, _url = grouped
+            total_sites += count
             found_entries.append((entry, results))
-
-    if outputs:
-        logger.info("\U0001f3d5  Campsite Availability Found!")
-        for output in outputs:
-            logger.info(output)
-    else:
-        logger.info("\U0001f3d5  No availability found.")
 
     for error in errors:
         logger.warning(error)
+
+    elapsed = monotonic() - scan_start
+    if found_entries:
+        logger.info(
+            "\U0001f3d5  Found %d site(s) at %d campground(s) (%.1fs)",
+            total_sites, len(found_entries), elapsed,
+        )
+    else:
+        logger.info("\U0001f3d5  No availability found. (%.1fs)", elapsed)
 
     if dashboard_path:
         from .dashboard import generate_dashboard

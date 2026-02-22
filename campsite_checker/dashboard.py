@@ -80,7 +80,9 @@ def build_calendar_html(all_availabilities: Dict[date, int]) -> str:
             
     header_html = (
         f'<div class="calendar-controls">'
+        f'<button id="prev-month-btn" class="nav-btn" title="Previous Month" disabled>&larr;</button>'
         f'<select id="month-selector">{"".join(month_options)}</select>'
+        f'<button id="next-month-btn" class="nav-btn" title="Next Month" disabled>&rarr;</button>'
         f'<button id="clear-date-filter" style="display: none;">Clear Filter</button>'
         f'</div>'
     )
@@ -263,6 +265,26 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
   background: var(--primary);
   color: #fff;
 }}
+.calendar-controls button.nav-btn {{
+  border-color: var(--border-color);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  font-size: 1.2rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}}
+.calendar-controls button.nav-btn:hover:not(:disabled) {{
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: var(--text-color);
+}}
+.calendar-controls button.nav-btn:disabled {{
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #f8fafc;
+}}
 .calendar-month {{
   width: 100%;
   max-width: 400px;
@@ -367,13 +389,15 @@ tr:last-child td {{border-bottom:none;}}
   .calendar-controls select {{ background: #0f172a; color: #e2e8f0; }}
   .calendar-controls button {{ background: #1e293b; color: #10b981; }}
   .calendar-controls button:hover {{ background: #10b981; color: #fff; }}
+  .calendar-controls button.nav-btn {{ background: #0f172a; color: #94a3b8; border-color: #334155; }}
+  .calendar-controls button.nav-btn:hover:not(:disabled) {{ background: #1e293b; color: #e2e8f0; border-color: #475569; }}
+  .calendar-controls button.nav-btn:disabled {{ opacity: 0.4; background: transparent; }}
   .calendar-day {{ color: #64748b; }}
   .card-header {{ border-bottom-color: #334155; }}
   .card-header h2 {{ color: #f8fafc; }}
   .site-count {{ background: rgba(16, 185, 129, 0.2); color: #34d399; }}
   th {{ border-bottom-color: #334155; }}
   td {{ border-bottom-color: #334155; color: #e2e8f0; }}
-  .available-badge {{ color: #f8fafc; }}
 }}
 </style>
 </head>
@@ -396,10 +420,19 @@ document.addEventListener("DOMContentLoaded", () => {{
   }}
 
   const monthSelector = document.getElementById("month-selector");
+  const prevMonthBtn = document.getElementById("prev-month-btn");
+  const nextMonthBtn = document.getElementById("next-month-btn");
   const clearBtn = document.getElementById("clear-date-filter");
   const allMonths = document.querySelectorAll(".calendar-month");
   const availCells = document.querySelectorAll(".calendar-available");
   const allCards = document.querySelectorAll(".card");
+  
+  function updateNavButtons() {{
+    if (!monthSelector) return;
+    const idx = monthSelector.selectedIndex;
+    if (prevMonthBtn) prevMonthBtn.disabled = idx <= 0;
+    if (nextMonthBtn) nextMonthBtn.disabled = idx >= monthSelector.options.length - 1;
+  }}
   
   if (monthSelector) {{
     monthSelector.addEventListener("change", (e) => {{
@@ -407,6 +440,26 @@ document.addEventListener("DOMContentLoaded", () => {{
       const selectedMonth = document.getElementById(e.target.value);
       if (selectedMonth) {{
         selectedMonth.style.display = "block";
+      }}
+      updateNavButtons();
+    }});
+    updateNavButtons();
+  }}
+  
+  if (prevMonthBtn) {{
+    prevMonthBtn.addEventListener("click", () => {{
+      if (monthSelector.selectedIndex > 0) {{
+        monthSelector.selectedIndex--;
+        monthSelector.dispatchEvent(new Event("change"));
+      }}
+    }});
+  }}
+  
+  if (nextMonthBtn) {{
+    nextMonthBtn.addEventListener("click", () => {{
+      if (monthSelector.selectedIndex < monthSelector.options.length - 1) {{
+        monthSelector.selectedIndex++;
+        monthSelector.dispatchEvent(new Event("change"));
       }}
     }});
   }}

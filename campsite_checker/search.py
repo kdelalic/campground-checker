@@ -87,30 +87,48 @@ def execute_searches(
     max_workers = min(getattr(args, 'workers', 2), len(entries))
     logger.info("\u23f3 Starting %d searches (parallelism: %d)...", len(entries), max_workers)
 
+    ok_count = 0
+    fail_count = 0
+    total_start = time.monotonic()
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         search_delay = getattr(args, 'search_delay', 0.0)
         future_to_index = {}
+        future_start_times = {}
         for i, entry in enumerate(entries):
             future = executor.submit(search_entry, entry, search_window, args)
             future_to_index[future] = i
+            future_start_times[future] = time.monotonic()
             if search_delay > 0 and i < len(entries) - 1:
                 time.sleep(search_delay)
         for future in concurrent.futures.as_completed(future_to_index):
             i = future_to_index[future]
+            elapsed = time.monotonic() - future_start_times[future]
             try:
                 entry, results, error = future.result()
             except Exception as exc:
                 entry = entries[i]
                 results = []
                 error = f"[ERROR] Unexpected crash during search: {exc}"
-            
+
             name = get_facility_name(results) if results else f"campground {entry.get('campground_id', '?')}"
             provider = entry.get("provider", "RecreationDotGov")
             provider_label = PROVIDER_DISPLAY.get(provider, provider.lower())
-            suffix = " [ERROR]" if error and error.startswith("[ERROR]") else ""
-            logger.info("\u21b3 %s (%s)%s", name, provider_label, suffix)
+            if error:
+                fail_count += 1
+                suffix = " [ERROR]"
+            else:
+                ok_count += 1
+                suffix = ""
+            logger.info("\u21b3 %s (%s) \u2014 %.1fs%s", name, provider_label, elapsed, suffix)
             if error and error.startswith("[WARNING]"):
                 logger.warning(error.strip())
             results_by_index[i] = (entry, results, error)
+
+    total_elapsed = time.monotonic() - total_start
+    logger.info(
+        "Searches complete: %d ok, %d failed (%.1fs total)",
+        ok_count, fail_count, total_elapsed,
+    )
 
     return results_by_index
