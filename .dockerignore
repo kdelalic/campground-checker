@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+firebase-debug.log
+.campsite_sent_keys.json
+dashboard.html

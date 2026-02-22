@@ -1,3 +1,4 @@
+import calendar
 import html
 from collections import defaultdict
 from datetime import date, datetime
@@ -22,6 +23,56 @@ def get_dashboard_path(args, config: dict) -> Optional[str]:
     return dash_cfg.get("output_path")
 
 
+def build_calendar_html(all_availabilities: Dict[date, int]) -> str:
+    if not all_availabilities:
+        return ""
+
+    min_date = min(all_availabilities.keys())
+    max_date = max(all_availabilities.keys())
+
+    cal = calendar.Calendar(firstweekday=6) # Sunday start
+    
+    months_html = []
+    curr_year = min_date.year
+    curr_month = min_date.month
+    
+    while (curr_year, curr_month) <= (max_date.year, max_date.month):
+        month_name = calendar.month_name[curr_month]
+        weeks = cal.monthdatescalendar(curr_year, curr_month)
+        
+        rows = []
+        for week in weeks:
+            cells = []
+            for d in week:
+                if d.month != curr_month:
+                    cells.append('<td class="calendar-empty"></td>')
+                else:
+                    count = all_availabilities.get(d, 0)
+                    if count > 0:
+                        cells.append(f'<td class="calendar-available" title="{count} site(s) available">{d.day}</td>')
+                    else:
+                        cells.append(f'<td class="calendar-day">{d.day}</td>')
+            rows.append(f"<tr>{''.join(cells)}</tr>")
+            
+        month_html = (
+            f'<div class="calendar-month">'
+            f'<h4>{month_name} {curr_year}</h4>'
+            f'<table class="calendar-table">'
+            f'<thead><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody>'
+            f'</table>'
+            f'</div>'
+        )
+        months_html.append(month_html)
+        
+        curr_month += 1
+        if curr_month > 12:
+            curr_month = 1
+            curr_year += 1
+            
+    return f'<div class="calendar-container">{"".join(months_html)}</div>\n'
+
+
 def build_dashboard_html(
     entries_with_results: List[Tuple[dict, List[AvailableCampsite]]],
     day_filter: Optional[Set[int]],
@@ -33,6 +84,8 @@ def build_dashboard_html(
 
     cards_html = []
     nav_links = []
+    all_availabilities = defaultdict(int)
+
     for entry, results in entries_with_results:
         filtered = filter_results(results, day_filter)
         if not filtered:
@@ -44,6 +97,7 @@ def build_dashboard_html(
         by_date: Dict[date, List[AvailableCampsite]] = defaultdict(list)
         for r in filtered:
             by_date[r.booking_date.date()].append(r)
+            all_availabilities[r.booking_date.date()] += 1
 
         total = sum(len(v) for v in by_date.values())
         safe_name = html.escape(name)
@@ -88,7 +142,9 @@ def build_dashboard_html(
     if not cards_html:
         body_content = '<div class="no-results">\U0001f6d1 No availability found in the current scan.</div>'
         nav_content = ''
+        calendar_content = ''
     else:
+        calendar_content = build_calendar_html(all_availabilities)
         nav_content = f'<nav class="quick-nav"><h3>Jump To</h3><ul>{"".join(nav_links)}</ul></nav>'
         body_content = "\n".join(cards_html)
 
@@ -140,6 +196,57 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
 .quick-nav a {{ color: var(--primary); text-decoration: none; font-weight: 500; transition: color 0.15s; }}
 .quick-nav a:hover {{ color: var(--primary-hover); text-decoration: underline; }}
 .nav-count {{ background: #f1f5f9; color: var(--text-muted); padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }}
+
+.calendar-container {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 32px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  justify-content: center;
+}}
+.calendar-month {{
+  min-width: 220px;
+}}
+.calendar-month h4 {{
+  margin: 0 0 12px 0;
+  text-align: center;
+  color: #334155;
+  font-size: 1.05rem;
+}}
+.calendar-table {{
+  width: 100%;
+  border-collapse: collapse;
+}}
+.calendar-table th, .calendar-table td {{
+  text-align: center;
+  padding: 6px;
+  border-bottom: none;
+}}
+.calendar-table th {{
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}}
+.calendar-empty {{
+  color: transparent;
+}}
+.calendar-day {{
+  color: #94a3b8;
+  font-size: 0.9rem;
+}}
+.calendar-available {{
+  background-color: var(--primary);
+  color: #fff !important;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: help;
+  font-size: 0.9rem;
+}}
 
 .card{{
   background:var(--card-bg);
@@ -195,6 +302,7 @@ tr:last-child td {{border-bottom:none;}}
 <h1>&#x1F3D5; Campsite Availability</h1>
 <p class="timestamp">Last updated: {timestamp_str}</p>
 </header>
+{calendar_content}
 {nav_content}
 {body_content}
 </div>
