@@ -1,0 +1,12 @@
+name: Deploy to Pi
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and Run
+        run: |
+          docker compose up -d --build
