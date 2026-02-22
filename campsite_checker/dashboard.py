@@ -1,7 +1,7 @@
 import calendar
 import html
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
@@ -95,7 +95,7 @@ def build_dashboard_html(
 ) -> str:
     """Generate a complete self-contained HTML string."""
     if scan_timestamp is None:
-        scan_timestamp = datetime.now()
+        scan_timestamp = datetime.now(timezone.utc).astimezone()
 
     cards_html = []
     nav_links = []
@@ -118,7 +118,7 @@ def build_dashboard_html(
         safe_name = html.escape(name)
         card_id = f"site-{len(cards_html)}"
 
-        nav_links.append(f'<li><a href="#{card_id}">{safe_name}</a> <span class="nav-count">{total}</span></li>')
+        nav_links.append(f'<li data-ref="{card_id}"><a href="#{card_id}">{safe_name}</a> <span class="nav-count">{total}</span></li>')
 
         rows_html = []
         for d in sorted(by_date):
@@ -152,6 +152,10 @@ def build_dashboard_html(
             f"</div>"
         )
 
+    # Provide ISO format to be parsed by JS for local timezone conversion
+    if scan_timestamp.tzinfo is None:
+        scan_timestamp = scan_timestamp.replace(tzinfo=timezone.utc).astimezone()
+    timestamp_iso = scan_timestamp.isoformat()
     timestamp_str = html.escape(scan_timestamp.strftime("%b %-d, %Y at %-I:%M %p"))
 
     if not cards_html:
@@ -181,6 +185,7 @@ def build_dashboard_html(
   --accent: #f59e0b;
 }}
 *,*::before,*::after{{box-sizing:border-box}}
+html {{ scroll-behavior: smooth; }}
 body{{
   margin:0;padding:32px 16px;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -202,9 +207,9 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
 }}
 .quick-nav h3 {{ margin: 0 0 12px 0; font-size: 1.1rem; color: #334155; }}
 .quick-nav ul {{
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
   margin: 0; padding: 0; list-style: none;
 }}
 .quick-nav li {{ display: flex; align-items: baseline; gap: 8px; font-size: 0.95rem; }}
@@ -351,7 +356,7 @@ tr:last-child td {{border-bottom:none;}}
 <div class="container">
 <header>
 <h1>&#x1F3D5; Campsite Availability</h1>
-<p class="timestamp">Last updated: {timestamp_str}</p>
+<p class="timestamp">Last updated: <span id="last-updated" data-timestamp="{timestamp_iso}">{timestamp_str}</span></p>
 </header>
 {calendar_content}
 {nav_content}
@@ -359,6 +364,12 @@ tr:last-child td {{border-bottom:none;}}
 </div>
 <script>
 document.addEventListener("DOMContentLoaded", () => {{
+  const lastUpdated = document.getElementById("last-updated");
+  if (lastUpdated) {{
+    const ts = new Date(lastUpdated.getAttribute("data-timestamp"));
+    lastUpdated.textContent = ts.toLocaleDateString(undefined, {{ month: 'short', day: 'numeric', year: 'numeric' }}) + ' at ' + ts.toLocaleTimeString(undefined, {{ hour: 'numeric', minute: '2-digit', hour12: true }});
+  }}
+
   const monthSelector = document.getElementById("month-selector");
   const clearBtn = document.getElementById("clear-date-filter");
   const allMonths = document.querySelectorAll(".calendar-month");
@@ -387,10 +398,13 @@ document.addEventListener("DOMContentLoaded", () => {{
           row.style.display = "none";
         }}
       }});
+      const navItem = document.querySelector(`.quick-nav li[data-ref="${card.id}"]`);
       if (cardHasMatch) {{
         card.style.display = "";
+        if (navItem) navItem.style.display = "";
       }} else {{
         card.style.display = "none";
+        if (navItem) navItem.style.display = "none";
       }}
     }});
     
