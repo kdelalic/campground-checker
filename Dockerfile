@@ -28,4 +28,4 @@ RUN pip install --no-cache-dir boto3
 RUN chmod +x check_campsites.py
 
 # Run the script with --forever by default as requested for a persistent worker
-CMD ["python", "check_campsites.py", "--forever"]
+CMD ["python", "check_campsites.py", "--forever", "--dashboard"]

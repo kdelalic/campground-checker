@@ -80,19 +80,32 @@ def execute_searches(
     """Run all searches in parallel. Returns results keyed by entry index."""
     results_by_index: Dict[int, Tuple[dict, List[AvailableCampsite], Optional[str]]] = {}
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    # Limit max_workers to avoid OOM on smaller container instances
+    max_workers = min(5, len(entries))
+    print(f"   \u23f3 Starting {len(entries)} searches (parallelism: {max_workers})...")
+    sys.stdout.flush()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_index = {
             executor.submit(search_entry, entry, search_window, args): i
             for i, entry in enumerate(entries)
         }
         for future in concurrent.futures.as_completed(future_to_index):
             i = future_to_index[future]
-            entry, results, error = future.result()
+            try:
+                entry, results, error = future.result()
+            except Exception as exc:
+                entry = entries[i]
+                results = []
+                error = f"[ERROR] Unexpected crash during search: {exc}"
+            
             name = get_facility_name(results) if results else f"campground {entry.get('campground_id', '?')}"
             provider = entry.get("provider", "RecreationDotGov")
             provider_label = PROVIDER_DISPLAY.get(provider, provider.lower())
             suffix = " [ERROR]" if error and error.startswith("[ERROR]") else ""
             print(f"   \u21b3 {name} ({provider_label}){suffix}")
+            if error and error.startswith("[WARNING]"):
+                 print(f"     {error.strip()}")
             sys.stdout.flush()
             results_by_index[i] = (entry, results, error)
 

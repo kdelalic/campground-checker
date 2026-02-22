@@ -166,38 +166,44 @@ def run_forever(
 
     try:
         while True:
-            scan_num += 1
+            try:
+                scan_num += 1
 
-            with state.lock:
-                current_entries = list(state.entries)
+                with state.lock:
+                    current_entries = list(state.entries)
 
-            current_keys, found_entries = run_once(
-                current_entries, args, day_filter, tg_token, tg_chat_id, scan_num,
-                dashboard_path=dashboard_path,
-            )
+                current_keys, found_entries = run_once(
+                    current_entries, args, day_filter, tg_token, tg_chat_id, scan_num,
+                    dashboard_path=dashboard_path,
+                )
 
-            if dashboard_path and r2_config:
-                from .upload import upload_to_r2
+                if dashboard_path and r2_config:
+                    from .upload import upload_to_r2
 
-                url = upload_to_r2(dashboard_path, r2_config)
-                if url:
-                    print(f"   Dashboard uploaded to {url}")
+                    url = upload_to_r2(dashboard_path, r2_config)
+                    if url:
+                        print(f"   Dashboard uploaded to {url}")
 
-            new_entries = [
-                (entry, new_results)
-                for entry, results in found_entries
-                for new_results in [filter_new_results(entry, results, day_filter, prev_keys)]
-                if new_results
-            ]
+                new_entries = [
+                    (entry, new_results)
+                    for entry, results in found_entries
+                    for new_results in [filter_new_results(entry, results, day_filter, prev_keys)]
+                    if new_results
+                ]
 
-            if new_entries and tg_token and tg_chat_id:
-                msgs = build_telegram_message(new_entries, day_filter)
-                for msg in msgs:
-                    send_telegram(tg_token, tg_chat_id, msg)
-                print(f"   \u2709 Telegram notification sent ({len(new_entries)} campground(s))")
+                if new_entries and tg_token and tg_chat_id:
+                    msgs = build_telegram_message(new_entries, day_filter)
+                    for msg in msgs:
+                        send_telegram(tg_token, tg_chat_id, msg)
+                    print(f"   \u2709 Telegram notification sent ({len(new_entries)} campground(s))")
 
-            prev_keys |= current_keys
-            _save_sent_keys(SENT_KEYS_FILE, prev_keys)
+                prev_keys |= current_keys
+                _save_sent_keys(SENT_KEYS_FILE, prev_keys)
+
+            except Exception as exc:
+                print(f"\n[ERROR] Scan #{scan_num} failed: {exc}", file=sys.stderr)
+                import traceback
+                traceback.print_exc()
 
             print(f"\n   Next check in {args.interval} minute(s). Press Ctrl+C to stop.\n")
             sys.stdout.flush()
