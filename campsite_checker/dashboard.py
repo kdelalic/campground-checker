@@ -269,7 +269,8 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
 }}
 .calendar-table {{
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 6px;
 }}
 .calendar-table th, .calendar-table td {{
   text-align: center;
