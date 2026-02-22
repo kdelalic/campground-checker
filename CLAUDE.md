@@ -19,6 +19,7 @@ python check_campsites.py --day Friday Saturday
 python check_campsites.py --all-days
 python check_campsites.py --nights 2
 python check_campsites.py --forever --interval 10
+python check_campsites.py --workers 2 --search-delay 1  # tune for low-CPU environments
 python check_campsites.py --verbose   # show camply internal logs
 python check_campsites.py --dashboard              # generate dashboard.html
 python check_campsites.py --dashboard /tmp/out.html # custom path

@@ -1,6 +1,7 @@
 import concurrent.futures
 import inspect
 import sys
+import time
 from typing import Dict, List, Optional, Tuple
 
 from camply.containers import AvailableCampsite, SearchWindow
@@ -81,15 +82,18 @@ def execute_searches(
     results_by_index: Dict[int, Tuple[dict, List[AvailableCampsite], Optional[str]]] = {}
 
     # Limit max_workers to avoid OOM on smaller container instances
-    max_workers = min(5, len(entries))
+    max_workers = min(getattr(args, 'workers', 2), len(entries))
     print(f"   \u23f3 Starting {len(entries)} searches (parallelism: {max_workers})...")
     sys.stdout.flush()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_index = {
-            executor.submit(search_entry, entry, search_window, args): i
-            for i, entry in enumerate(entries)
-        }
+        search_delay = getattr(args, 'search_delay', 0.0)
+        future_to_index = {}
+        for i, entry in enumerate(entries):
+            future = executor.submit(search_entry, entry, search_window, args)
+            future_to_index[future] = i
+            if search_delay > 0 and i < len(entries) - 1:
+                time.sleep(search_delay)
         for future in concurrent.futures.as_completed(future_to_index):
             i = future_to_index[future]
             try:

@@ -105,6 +105,20 @@ def parse_args() -> argparse.Namespace:
         metavar="BUCKET",
         help="Cloudflare R2 bucket name for dashboard upload",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=2,
+        metavar="N",
+        help="Max concurrent campsite searches (default: 2; reduce for low-CPU environments)",
+    )
+    parser.add_argument(
+        "--search-delay",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="Seconds to sleep between search submissions (default: 0; use 1-2 on low-CPU environments)",
+    )
     return parser.parse_args()
 
 

@@ -28,4 +28,4 @@ COPY . .
 
 RUN chmod +x check_campsites.py
 
-CMD ["python", "check_campsites.py", "--forever", "--dashboard"]
+CMD ["python", "check_campsites.py", "--forever", "--dashboard", "--workers", "2", "--search-delay", "1"]
