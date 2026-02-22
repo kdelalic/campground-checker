@@ -350,6 +350,30 @@ tr:last-child td {{border-bottom:none;}}
   .quick-nav {{ padding: 16px; }}
   h1 {{ font-size: 1.75rem; }}
 }}
+@media(prefers-color-scheme: dark){{
+  :root {{
+    --bg-color: #0f172a;
+    --text-color: #e2e8f0;
+    --text-muted: #94a3b8;
+    --card-bg: #1e293b;
+    --border-color: #334155;
+    --primary: #10b981;
+    --primary-hover: #059669;
+  }}
+  h1 {{ color: #f8fafc; }}
+  .quick-nav h3 {{ color: #e2e8f0; }}
+  .nav-count {{ background: #334155; color: #cbd5e1; }}
+  .calendar-controls select {{ background: #0f172a; color: #e2e8f0; }}
+  .calendar-controls button {{ background: #1e293b; color: #10b981; }}
+  .calendar-controls button:hover {{ background: #10b981; color: #fff; }}
+  .calendar-day {{ color: #64748b; }}
+  .card-header {{ border-bottom-color: #334155; }}
+  .card-header h2 {{ color: #f8fafc; }}
+  .site-count {{ background: rgba(16, 185, 129, 0.2); color: #34d399; }}
+  th {{ border-bottom-color: #334155; }}
+  td {{ border-bottom-color: #334155; color: #e2e8f0; }}
+  .available-badge {{ color: #f8fafc; }}
+}}
 </style>
 </head>
 <body>
