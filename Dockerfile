@@ -28,7 +28,6 @@ COPY . .
 
 RUN chmod +x check_campsites.py
 
-# Tunable via Railway / docker run -e WORKERS=2
 ENV WORKERS="3"
 ENV INTERVAL="5"
 ENV SEARCH_DELAY="2"

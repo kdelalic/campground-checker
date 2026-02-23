@@ -347,7 +347,7 @@ th{{text-align:left;padding:12px 16px;border-bottom:2px solid #e2e8f0;color:var(
 td{{padding:12px 16px;border-bottom:1px solid #f1f5f9;color:#334155;}}
 tr:last-child td {{border-bottom:none;}}
 
-.available-badge {{ font-weight: 600; color: #1e293b; }}
+.available-badge {{ font-weight: 600; color: var(--text-color); }}
 
 .book-action {{ display: flex; justify-content: flex-end; margin-top: 8px; }}
 .book-link{{
