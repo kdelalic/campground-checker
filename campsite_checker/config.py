@@ -5,6 +5,7 @@ from typing import List, Optional, Set, Tuple
 
 import yaml
 
+from . import yaml_editor
 from .providers import PROVIDER_MAP, WEEKDAY_NAMES
 
 
@@ -169,6 +170,16 @@ def load_config(path: str) -> Tuple[List[dict], dict]:
 
     if len(entries) == 0:
         sys.exit("Error: no campsite entries found")
+
+    names = yaml_editor.parse_yaml_comments(path)
+    for entry in entries:
+        if "name" not in entry:
+            cid = entry.get("campground_id")
+            prov = entry.get("provider", "RecreationDotGov")
+            if cid is not None:
+                parsed_name = names.get((prov, int(cid)))
+                if parsed_name:
+                    entry["name"] = parsed_name
 
     for i, entry in enumerate(entries):
         label = f"entry #{i+1}"

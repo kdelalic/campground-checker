@@ -75,6 +75,23 @@ def search_entry(
     label = entry.get("campground_id") or entry.get("recreation_area") or "unknown"
     try:
         searcher = build_searcher(entry, search_window, args)
+        if "name" not in entry and "_resolved_name" not in entry:
+            cgs = getattr(searcher, "campgrounds", [])
+            if cgs and isinstance(cgs, list):
+                if len(cgs) == 1:
+                    cg = cgs[0]
+                    facility = getattr(cg, "facility_name", "") or ""
+                    rec_area = getattr(cg, "recreation_area", "") or ""
+                    if rec_area and facility:
+                        entry["_resolved_name"] = f"{rec_area} — {facility}"
+                    elif rec_area:
+                        entry["_resolved_name"] = rec_area
+                    elif facility:
+                        entry["_resolved_name"] = facility
+                elif len(cgs) > 1:
+                    rec_area = getattr(cgs[0], "recreation_area", "") or ""
+                    if rec_area:
+                        entry["_resolved_name"] = f"{rec_area} ({len(cgs)} campgrounds)"
     except Exception as exc:
         return entry, [], f"[ERROR] Could not create searcher for campground {label}: {exc}", time.monotonic() - start
     results, error = run_search(entry, searcher, verbose=args.verbose)
@@ -113,7 +130,12 @@ def execute_searches(
                 error = f"[ERROR] Unexpected crash during search: {exc}"
                 elapsed = 0.0
 
-            name = get_facility_name(results) if results else f"campground {entry.get('campground_id', '?')}"
+            if entry.get("name"):
+                name = entry["name"]
+            elif entry.get("_resolved_name"):
+                name = entry["_resolved_name"]
+            else:
+                name = get_facility_name(results) if results else f"campground {entry.get('campground_id', entry.get('recreation_area', '?'))}"
             provider = entry.get("provider", "RecreationDotGov")
             provider_label = PROVIDER_DISPLAY.get(provider, provider.lower())
             if error:
