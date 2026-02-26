@@ -33,12 +33,29 @@ logging.getLogger("camply").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_dashboard_interval(args, raw_config: dict) -> int:
+    """Resolve dashboard scan interval in minutes.
+
+    Priority: --dashboard-interval CLI > dashboard.interval YAML > default 60.
+    """
+    cli_val = getattr(args, "dashboard_interval", None)
+    if cli_val is not None:
+        return cli_val
+    dash_cfg = raw_config.get("dashboard") or {}
+    yaml_val = dash_cfg.get("interval")
+    if yaml_val is not None:
+        return int(yaml_val)
+    return 60
+
+
 def print_scan_header(
     entries: List[dict],
     start_dt: datetime,
     end_dt: datetime,
     day_filter: Optional[Set[int]],
     scan_num: Optional[int] = None,
+    scan_type: Optional[str] = None,
 ) -> None:
     inv = {v: k for k, v in WEEKDAY_NAMES.items()}
     if day_filter is None:
@@ -50,7 +67,12 @@ def print_scan_header(
 
     n_dates = count_matching_dates(start_dt, end_dt, day_filter)
 
-    prefix = f"[scan #{scan_num}] " if scan_num is not None else ""
+    parts = []
+    if scan_num is not None:
+        parts.append(f"scan #{scan_num}")
+    if scan_type is not None:
+        parts.append(scan_type)
+    prefix = f"[{' / '.join(parts)}] " if parts else ""
     timestamp = f" — {datetime.now().strftime('%H:%M:%S')}" if scan_num is not None else ""
 
     logger.info(
@@ -68,13 +90,14 @@ def run_once(
     tg_chat_id: Optional[str],
     scan_num: Optional[int] = None,
     dashboard_path: Optional[str] = None,
+    scan_type: Optional[str] = None,
 ) -> Tuple[Set[Tuple[str, int, date]], List[Tuple[dict, List[AvailableCampsite]]]]:
     """Run one scan. Returns (current_keys, found_entries)."""
     scan_start = monotonic()
     start_dt, end_dt = compute_date_range(args)
     search_window = SearchWindow(start_date=start_dt, end_date=end_dt)
 
-    print_scan_header(entries, start_dt, end_dt, day_filter, scan_num)
+    print_scan_header(entries, start_dt, end_dt, day_filter, scan_num, scan_type=scan_type)
 
     results_by_index = execute_searches(entries, search_window, args)
 
@@ -205,7 +228,7 @@ def run_forever(
     from .bot import ConfigState, create_bot, start_bot_polling
     from .server import scan_status, start_healthcheck_server
 
-    scan_status.interval_minutes = args.interval
+    scan_status.alert_interval_minutes = args.alert_interval
 
     state = ConfigState(entries, raw_config, config_path, tg_chat_id or "")
 
@@ -225,6 +248,17 @@ def run_forever(
 
         r2_config = get_r2_config(args, raw_config)
 
+    dashboard_interval = _resolve_dashboard_interval(args, raw_config)
+    last_dashboard_scan: float = 0.0  # monotonic; 0 forces first-iteration scan
+    cached_dashboard_results: List[Tuple[dict, List[AvailableCampsite]]] = []
+
+    scan_status.dashboard_interval_minutes = dashboard_interval
+
+    logger.info(
+        "Alert interval: %d min, dashboard interval: %d min",
+        args.alert_interval, dashboard_interval,
+    )
+
     try:
         while True:
             try:
@@ -233,27 +267,63 @@ def run_forever(
                 with state.lock:
                     current_entries = list(state.entries)
 
-                current_keys, found_entries = run_once(
-                    current_entries, args, day_filter, tg_token, tg_chat_id, scan_num,
-                    dashboard_path=dashboard_path,
-                )
+                alert_entries = [e for e in current_entries if e.get("alert", False)]
+                dashboard_entries = [e for e in current_entries if not e.get("alert", False)]
 
-                if dashboard_path and r2_config:
-                    from .upload import upload_to_r2
+                # --- Alert scan (every iteration) ---
+                alert_keys: Set[Tuple[str, int, date]] = set()
+                alert_found: List[Tuple[dict, List[AvailableCampsite]]] = []
+                if alert_entries:
+                    alert_keys, alert_found = run_once(
+                        alert_entries, args, day_filter, tg_token, tg_chat_id,
+                        scan_num, dashboard_path=None, scan_type="alert",
+                    )
 
-                    url = upload_to_r2(dashboard_path, r2_config)
-                    if url:
-                        logger.info("Dashboard uploaded to %s", url)
+                # --- Dashboard-only scan (when interval elapsed) ---
+                now = monotonic()
+                dashboard_due = (now - last_dashboard_scan) >= dashboard_interval * 60
+                dash_keys: Set[Tuple[str, int, date]] = set()
 
-                _send_notifications(found_entries, day_filter, tg_token, tg_chat_id, prev_keys)
+                if dashboard_due and dashboard_entries:
+                    dash_keys, dash_found = run_once(
+                        dashboard_entries, args, day_filter, tg_token, tg_chat_id,
+                        scan_num, dashboard_path=None, scan_type="dashboard",
+                    )
+                    cached_dashboard_results = dash_found
+                    last_dashboard_scan = monotonic()
+                    scan_status.last_dashboard_scan = datetime.now()
+                elif dashboard_due:
+                    cached_dashboard_results = []
+                    last_dashboard_scan = monotonic()
+                    scan_status.last_dashboard_scan = datetime.now()
 
+                # --- Generate dashboard from merged results ---
+                if dashboard_path:
+                    from .dashboard import generate_dashboard
+
+                    merged = alert_found + cached_dashboard_results
+                    generate_dashboard(merged, day_filter, dashboard_path)
+                    logger.info("   Dashboard written to %s", dashboard_path)
+
+                    if r2_config:
+                        from .upload import upload_to_r2
+
+                        url = upload_to_r2(dashboard_path, r2_config)
+                        if url:
+                            logger.info("Dashboard uploaded to %s", url)
+
+                # --- Notifications (alert entries only) ---
+                _send_notifications(alert_found, day_filter, tg_token, tg_chat_id, prev_keys)
+
+                # --- Persist dedup keys from both tiers ---
+                current_keys = alert_keys | dash_keys
                 prev_keys |= current_keys
                 _save_sent_keys(SENT_KEYS_FILE, prev_keys)
 
                 scan_status.update(entries_count=len(current_entries))
 
                 # Free scan-local data before sleeping
-                del current_keys, found_entries, current_entries
+                del alert_keys, alert_found, dash_keys, current_keys, current_entries
 
             except Exception as exc:
                 logger.error("Scan #%d failed: %s", scan_num, exc, exc_info=True)
@@ -264,8 +334,13 @@ def run_forever(
             # from the just-finished scan become unreachable here.
             gc.collect()
 
-            logger.info("Next check in %d minute(s). Press Ctrl+C to stop.", args.interval)
-            time.sleep(args.interval * 60)
+            mins_since_dash = (monotonic() - last_dashboard_scan) / 60
+            mins_until_dash = max(0, dashboard_interval - mins_since_dash)
+            logger.info(
+                "Next alert check in %d min. Next dashboard scan in ~%d min. Ctrl+C to stop.",
+                args.alert_interval, int(mins_until_dash),
+            )
+            time.sleep(args.alert_interval * 60)
 
     except KeyboardInterrupt:
         logger.info("\U0001f3d5  Stopped.")

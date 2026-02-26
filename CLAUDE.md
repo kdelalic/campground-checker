@@ -18,12 +18,13 @@ python check_campsites.py --start 2026-06-01 --end 2026-08-31
 python check_campsites.py --day Friday Saturday
 python check_campsites.py --all-days
 python check_campsites.py --nights 2
-python check_campsites.py --forever --interval 10
+python check_campsites.py --forever --alert-interval 10
 python check_campsites.py --workers 2 --search-delay 1  # tune for low-CPU environments
 python check_campsites.py --verbose   # show camply internal logs
 python check_campsites.py --dashboard              # generate dashboard.html
 python check_campsites.py --dashboard /tmp/out.html # custom path
 python check_campsites.py --no-dashboard           # disable even if YAML enables it
+python check_campsites.py --dashboard-interval 30  # dashboard-only sites scraped every 30 min
 ```
 
 No test suite exists in this project.
@@ -35,7 +36,7 @@ docker build -t campsite-checker .
 docker run -v $(pwd)/campsites.yaml:/app/campsites.yaml campsite-checker
 ```
 
-The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim. Runtime tunables via env vars: `WORKERS` (default 10), `INTERVAL` (default 5), `SEARCH_DELAY` (default 0). Set `SENT_KEYS_PATH` to persist dedup keys across container restarts (e.g. a mounted volume).
+The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim. Runtime tunables via env vars: `WORKERS` (default 3), `ALERT_INTERVAL` (default 5), `SEARCH_DELAY` (default 2), `DASHBOARD_INTERVAL` (default 60). Set `SENT_KEYS_PATH` to persist dedup keys across container restarts (e.g. a mounted volume).
 
 ## Finding Campground IDs
 
@@ -64,7 +65,7 @@ The project is a thin wrapper around the [camply](https://github.com/juftin/camp
 - `campsite_checker/dashboard.py` — Static HTML dashboard generation. Produces a self-contained HTML file with availability tables per campground.
 - `campsite_checker/upload.py` — Optional Cloudflare R2 upload for the dashboard. Uses boto3 S3-compatible API. Credentials resolved via env vars or YAML `dashboard.r2` section.
 - `campsite_checker/server.py` — Health check HTTP server. Returns JSON with scan count, error count, last scan time, uptime. Returns 503 if the scanner appears stuck. Runs on `PORT` env var (default 8000).
-- `campsite_checker/runner.py` — Orchestrates single-run (`run_once`) and polling loop (`run_forever`). In `--forever` mode, individual scan failures are caught and logged without stopping the loop. Persists sent notification keys to `SENT_KEYS_PATH` (default `.campsite_sent_keys.json`) to avoid duplicate Telegram alerts across scans. Telegram sends use `_send_notifications()` helper with retry logic. Generates dashboard and uploads to R2 after each scan if configured.
+- `campsite_checker/runner.py` — Orchestrates single-run (`run_once`) and polling loop (`run_forever`). In `--forever` mode, uses two-tier scanning: entries with `alert: true` are searched every `--alert-interval` minutes (default 5), while dashboard-only entries are searched every `--dashboard-interval` minutes (default 60, configurable via CLI, `dashboard.interval` YAML key, or `DASHBOARD_INTERVAL` env var). The dashboard is regenerated every iteration by merging fresh alert results with cached dashboard-only results. Individual scan failures are caught and logged without stopping the loop. Persists sent notification keys to `SENT_KEYS_PATH` (default `.campsite_sent_keys.json`) to avoid duplicate Telegram alerts across scans.
 
 **Key design decisions:**
 

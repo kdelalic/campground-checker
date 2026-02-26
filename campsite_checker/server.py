@@ -18,7 +18,9 @@ class _ScanStatus:
         self.scan_count: int = 0
         self.error_count: int = 0
         self.entries_count: int = 0
-        self.interval_minutes: int = 5
+        self.alert_interval_minutes: int = 5
+        self.dashboard_alert_interval_minutes: int = 60
+        self.last_dashboard_scan: datetime | None = None
 
     def update(self, *, entries_count: int, error: bool = False) -> None:
         self.last_scan_time = datetime.now(timezone.utc)
@@ -32,7 +34,7 @@ class _ScanStatus:
         if self.last_scan_time is None:
             return True  # Still warming up
         elapsed = (datetime.now(timezone.utc) - self.last_scan_time).total_seconds()
-        return elapsed < self.interval_minutes * 2 * 60
+        return elapsed < self.alert_interval_minutes * 2 * 60
 
     def to_dict(self) -> dict:
         uptime = (datetime.now(timezone.utc) - self.start_time).total_seconds()
@@ -43,6 +45,11 @@ class _ScanStatus:
             "error_count": self.error_count,
             "entries_count": self.entries_count,
             "last_scan": self.last_scan_time.isoformat() if self.last_scan_time else None,
+            "dashboard_alert_interval_minutes": self.dashboard_alert_interval_minutes,
+            "last_dashboard_scan": (
+                self.last_dashboard_scan.isoformat()
+                if self.last_dashboard_scan else None
+            ),
         }
 
 

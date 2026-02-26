@@ -44,6 +44,7 @@
 #
 # dashboard:
 #   output_path: "dashboard.html"
+#   interval: 60                         # Minutes between dashboard-only scans (default: 60)
 #   r2:                                  # Upload to Cloudflare R2 (optional)
 #     account_id: "your_cf_account_id"
 #     access_key_id: "your_r2_key"

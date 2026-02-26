@@ -67,14 +67,16 @@ def parse_args() -> argparse.Namespace:
         "--forever",
         action="store_true",
         default=False,
-        help="Run continuously, re-checking on every --interval minutes",
+        help="Run continuously, re-checking on every --alert-interval minutes",
     )
     parser.add_argument(
+        "--alert-interval",
         "--interval",
         type=int,
         default=5,
+        dest="alert_interval",
         metavar="MINUTES",
-        help="Minutes between checks in --forever mode (default: 5)",
+        help="Minutes between alert campground scans in --forever mode (default: 5)",
     )
     parser.add_argument(
         "--telegram-token",
@@ -118,6 +120,13 @@ def parse_args() -> argparse.Namespace:
         default=0.0,
         metavar="SECONDS",
         help="Seconds to sleep between search submissions (default: 0; use 1-2 on low-CPU environments)",
+    )
+    parser.add_argument(
+        "--dashboard-interval",
+        type=int,
+        default=None,
+        metavar="MINUTES",
+        help="Minutes between dashboard-only campground scans in --forever mode (default: 60)",
     )
     return parser.parse_args()
 
