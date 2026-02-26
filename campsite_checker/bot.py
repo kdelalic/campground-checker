@@ -162,20 +162,20 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             prov = e.get("provider", "RecreationDotGov")
             by_provider.setdefault(prov, []).append(e)
 
-        lines = [f"<b>Monitored Campgrounds ({len(entries)})</b>"]
+        lines = [f"🏕️ <b>Monitored Campgrounds ({len(entries)})</b>"]
         for prov, items in by_provider.items():
-            lines.append(f"\n<b>{prov}</b> ({len(items)})")
+            lines.append(f"\n🌲 <b>{prov} ({len(items)})</b>")
             for item in items:
                 cid = item.get("campground_id")
                 if cid:
                     name = names.get((prov, cid))
                     if name:
-                        lines.append(f"  • {name} ({cid})")
+                        lines.append(f"  • <b>{name}</b> <code>{cid}</code>")
                     else:
-                        lines.append(f"  • {cid}")
+                        lines.append(f"  • <code>{cid}</code>")
                 else:
                     ra = item.get("recreation_area", "?")
-                    lines.append(f"  • rec area {ra}")
+                    lines.append(f"  • rec area <code>{ra}</code>")
         bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
 
     @bot.message_handler(commands=["add"])
@@ -299,16 +299,23 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
                 entries = list(state.entries)
                 config_path = state.config_path
             names = yaml_editor.parse_yaml_comments(config_path)
-            lines = ["<b>Alert status:</b>"]
+
+            by_provider: dict = {}
             for e in entries:
-                cid = e.get("campground_id", "?")
                 prov = e.get("provider", "RecreationDotGov")
-                enabled = e.get("alert", False)
-                status = "ON" if enabled else "OFF"
-                name = names.get((prov, cid))
-                label = f"{name} ({cid})" if name else str(cid)
-                lines.append(f"  {label}: {status}")
-            lines.append("\n/alert <i>&lt;campground_id&gt;</i> — toggle alerts")
+                by_provider.setdefault(prov, []).append(e)
+
+            lines = ["🔔 <b>Alert Status</b>"]
+            for prov, items in by_provider.items():
+                lines.append(f"\n🌲 <b>{prov}</b>")
+                for e in items:
+                    cid = e.get("campground_id", "?")
+                    enabled = e.get("alert", False)
+                    status = "🟢 ON" if enabled else "🔴 OFF"
+                    name = names.get((prov, cid))
+                    label = f"<b>{name}</b> <code>{cid}</code>" if name else f"<code>{cid}</code>"
+                    lines.append(f"  • {label} — {status}")
+            lines.append("\n<i>/alert &lt;campground_id&gt; — toggle alerts</i>")
             bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
             return
 
@@ -342,10 +349,11 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             except Exception as exc:
                 logger.warning("Failed to write YAML: %s", exc)
 
-            status = "ON" if new_val else "OFF"
+            status = "🟢 ON" if new_val else "🔴 OFF"
             bot.send_message(
                 message.chat.id,
-                f"Alerts for campground {campground_id}: {status}",
+                f"Alerts for campground <code>{campground_id}</code>: {status}",
+                parse_mode="HTML"
             )
             return
 
