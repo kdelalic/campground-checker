@@ -20,7 +20,7 @@ from .notify import (
     send_telegram,
 )
 from .providers import WEEKDAY_NAMES
-from .results import count_matching_dates, group_results
+from .results import count_matching_dates, format_results, group_results
 from .search import execute_searches
 
 logging.basicConfig(
@@ -120,6 +120,11 @@ def run_once(
 
     for error in errors:
         logger.warning(error)
+
+    for entry, results in found_entries:
+        formatted = format_results(entry, results, day_filter)
+        if formatted:
+            print(formatted)
 
     elapsed = monotonic() - scan_start
     if found_entries:
