@@ -7,11 +7,18 @@ import time
 from datetime import date, datetime, timedelta
 from time import monotonic
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite, SearchWindow
 
-from .config import compute_date_range, load_config, parse_args, resolve_day_filter
+from collections import defaultdict
+
+from .config import (
+    compute_date_range,
+    expand_search_tasks,
+    load_config,
+    parse_args,
+    resolve_day_filter,
+)
 from .notify import (
     build_telegram_message,
     filter_new_results,
@@ -20,7 +27,7 @@ from .notify import (
     send_telegram,
 )
 from .providers import WEEKDAY_NAMES
-from .results import count_matching_dates, format_results, group_results
+from .results import count_matching_dates, filter_results, format_results, group_results
 from .search import execute_searches
 
 logging.basicConfig(
@@ -50,12 +57,12 @@ def _resolve_dashboard_interval(args, raw_config: dict) -> int:
 
 
 def print_scan_header(
-    entries: List[dict],
+    entries: list[dict],
     start_dt: datetime,
     end_dt: datetime,
-    day_filter: Optional[Set[int]],
-    scan_num: Optional[int] = None,
-    scan_type: Optional[str] = None,
+    day_filter: set[int] | None,
+    scan_num: int | None = None,
+    scan_type: str | None = None,
 ) -> None:
     inv = {v: k for k, v in WEEKDAY_NAMES.items()}
     if day_filter is None:
@@ -83,15 +90,15 @@ def print_scan_header(
 
 
 def run_once(
-    entries: List[dict],
+    entries: list[dict],
     args,
-    day_filter: Optional[Set[int]],
-    tg_token: Optional[str],
-    tg_chat_id: Optional[str],
-    scan_num: Optional[int] = None,
-    dashboard_path: Optional[str] = None,
-    scan_type: Optional[str] = None,
-) -> Tuple[Set[Tuple[str, int, date]], List[Tuple[dict, List[AvailableCampsite]]]]:
+    day_filter: set[int] | None,
+    tg_token: str | None,
+    tg_chat_id: str | None,
+    scan_num: int | None = None,
+    dashboard_path: str | None = None,
+    scan_type: str | None = None,
+) -> tuple[set[tuple[str, int, date]], list[tuple[dict, list[AvailableCampsite]]]]:
     """Run one scan. Returns (current_keys, found_entries)."""
     scan_start = monotonic()
     start_dt, end_dt = compute_date_range(args)
@@ -99,20 +106,44 @@ def run_once(
 
     print_scan_header(entries, start_dt, end_dt, day_filter, scan_num, scan_type=scan_type)
 
-    results_by_index = execute_searches(entries, search_window, args)
+    # Expand entries with criteria into individual search tasks
+    search_tasks = expand_search_tasks(entries, day_filter)
+    task_entries = [entry for _, entry, _ in search_tasks]
 
-    errors: List[str] = []
-    found_entries: List[Tuple[dict, List[AvailableCampsite]]] = []
-    current_keys: Set[Tuple[str, int, date]] = set()
-    total_sites = 0
+    results_by_task = execute_searches(task_entries, search_window, args)
 
-    for i, entry in enumerate(entries):
-        entry, results, error = results_by_index[i]
+    # Collect, filter per-task, and merge results back per original entry
+    errors: list[str] = []
+    entry_filtered: dict = defaultdict(list)
+    for task_idx, (orig_idx, _task_entry, task_filter) in enumerate(search_tasks):
+        _te, results, error = results_by_task[task_idx]
         if error:
             errors.append(error)
             continue
-        current_keys |= result_keys(entry, results, day_filter)
-        grouped = group_results(results, day_filter)
+        filtered = filter_results(results, task_filter)
+        entry_filtered[orig_idx].extend(filtered)
+
+    # Deduplicate per original entry and build output
+    found_entries: list[tuple[dict, list[AvailableCampsite]]] = []
+    current_keys: set[tuple[str, int, date]] = set()
+    total_sites = 0
+
+    for i, entry in enumerate(entries):
+        results = entry_filtered.get(i)
+        if not results:
+            continue
+        # Deduplicate by (campsite_id, booking_date)
+        seen: set[tuple[int, date]] = set()
+        unique: list[AvailableCampsite] = []
+        for r in results:
+            key = (r.campsite_id, r.booking_date.date())
+            if key not in seen:
+                seen.add(key)
+                unique.append(r)
+        results = unique
+
+        current_keys |= result_keys(entry, results, None)
+        grouped = group_results(results, None)
         if grouped:
             _name, _by_date, count, _url = grouped
             total_sites += count
@@ -122,7 +153,7 @@ def run_once(
         logger.warning(error)
 
     for entry, results in found_entries:
-        formatted = format_results(entry, results, day_filter)
+        formatted = format_results(entry, results, None)
         if formatted:
             print(formatted)
 
@@ -138,7 +169,7 @@ def run_once(
     if dashboard_path:
         from .dashboard import generate_dashboard
 
-        generate_dashboard(found_entries, day_filter, dashboard_path)
+        generate_dashboard(found_entries, None, dashboard_path)
         logger.info("   Dashboard written to %s", dashboard_path)
 
     return current_keys, found_entries
@@ -150,7 +181,7 @@ SENT_KEYS_FILE = Path(os.environ.get("SENT_KEYS_PATH", ".campsite_sent_keys.json
 _SENT_KEYS_MAX_AGE_DAYS = 14  # Only keep keys for dates within this window
 
 
-def _load_sent_keys(path: Path) -> Set[Tuple[str, int, date]]:
+def _load_sent_keys(path: Path) -> set[tuple[str, int, date]]:
     """Load previously sent keys from disk, pruning stale entries."""
     if not path.exists():
         return set()
@@ -168,7 +199,7 @@ def _load_sent_keys(path: Path) -> Set[Tuple[str, int, date]]:
         return set()
 
 
-def _save_sent_keys(path: Path, keys: Set[Tuple[str, int, date]]) -> None:
+def _save_sent_keys(path: Path, keys: set[tuple[str, int, date]]) -> None:
     """Save sent keys to disk, pruning stale entries."""
     today = date.today()
     cutoff = today + timedelta(days=_SENT_KEYS_MAX_AGE_DAYS)
@@ -181,11 +212,11 @@ def _save_sent_keys(path: Path, keys: Set[Tuple[str, int, date]]) -> None:
 
 
 def _send_notifications(
-    found_entries: List[Tuple[dict, List[AvailableCampsite]]],
-    day_filter: Optional[Set[int]],
-    tg_token: Optional[str],
-    tg_chat_id: Optional[str],
-    prev_keys: Optional[Set[Tuple[str, int, date]]] = None,
+    found_entries: list[tuple[dict, list[AvailableCampsite]]],
+    day_filter: set[int] | None,
+    tg_token: str | None,
+    tg_chat_id: str | None,
+    prev_keys: set[tuple[str, int, date]] | None = None,
 ) -> int:
     """Filter and send Telegram notifications. Returns count of campgrounds notified.
 
@@ -221,14 +252,14 @@ def _send_notifications(
 
 
 def run_forever(
-    entries: List[dict],
+    entries: list[dict],
     raw_config: dict,
     config_path: str,
     args,
-    day_filter: Optional[Set[int]],
-    tg_token: Optional[str],
-    tg_chat_id: Optional[str],
-    dashboard_path: Optional[str] = None,
+    day_filter: set[int] | None,
+    tg_token: str | None,
+    tg_chat_id: str | None,
+    dashboard_path: str | None = None,
 ) -> None:
     from .bot import ConfigState, create_bot, start_bot_polling
     from .server import scan_status, start_healthcheck_server
@@ -255,7 +286,7 @@ def run_forever(
 
     dashboard_interval = _resolve_dashboard_interval(args, raw_config)
     last_dashboard_scan: float = 0.0  # monotonic; 0 forces first-iteration scan
-    cached_dashboard_results: List[Tuple[dict, List[AvailableCampsite]]] = []
+    cached_dashboard_results: list[tuple[dict, list[AvailableCampsite]]] = []
 
     scan_status.dashboard_interval_minutes = dashboard_interval
 
@@ -276,8 +307,8 @@ def run_forever(
                 dashboard_entries = [e for e in current_entries if not e.get("alert", False)]
 
                 # --- Alert scan (every iteration) ---
-                alert_keys: Set[Tuple[str, int, date]] = set()
-                alert_found: List[Tuple[dict, List[AvailableCampsite]]] = []
+                alert_keys: set[tuple[str, int, date]] = set()
+                alert_found: list[tuple[dict, list[AvailableCampsite]]] = []
                 if alert_entries:
                     alert_keys, alert_found = run_once(
                         alert_entries, args, day_filter, tg_token, tg_chat_id,
@@ -287,7 +318,7 @@ def run_forever(
                 # --- Dashboard-only scan (when interval elapsed) ---
                 now = monotonic()
                 dashboard_due = (now - last_dashboard_scan) >= dashboard_interval * 60
-                dash_keys: Set[Tuple[str, int, date]] = set()
+                dash_keys: set[tuple[str, int, date]] = set()
 
                 if dashboard_due and dashboard_entries:
                     dash_keys, dash_found = run_once(
@@ -307,7 +338,7 @@ def run_forever(
                     from .dashboard import generate_dashboard
 
                     merged = alert_found + cached_dashboard_results
-                    generate_dashboard(merged, day_filter, dashboard_path)
+                    generate_dashboard(merged, None, dashboard_path)
                     logger.info("   Dashboard written to %s", dashboard_path)
 
                     if r2_config:
@@ -318,7 +349,7 @@ def run_forever(
                             logger.info("Dashboard uploaded to %s", url)
 
                 # --- Notifications (alert entries only) ---
-                _send_notifications(alert_found, day_filter, tg_token, tg_chat_id, prev_keys)
+                _send_notifications(alert_found, None, tg_token, tg_chat_id, prev_keys)
 
                 # --- Persist dedup keys from both tiers ---
                 current_keys = alert_keys | dash_keys
@@ -380,7 +411,7 @@ def main() -> None:
             entries, args, day_filter, tg_token, tg_chat_id,
             dashboard_path=dashboard_path,
         )
-        _send_notifications(found_entries, day_filter, tg_token, tg_chat_id)
+        _send_notifications(found_entries, None, tg_token, tg_chat_id)
 
         if dashboard_path:
             from .upload import get_r2_config, upload_to_r2

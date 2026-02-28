@@ -1,11 +1,10 @@
 import logging
 import os
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-def get_r2_config(args, config: dict) -> Optional[dict]:
+def get_r2_config(args, config: dict) -> dict | None:
     """Resolve R2 credentials and config.
 
     Priority for each field: CLI args > env vars > YAML config.
@@ -37,7 +36,7 @@ def get_r2_config(args, config: dict) -> Optional[dict]:
     }
 
 
-def upload_to_r2(file_path: str, r2_config: dict) -> Optional[str]:
+def upload_to_r2(file_path: str, r2_config: dict) -> str | None:
     """Upload a file to Cloudflare R2.
 
     Returns the public URL if custom_domain is configured, otherwise None.

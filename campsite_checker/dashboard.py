@@ -2,14 +2,13 @@ import calendar
 import html
 from collections import defaultdict
 from datetime import date, datetime, timezone
-from typing import Dict, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
 
 from .results import filter_results, get_booking_url, get_facility_name
 
 
-def get_dashboard_path(args, config: dict) -> Optional[str]:
+def get_dashboard_path(args, config: dict) -> str | None:
     """Resolve dashboard output path.
 
     Priority: --no-dashboard > --dashboard CLI arg > dashboard.output_path in YAML > None.
@@ -23,7 +22,7 @@ def get_dashboard_path(args, config: dict) -> Optional[str]:
     return dash_cfg.get("output_path")
 
 
-def build_calendar_html(all_availabilities: Dict[date, int]) -> str:
+def build_calendar_html(all_availabilities: dict[date, int]) -> str:
     if not all_availabilities:
         return ""
 
@@ -91,9 +90,9 @@ def build_calendar_html(all_availabilities: Dict[date, int]) -> str:
 
 
 def build_dashboard_html(
-    entries_with_results: List[Tuple[dict, List[AvailableCampsite]]],
-    day_filter: Optional[Set[int]],
-    scan_timestamp: Optional[datetime] = None,
+    entries_with_results: list[tuple[dict, list[AvailableCampsite]]],
+    day_filter: set[int] | None,
+    scan_timestamp: datetime | None = None,
 ) -> str:
     """Generate a complete self-contained HTML string."""
     if scan_timestamp is None:
@@ -111,7 +110,7 @@ def build_dashboard_html(
         name = get_facility_name(filtered)
         url = get_booking_url(filtered)
 
-        by_date: Dict[date, List[AvailableCampsite]] = defaultdict(list)
+        by_date: dict[date, list[AvailableCampsite]] = defaultdict(list)
         for r in filtered:
             by_date[r.booking_date.date()].append(r)
             all_availabilities[r.booking_date.date()] += 1
@@ -531,8 +530,8 @@ def write_dashboard(html_content: str, output_path: str) -> None:
 
 
 def generate_dashboard(
-    entries_with_results: List[Tuple[dict, List[AvailableCampsite]]],
-    day_filter: Optional[Set[int]],
+    entries_with_results: list[tuple[dict, list[AvailableCampsite]]],
+    day_filter: set[int] | None,
     output_path: str,
 ) -> str:
     """Build HTML, write to disk, and immediately free the string."""

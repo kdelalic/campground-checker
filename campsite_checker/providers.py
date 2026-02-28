@@ -1,5 +1,3 @@
-from typing import Dict, Type
-
 from camply.search import (
     SearchGoingToCamp,
     SearchRecreationDotGov,
@@ -7,14 +5,14 @@ from camply.search import (
     SearchYellowstone,
 )
 
-PROVIDER_MAP: Dict[str, Type] = {
+PROVIDER_MAP: dict[str, type] = {
     "RecreationDotGov": SearchRecreationDotGov,
     "Yellowstone": SearchYellowstone,
     "GoingToCamp": SearchGoingToCamp,
     "ReserveCalifornia": SearchReserveCalifornia,
 }
 
-PROVIDER_DISPLAY: Dict[str, str] = {
+PROVIDER_DISPLAY: dict[str, str] = {
     "RecreationDotGov": "recreation.gov",
     "Yellowstone": "yellowstone",
     "GoingToCamp": "goingtocamping.com",

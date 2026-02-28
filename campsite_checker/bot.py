@@ -1,6 +1,5 @@
 import logging
 import threading
-from typing import Dict, List, Optional, Tuple
 
 import telebot
 
@@ -34,7 +33,7 @@ class ConfigState:
 
     def __init__(
         self,
-        entries: List[dict],
+        entries: list[dict],
         raw_config: dict,
         config_path: str,
         chat_id: str,
@@ -51,7 +50,7 @@ def _authorized(message, state: ConfigState) -> bool:
     return str(message.chat.id) == state.chat_id
 
 
-def _parse_add_remove_args(args: list) -> Tuple[Optional[str], Optional[int]]:
+def _parse_add_remove_args(args: list) -> tuple[str | None, int | None]:
     """Parse '[provider] <campground_id>' arguments.
 
     Returns (provider, campground_id) or (None, None) on error.
@@ -73,15 +72,15 @@ def _parse_add_remove_args(args: list) -> Tuple[Optional[str], Optional[int]]:
 
 
 def _lookup_campground_names(
-    entries: List[dict],
-) -> Dict[Tuple[str, int], str]:
+    entries: list[dict],
+) -> dict[tuple[str, int], str]:
     """Look up campground names from camply providers.
 
     Returns dict mapping (provider, campground_id) -> facility name.
     """
-    names: Dict[Tuple[str, int], str] = {}
+    names: dict[tuple[str, int], str] = {}
     # Group IDs by provider
-    by_provider: Dict[str, List[int]] = {}
+    by_provider: dict[str, list[int]] = {}
     for e in entries:
         cid = e.get("campground_id")
         if not cid:

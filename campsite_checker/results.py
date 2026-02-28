@@ -1,11 +1,10 @@
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
 
 
-def get_facility_name(results: List[AvailableCampsite]) -> str:
+def get_facility_name(results: list[AvailableCampsite]) -> str:
     """Extract recreation area + facility name from the first result that has one."""
     for r in results:
         facility = getattr(r, "facility_name", "") or ""
@@ -19,7 +18,7 @@ def get_facility_name(results: List[AvailableCampsite]) -> str:
     return "Unknown"
 
 
-def get_booking_url(results: List[AvailableCampsite]) -> str:
+def get_booking_url(results: list[AvailableCampsite]) -> str:
     """Extract booking URL from the first result that has one."""
     for r in results:
         url = getattr(r, "booking_url", "")
@@ -29,7 +28,7 @@ def get_booking_url(results: List[AvailableCampsite]) -> str:
 
 
 def count_matching_dates(
-    start_dt: datetime, end_dt: datetime, day_filter: Optional[Set[int]]
+    start_dt: datetime, end_dt: datetime, day_filter: set[int] | None
 ) -> int:
     """Count how many dates in [start_dt, end_dt) match the day filter."""
     if day_filter is None:
@@ -45,9 +44,9 @@ def count_matching_dates(
 
 
 def filter_results(
-    results: List[AvailableCampsite],
-    day_filter: Optional[Set[int]],
-) -> List[AvailableCampsite]:
+    results: list[AvailableCampsite],
+    day_filter: set[int] | None,
+) -> list[AvailableCampsite]:
     """Filter out boat/hike-in sites and apply day-of-week filter."""
 
     def _is_excluded(r: AvailableCampsite) -> bool:
@@ -75,9 +74,9 @@ def filter_results(
 
 
 def group_results(
-    results: List[AvailableCampsite],
-    day_filter: Optional[Set[int]],
-) -> Optional[Tuple[str, Dict[date, Set], int, str]]:
+    results: list[AvailableCampsite],
+    day_filter: set[int] | None,
+) -> tuple[str, dict[date, set], int, str] | None:
     """Filter results and group by date.
 
     Returns None if no results remain after filtering, otherwise returns
@@ -87,7 +86,7 @@ def group_results(
     if not filtered:
         return None
     name = get_facility_name(filtered)
-    by_date: Dict[date, Set] = defaultdict(set)
+    by_date: dict[date, set] = defaultdict(set)
     for r in filtered:
         by_date[r.booking_date.date()].add(r.campsite_id)
     total = sum(len(s) for s in by_date.values())
@@ -97,9 +96,9 @@ def group_results(
 
 def format_results(
     entry: dict,
-    results: List[AvailableCampsite],
-    day_filter: Optional[Set[int]],
-) -> Optional[str]:
+    results: list[AvailableCampsite],
+    day_filter: set[int] | None,
+) -> str | None:
     """Returns formatted string if there are results, None otherwise."""
     grouped = group_results(results, day_filter)
     if grouped is None:

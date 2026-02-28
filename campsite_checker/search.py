@@ -2,7 +2,6 @@ import concurrent.futures
 import inspect
 import logging
 import time
-from typing import Dict, List, Optional, Tuple
 
 from camply.containers import AvailableCampsite, SearchWindow
 
@@ -51,7 +50,7 @@ def build_searcher(entry: dict, search_window: SearchWindow, args):
 
 def run_search(
     entry: dict, searcher, verbose: bool
-) -> Tuple[List[AvailableCampsite], Optional[str]]:
+) -> tuple[list[AvailableCampsite], str | None]:
     try:
         results = searcher.get_matching_campsites(
             log=verbose,
@@ -66,7 +65,7 @@ def run_search(
 
 def search_entry(
     entry: dict, search_window: SearchWindow, args
-) -> Tuple[dict, List[AvailableCampsite], Optional[str], float]:
+) -> tuple[dict, list[AvailableCampsite], str | None, float]:
     """Build and run a single campsite search. Safe to call from a thread.
 
     Returns (entry, results, error, elapsed_seconds).
@@ -99,10 +98,10 @@ def search_entry(
 
 
 def execute_searches(
-    entries: List[dict], search_window: SearchWindow, args
-) -> Dict[int, Tuple[dict, List[AvailableCampsite], Optional[str]]]:
+    entries: list[dict], search_window: SearchWindow, args
+) -> dict[int, tuple[dict, list[AvailableCampsite], str | None]]:
     """Run all searches in parallel. Returns results keyed by entry index."""
-    results_by_index: Dict[int, Tuple[dict, List[AvailableCampsite], Optional[str]]] = {}
+    results_by_index: dict[int, tuple[dict, list[AvailableCampsite], str | None]] = {}
 
     # Limit max_workers to avoid OOM on smaller container instances
     max_workers = min(getattr(args, 'workers', 2), len(entries))

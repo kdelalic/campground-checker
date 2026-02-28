@@ -1,7 +1,6 @@
 import argparse
 import sys
 from datetime import date, datetime, timedelta
-from typing import List, Optional, Set, Tuple
 
 import yaml
 
@@ -132,7 +131,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_config(path: str) -> Tuple[List[dict], dict]:
+def load_config(path: str) -> tuple[list[dict], dict]:
     """Returns (campsite entries, full raw config dict)."""
     try:
         with open(path) as fh:
@@ -197,10 +196,53 @@ def load_config(path: str) -> Tuple[List[dict], dict]:
         if alert is not None and not isinstance(alert, bool):
             sys.exit(f"Error in '{label}': alert must be true or false")
 
+        criteria_raw = entry.get("criteria")
+        days_raw = entry.get("days")
+
+        if criteria_raw is not None and days_raw is not None:
+            sys.exit(f"Error in '{label}': 'criteria' and 'days' are mutually exclusive")
+
+        if criteria_raw is not None:
+            if not isinstance(criteria_raw, list) or len(criteria_raw) == 0:
+                sys.exit(f"Error in '{label}': 'criteria' must be a non-empty list")
+            parsed_criteria = []
+            for j, crit in enumerate(criteria_raw):
+                if not isinstance(crit, dict):
+                    sys.exit(
+                        f"Error in '{label}', criterion #{j+1}: must be a mapping"
+                    )
+                crit_days = crit.get("days")
+                crit_day_filter = None
+                if crit_days is not None:
+                    if not isinstance(crit_days, list):
+                        sys.exit(
+                            f"Error in '{label}', criterion #{j+1}: "
+                            "'days' must be a list of weekday names"
+                        )
+                    crit_day_filter = parse_day_names(crit_days)
+                crit_nights = crit.get("nights")
+                if crit_nights is not None and not isinstance(crit_nights, int):
+                    sys.exit(
+                        f"Error in '{label}', criterion #{j+1}: "
+                        "'nights' must be an integer"
+                    )
+                parsed_criteria.append(
+                    {"_day_filter": crit_day_filter, "nights": crit_nights}
+                )
+            entry["_criteria"] = parsed_criteria
+        else:
+            entry["_criteria"] = None
+            if days_raw is not None:
+                if not isinstance(days_raw, list):
+                    sys.exit(f"Error in '{label}': 'days' must be a list of weekday names")
+                entry["_day_filter"] = parse_day_names(days_raw)
+            else:
+                entry["_day_filter"] = None
+
     return entries, raw
 
 
-def compute_date_range(args: argparse.Namespace) -> Tuple[datetime, datetime]:
+def compute_date_range(args: argparse.Namespace) -> tuple[datetime, datetime]:
     today = date.today()
 
     if args.start:
@@ -226,20 +268,69 @@ def compute_date_range(args: argparse.Namespace) -> Tuple[datetime, datetime]:
     return start_dt, end_dt
 
 
-def resolve_day_filter(args: argparse.Namespace) -> Optional[Set[int]]:
+def parse_day_names(names: list) -> set[int] | None:
+    """Convert a list of weekday name strings to a set of weekday ints.
+
+    Returns ``None`` if *names* is empty (meaning "use global default").
+    """
+    if not names:
+        return None
+    days: set[int] = set()
+    for name in names:
+        key = str(name).lower()
+        if key not in WEEKDAY_NAMES:
+            valid = ", ".join(d.capitalize() for d in WEEKDAY_NAMES)
+            sys.exit(f"Error: unknown weekday '{name}'. Valid: {valid}")
+        days.add(WEEKDAY_NAMES[key])
+    return days if days else None
+
+
+def resolve_day_filter(args: argparse.Namespace) -> set[int] | None:
     """Return a set of weekday integers to filter on, or None for no filter."""
     if args.all_days:
         return None
-
     if args.day:
-        days: Set[int] = set()
-        for name in args.day:
-            key = name.lower()
-            if key not in WEEKDAY_NAMES:
-                valid = ", ".join(d.capitalize() for d in WEEKDAY_NAMES)
-                sys.exit(f"Error: unknown weekday '{name}'. Valid: {valid}")
-            days.add(WEEKDAY_NAMES[key])
-        return days
-
+        return parse_day_names(args.day)
     # Default: Saturdays only
     return {5}
+
+
+def resolve_entry_day_filter(
+    entry: dict, global_day_filter: set[int] | None
+) -> set[int] | None:
+    """Return the effective day filter for an entry.
+
+    Uses the entry's per-entry ``_day_filter`` if set, otherwise falls back
+    to *global_day_filter*.
+    """
+    entry_filter = entry.get("_day_filter")
+    if entry_filter is not None:
+        return entry_filter
+    return global_day_filter
+
+
+def expand_search_tasks(
+    entries: list[dict], global_day_filter: set[int] | None
+) -> list[tuple[int, dict, set[int] | None]]:
+    """Expand entries with criteria into individual search tasks.
+
+    Returns a list of ``(original_entry_index, entry_for_search,
+    effective_day_filter)`` tuples.  Entries with ``_criteria`` produce one
+    task per criterion (shallow-copied entry with the criterion's ``nights``
+    override).  Entries without criteria produce a single task.
+    """
+    tasks: list[tuple[int, dict, set[int] | None]] = []
+    for i, entry in enumerate(entries):
+        criteria = entry.get("_criteria")
+        if criteria:
+            for crit in criteria:
+                task_entry = dict(entry)
+                if crit.get("nights") is not None:
+                    task_entry["nights"] = crit["nights"]
+                crit_filter = crit["_day_filter"]
+                effective = crit_filter if crit_filter is not None else global_day_filter
+                tasks.append((i, task_entry, effective))
+        else:
+            effective = resolve_entry_day_filter(entry, global_day_filter)
+            tasks.append((i, entry, effective))
+    return tasks

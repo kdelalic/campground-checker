@@ -4,7 +4,6 @@ Preserves comments, formatting, and ordering when modifying entries.
 """
 
 import logging
-from typing import Dict, Optional, Tuple
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
@@ -45,7 +44,7 @@ def _find_entry(data, provider: str, campground_id: int):
     return items, None
 
 
-def _get_eol_comment(item, key: str) -> Optional[str]:
+def _get_eol_comment(item, key: str) -> str | None:
     """Extract end-of-line comment text for a key in a CommentedMap."""
     try:
         tokens = item.ca.items[key]
@@ -62,7 +61,7 @@ def _get_eol_comment(item, key: str) -> Optional[str]:
 
 
 def append_campground(
-    path: str, provider: str, campground_id: int, name: Optional[str] = None
+    path: str, provider: str, campground_id: int, name: str | None = None
 ) -> None:
     """Append a campground entry to the YAML config file."""
     data, yml = _load(path)
@@ -111,12 +110,12 @@ def update_alert_field(
         _save(path, data, yml)
 
 
-def parse_yaml_comments(path: str) -> Dict[Tuple[str, int], str]:
+def parse_yaml_comments(path: str) -> dict[tuple[str, int], str]:
     """Extract inline comments from campground entries.
 
     Returns dict mapping (provider, campground_id) -> comment string.
     """
-    names: Dict[Tuple[str, int], str] = {}
+    names: dict[tuple[str, int], str] = {}
     try:
         data, _ = _load(path)
         campsites = data.get("campsites", {})

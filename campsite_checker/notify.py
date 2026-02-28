@@ -6,7 +6,6 @@ import time
 import urllib.error
 import urllib.request
 from datetime import date
-from typing import FrozenSet, List, Optional, Set, Tuple
 
 from camply.containers import AvailableCampsite
 
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def get_telegram_creds(
     args, config: dict
-) -> Tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """Resolve token and chat_id with priority: CLI args > env vars > YAML config."""
     tg_cfg = config.get("telegram") or {}
     token = (
@@ -71,9 +70,9 @@ _MAX_TG_LEN = 4096
 
 
 def build_telegram_message(
-    entries_with_results: List[Tuple[dict, List[AvailableCampsite]]],
-    day_filter: Optional[Set[int]],
-) -> List[str]:
+    entries_with_results: list[tuple[dict, list[AvailableCampsite]]],
+    day_filter: set[int] | None,
+) -> list[str]:
     """Format Telegram HTML messages for found availability.
 
     Returns a list of messages, each within Telegram's 4096-character limit.
@@ -82,7 +81,7 @@ def build_telegram_message(
     """
     header = "\U0001f3d5 <b>Campsite Availability Found!</b>"
 
-    sections: List[str] = []
+    sections: list[str] = []
     for entry, results in entries_with_results:
         grouped = group_results(results, day_filter)
         if grouped is None:
@@ -102,8 +101,8 @@ def build_telegram_message(
     if not sections:
         return []
 
-    messages: List[str] = []
-    current_parts: List[str] = [header]
+    messages: list[str] = []
+    current_parts: list[str] = [header]
     current_len = len(header)
 
     for section in sections:
@@ -122,8 +121,8 @@ def build_telegram_message(
 
 
 def result_keys(
-    entry: dict, results: List[AvailableCampsite], day_filter: Optional[Set[int]]
-) -> FrozenSet[Tuple[str, int, date]]:
+    entry: dict, results: list[AvailableCampsite], day_filter: set[int] | None
+) -> frozenset[tuple[str, int, date]]:
     """Return a frozenset of (name, campsite_id, booking_date) for deduplication."""
     filtered = filter_results(results, day_filter)
     name = get_facility_name(filtered) if filtered else "Unknown"
@@ -132,10 +131,10 @@ def result_keys(
 
 def filter_new_results(
     entry: dict,
-    results: List[AvailableCampsite],
-    day_filter: Optional[Set[int]],
-    prev_keys: Set[Tuple[str, int, date]],
-) -> List[AvailableCampsite]:
+    results: list[AvailableCampsite],
+    day_filter: set[int] | None,
+    prev_keys: set[tuple[str, int, date]],
+) -> list[AvailableCampsite]:
     """Return only results whose keys are not in *prev_keys*.
 
     Returns an empty list if the entry has alert disabled (``alert: false``).
