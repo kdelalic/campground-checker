@@ -5,7 +5,7 @@ campsites:
     - campground_id: 232491 # Golden Gate National Recreation Area, CA - Kirby Cove Campground
       alert: true
     - campground_id: 232447 # Yosemite National Park, CA - Upper Pines Campground
-      alert: true
+      alert: false
     - campground_id: 232450 # Yosemite National Park, CA - Lower Pines Campground
       alert: true
     - campground_id: 232449 # Yosemite National Park, CA - North Pines Campground
@@ -16,14 +16,15 @@ campsites:
       alert: true
     - campground_id: 232769 # Lake Tahoe Basin Management Unit, CA - Fallen Leaf Campground
     - campground_id: 233116 # Los Padres National Forest, - Kirk Creek Campground
-      alert: true
+      alert: false
     - campground_id: 232461 # Sequoia & Kings Canyon National Parks, CA - Lodgepole Campground-Sequoia And Kings Canyon National Park
-      alert: true
+      alert: false
     - campground_id: 253917 # Sequoia & Kings Canyon National Parks, CA - Sentinel Campground
       alert: false
     - campground_id: 10124502 # Sequoia & Kings Canyon National Parks, CA - Azalea Campground
       alert: false
     - campground_id: 232768 # Lake Tahoe Basin Management Unit, CA - Nevada Beach Campground
+      alert: true
 
   ReserveCalifornia:
     - campground_id: 786 # Emerald Bay SP - Upper Eagle Point (sites 1-33)
@@ -47,3 +48,4 @@ campsites:
     - campground_id: 504 # Henry Cowell Redwoods SP - Cowell Campground  South (sites 1-51)
     - campground_id: 505 # Henry Cowell Redwoods SP - Cowell Campground North (sites 52-113)
     - campground_id: 498 # Half Moon Bay SB - Francis Beach Campground
+      alert: true
