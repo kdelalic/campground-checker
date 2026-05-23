@@ -17,4 +17,4 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           R2_CUSTOM_DOMAIN: ${{ secrets.R2_CUSTOM_DOMAIN }}
         run: |
-          docker compose up -d --build
+          docker compose up -d --build --force-recreate
