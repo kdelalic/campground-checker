@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
         metavar="WEEKDAY",
         help=(
             "Filter results to specific day(s) of the week "
-            "(e.g. Saturday, Friday). Default: Saturday"
+            "(e.g. Saturday, Friday). Default: Sunday"
         ),
     )
     parser.add_argument(
@@ -291,8 +291,8 @@ def resolve_day_filter(args: argparse.Namespace) -> set[int] | None:
         return None
     if args.day:
         return parse_day_names(args.day)
-    # Default: Saturdays only
-    return {5}
+    # Default: Sundays only
+    return {6}
 
 
 def resolve_entry_day_filter(
