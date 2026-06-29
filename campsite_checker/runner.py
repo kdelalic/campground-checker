@@ -99,7 +99,7 @@ def run_once(
     dashboard_path: str | None = None,
     scan_type: str | None = None,
 ) -> tuple[set[tuple[str, int, date]], list[tuple[dict, list[AvailableCampsite]]]]:
-    """Run one scan. Returns (current_keys, found_entries)."""
+    """Run one scan. Returns (current_keys, found_entries, all_with_results)."""
     scan_start = monotonic()
     start_dt, end_dt = compute_date_range(args)
     search_window = SearchWindow(start_date=start_dt, end_date=end_dt)
@@ -125,12 +125,14 @@ def run_once(
 
     # Deduplicate per original entry and build output
     found_entries: list[tuple[dict, list[AvailableCampsite]]] = []
+    all_with_results: list[tuple[dict, list[AvailableCampsite]]] = []
     current_keys: set[tuple[str, int, date]] = set()
     total_sites = 0
 
     for i, entry in enumerate(entries):
         results = entry_filtered.get(i)
         if not results:
+            all_with_results.append((entry, []))
             continue
         # Deduplicate by (campsite_id, booking_date)
         seen: set[tuple[int, date]] = set()
@@ -141,6 +143,7 @@ def run_once(
                 seen.add(key)
                 unique.append(r)
         results = unique
+        all_with_results.append((entry, results))
 
         current_keys |= result_keys(entry, results, None)
         grouped = group_results(results, None)
@@ -169,10 +172,10 @@ def run_once(
     if dashboard_path:
         from .dashboard import generate_dashboard
 
-        generate_dashboard(found_entries, None, dashboard_path)
+        generate_dashboard(all_with_results, None, dashboard_path)
         logger.info("   Dashboard written to %s", dashboard_path)
 
-    return current_keys, found_entries
+    return current_keys, found_entries, all_with_results
 
 
 SENT_KEYS_FILE = Path(os.environ.get("SENT_KEYS_PATH", ".campsite_sent_keys.json"))
@@ -310,10 +313,12 @@ def run_forever(
                 alert_keys: set[tuple[str, int, date]] = set()
                 alert_found: list[tuple[dict, list[AvailableCampsite]]] = []
                 if alert_entries:
-                    alert_keys, alert_found = run_once(
+                    alert_keys, alert_found, alert_all = run_once(
                         alert_entries, args, day_filter, tg_token, tg_chat_id,
                         scan_num, dashboard_path=None, scan_type="alert",
                     )
+                else:
+                    alert_keys, alert_found, alert_all = set(), [], []
 
                 # --- Dashboard-only scan (when interval elapsed) ---
                 now = monotonic()
@@ -321,11 +326,11 @@ def run_forever(
                 dash_keys: set[tuple[str, int, date]] = set()
 
                 if dashboard_due and dashboard_entries:
-                    dash_keys, dash_found = run_once(
+                    dash_keys, dash_found, dash_all = run_once(
                         dashboard_entries, args, day_filter, tg_token, tg_chat_id,
                         scan_num, dashboard_path=None, scan_type="dashboard",
                     )
-                    cached_dashboard_results = dash_found
+                    cached_dashboard_results = dash_all
                     last_dashboard_scan = monotonic()
                     scan_status.last_dashboard_scan = datetime.now()
                 elif dashboard_due:
@@ -337,7 +342,7 @@ def run_forever(
                 if dashboard_path:
                     from .dashboard import generate_dashboard
 
-                    merged = alert_found + cached_dashboard_results
+                    merged = alert_all + cached_dashboard_results
                     generate_dashboard(merged, None, dashboard_path)
                     logger.info("   Dashboard written to %s", dashboard_path)
 
@@ -359,7 +364,7 @@ def run_forever(
                 scan_status.update(entries_count=len(current_entries))
 
                 # Free scan-local data before sleeping
-                del alert_keys, alert_found, dash_keys, current_keys, current_entries
+                del alert_keys, alert_found, alert_all, dash_keys, current_keys, current_entries
 
             except Exception as exc:
                 logger.error("Scan #%d failed: %s", scan_num, exc, exc_info=True)
@@ -407,7 +412,7 @@ def main() -> None:
             dashboard_path=dashboard_path,
         )
     else:
-        current_keys, found_entries = run_once(
+        current_keys, found_entries, _ = run_once(
             entries, args, day_filter, tg_token, tg_chat_id,
             dashboard_path=dashboard_path,
         )

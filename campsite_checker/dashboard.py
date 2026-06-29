@@ -104,10 +104,34 @@ def build_dashboard_html(
 
     for entry, results in entries_with_results:
         filtered = filter_results(results, day_filter)
+
+        # Resolve the display name: use camply result metadata when available,
+        # otherwise fall back to the entry's config-level name.
+        if filtered:
+            name = get_facility_name(filtered)
+        else:
+            name = entry.get("name") or f"Campground #{entry.get('campground_id', '?')}"
+
+        safe_name = html.escape(name)
+        card_id = f"site-{len(cards_html)}"
+
         if not filtered:
+            # No availability for this campground — show a muted card.
+            nav_links.append(
+                f'<li data-ref="{card_id}" data-unavailable="true">'
+                f'<a href="#{card_id}">{safe_name}</a> '
+                f'<span class="nav-count nav-none">\u2014</span></li>'
+            )
+            cards_html.append(
+                f'<div class="card card-unavailable" id="{card_id}">'
+                f'<div class="card-header">'
+                f'<h2>{safe_name}</h2>'
+                f'<span class="site-count site-count-none">No availability</span>'
+                f'</div>'
+                f'</div>'
+            )
             continue
 
-        name = get_facility_name(filtered)
         url = get_booking_url(filtered)
 
         by_date: dict[date, list[AvailableCampsite]] = defaultdict(list)
@@ -116,8 +140,6 @@ def build_dashboard_html(
             all_availabilities[r.booking_date.date()] += 1
 
         total = sum(len(v) for v in by_date.values())
-        safe_name = html.escape(name)
-        card_id = f"site-{len(cards_html)}"
 
         nav_links.append(f'<li data-ref="{card_id}"><a href="#{card_id}">{safe_name}</a> <span class="nav-count">{total}</span></li>')
 
@@ -339,6 +361,10 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
 .card-header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;border-bottom:1px solid #f1f5f9;padding-bottom:16px;}}
 .card-header h2{{font-size:1.25rem;margin:0;color:#0f172a;line-height:1.3;}}
 .site-count{{background:#ecfdf5;color:#047857;padding:4px 12px;border-radius:9999px;font-size:0.875rem;font-weight:600;white-space:nowrap;}}
+.site-count-none{{background:#f1f5f9;color:var(--text-muted);padding:4px 12px;border-radius:9999px;font-size:0.875rem;font-weight:600;white-space:nowrap;}}
+.card-unavailable{{opacity:0.75;}}
+.card-unavailable .card-header{{border-bottom-color:var(--border-color);}}
+.nav-none{{background:#f1f5f9;color:var(--text-muted);}}
 
 .table-container {{ overflow-x: auto; margin-bottom: 20px; }}
 table{{width:100%;border-collapse:separate;border-spacing:0;font-size:0.95rem}}
@@ -395,6 +421,8 @@ tr:last-child td {{border-bottom:none;}}
   .card-header {{ border-bottom-color: #334155; }}
   .card-header h2 {{ color: #f8fafc; }}
   .site-count {{ background: rgba(16, 185, 129, 0.2); color: #34d399; }}
+  .site-count-none {{ background: #334155; color: #94a3b8; }}
+  .nav-none {{ background: #334155; color: #94a3b8; }}
   th {{ border-bottom-color: #334155; }}
   td {{ border-bottom-color: #334155; color: #e2e8f0; }}
 }}
@@ -465,6 +493,14 @@ document.addEventListener("DOMContentLoaded", () => {{
   
   function filterByDate(dateStr) {{
     allCards.forEach(card => {{
+      // Unavailable cards: show only when no date filter is active
+      if (card.classList.contains("card-unavailable")) {{
+        card.style.display = dateStr ? "none" : "";
+        const navItem = document.querySelector(`.quick-nav li[data-ref="${{card.id}}"]`);
+        if (navItem) navItem.style.display = dateStr ? "none" : "";
+        return;
+      }}
+
       const rows = card.querySelectorAll("tbody tr");
       let cardHasMatch = false;
       let visibleCount = 0;
