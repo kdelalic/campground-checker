@@ -1,5 +1,5 @@
 defaults:
-  days: [Friday, Saturday]
+  days: [Friday]
   nights: 2
 
 campsites:
