@@ -1,4 +1,4 @@
-camply==0.34.0
+camply==0.34.2
 PyYAML==6.0.3
 pyTelegramBotAPI==4.25.0
 ruamel.yaml>=0.18.0
