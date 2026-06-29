@@ -1,5 +1,5 @@
 # ---------- build stage (compile C extensions, then discard toolchain) ----------
-FROM python:3.14-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -7,7 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+ENV UV_COMPILE_BYTECODE=1
+RUN uv pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ---------- runtime stage (no compiler, smaller image) ----------
 FROM python:3.14-slim
