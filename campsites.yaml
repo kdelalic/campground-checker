@@ -1,186 +1,55 @@
+defaults:
+  days: [Friday, Saturday]
+  nights: 2
+
 campsites:
   RecreationDotGov:
-  - campground_id: 233359
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232491
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232447
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232450
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232449
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232452
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232451
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232769
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 233116
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232461
-    alert: true
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 253917
-    alert: true
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 10124502
-    alert: true
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 232768
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
+    - campground_id: 233359 # Point Reyes National Seashore, CA - Point Reyes National Seashore Campground
+      alert: false
+    - campground_id: 232491 # Golden Gate National Recreation Area, CA - Kirby Cove Campground
+      alert: false
+    - campground_id: 232447 # Yosemite National Park, CA - Upper Pines Campground
+      alert: false
+    - campground_id: 232450 # Yosemite National Park, CA - Lower Pines Campground
+      alert: false
+    - campground_id: 232449 # Yosemite National Park, CA - North Pines Campground
+      alert: false
+    - campground_id: 232452 # Yosemite National Park, CA - Crane Flat Campground
+      alert: false
+    - campground_id: 232451 # Yosemite National Park, CA - Hodgdon Meadow Campground
+      alert: false
+    - campground_id: 232769 # Lake Tahoe Basin Management Unit, CA - Fallen Leaf Campground
+    - campground_id: 233116 # Los Padres National Forest, - Kirk Creek Campground
+      alert: false
+    - campground_id: 232461 # Sequoia & Kings Canyon National Parks, CA - Lodgepole Campground-Sequoia And Kings Canyon National Park
+      alert: true
+    - campground_id: 253917 # Sequoia & Kings Canyon National Parks, CA - Sentinel Campground
+      alert: true
+    - campground_id: 10124502 # Sequoia & Kings Canyon National Parks, CA - Azalea Campground
+      alert: true
+    - campground_id: 232768 # Lake Tahoe Basin Management Unit, CA - Nevada Beach Campground
+      alert: false
+
   ReserveCalifornia:
-  - campground_id: 786
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 472
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 453
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 455
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 2154
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 458
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 454
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 653
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 657
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 494
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 495
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 706
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 2061
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 648
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 344
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 346
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 348
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 349
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 504
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 505
-    days:
-    - Friday
-    - Saturday
-    nights: 2
-  - campground_id: 498
-    alert: false
-    days:
-    - Friday
-    - Saturday
-    nights: 2
+    - campground_id: 786 # Emerald Bay SP - Upper Eagle Point (sites 1-33)
+    - campground_id: 472 # Emerald Bay SP - Lower Eagle Point (sites 34-100)
+    - campground_id: 453 # D.L. Bliss SP - Lower Pine (sites 1-32)
+    - campground_id: 455 # D.L. Bliss SP - Upper Pine (sites 33-88)
+    - campground_id: 2154 # D.L. Bliss SP - East Ridge Campground (sites 91-112)
+    - campground_id: 458 # D.L. Bliss SP - West Ridge Campground (sites 113 - 130)
+    - campground_id: 454 # D.L. Bliss SP - Beach Camp (sites 141-165)
+    - campground_id: 653 # Samuel P. Taylor SP - Creekside Loop (sites 1-25)
+    - campground_id: 657 # Samuel P. Taylor SP - Orchard Hill Loop (sites 26-59)
+    - campground_id: 494 # Grover Hot Springs SP - Hot Springs Campground (sites 1-36)
+    - campground_id: 495 # Grover Hot Springs SP - Hot Springs Campground (sites 37-76)
+    - campground_id: 706 # Sonoma Coast State Park - Wright's Beach (sites 1-27)
+    - campground_id: 2061 # Sonoma Coast State Park - Bodega Dunes
+    - campground_id: 648 # Salt Point SP - Gerstle Cove Campground (sites 1-30)
+    - campground_id: 344 # Calaveras Big Trees SP - North Grove (sites 1-26)
+    - campground_id: 346 # Calaveras Big Trees SP - North Grove (sites 27-59)
+    - campground_id: 348 # Calaveras Big Trees SP - North Grove (sites 60-74)
+    - campground_id: 349 # Calaveras Big Trees SP - Oak Hollow Campground
+    - campground_id: 504 # Henry Cowell Redwoods SP - Cowell Campground  South (sites 1-51)
+    - campground_id: 505 # Henry Cowell Redwoods SP - Cowell Campground North (sites 52-113)
+    - campground_id: 498 # Half Moon Bay SB - Francis Beach Campground
+      alert: false

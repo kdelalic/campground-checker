@@ -180,6 +180,18 @@ def load_config(path: str) -> tuple[list[dict], dict]:
                 if parsed_name:
                     entry["name"] = parsed_name
 
+    # Apply defaults from top-level 'defaults' section
+    defaults = raw.get("defaults") or {}
+    default_nights = defaults.get("nights")
+    if default_nights is not None and not isinstance(default_nights, int):
+        sys.exit("Error: defaults.nights must be an integer")
+    default_days = defaults.get("days")
+    default_day_filter = None
+    if default_days is not None:
+        if not isinstance(default_days, list):
+            sys.exit("Error: defaults.days must be a list of weekday names")
+        default_day_filter = parse_day_names(default_days)
+
     for i, entry in enumerate(entries):
         label = f"entry #{i+1}"
         if not entry.get("campground_id") and not entry.get("recreation_area"):
@@ -239,6 +251,13 @@ def load_config(path: str) -> tuple[list[dict], dict]:
             else:
                 entry["_day_filter"] = None
 
+        # Apply default nights if not set per-entry
+        if "nights" not in entry and default_nights is not None:
+            entry["nights"] = default_nights
+
+    # Store default day filter on raw config for resolve_day_filter
+    raw["_default_day_filter"] = default_day_filter
+
     return entries, raw
 
 
@@ -285,12 +304,21 @@ def parse_day_names(names: list) -> set[int] | None:
     return days if days else None
 
 
-def resolve_day_filter(args: argparse.Namespace) -> set[int] | None:
-    """Return a set of weekday integers to filter on, or None for no filter."""
+def resolve_day_filter(
+    args: argparse.Namespace, config: dict | None = None
+) -> set[int] | None:
+    """Return a set of weekday integers to filter on, or None for no filter.
+
+    Priority: --all-days > --day > defaults.days (YAML) > Sunday.
+    """
     if args.all_days:
         return None
     if args.day:
         return parse_day_names(args.day)
+    if config is not None:
+        default_filter = config.get("_default_day_filter")
+        if default_filter is not None:
+            return default_filter
     # Default: Sundays only
     return {6}
 

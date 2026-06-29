@@ -389,7 +389,7 @@ def main() -> None:
         logging.getLogger("camply").setLevel(logging.INFO)
 
     entries, config = load_config(args.config)
-    day_filter = resolve_day_filter(args)
+    day_filter = resolve_day_filter(args, config)
     tg_token, tg_chat_id = get_telegram_creds(args, config)
 
     if (tg_token is None) != (tg_chat_id is None):

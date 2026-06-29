@@ -27,6 +27,14 @@
 #   --day Friday Saturday Show specific weekdays (default: Saturday only)
 #   --all-days            Show all days of the week
 #
+# Defaults (optional):
+#   Set a top-level 'defaults' section to apply days/nights to all entries
+#   that don't override them per-entry.  CLI flags still take priority.
+#
+# defaults:
+#   days: [Friday, Saturday]
+#   nights: 2
+#
 # Telegram notifications (optional):
 #   telegram.bot_token  - Telegram bot token from @BotFather
 #   telegram.chat_id    - Your Telegram chat/user ID
