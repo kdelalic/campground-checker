@@ -29,23 +29,23 @@ def build_calendar_html(all_availabilities: dict[date, int]) -> str:
     min_date = min(all_availabilities.keys())
     max_date = max(all_availabilities.keys())
 
-    cal = calendar.Calendar(firstweekday=6) # Sunday start
-    
+    cal = calendar.Calendar(firstweekday=6)  # Sunday start
+
     months_html = []
     month_options = []
     curr_year = min_date.year
     curr_month = min_date.month
-    
+
     month_idx = 0
     while (curr_year, curr_month) <= (max_date.year, max_date.month):
         month_name = calendar.month_name[curr_month]
         month_id = f"cal-month-{month_idx}"
         month_label = f"{month_name} {curr_year}"
-        
+
         month_options.append(f'<option value="{month_id}">{month_label}</option>')
-        
+
         weeks = cal.monthdatescalendar(curr_year, curr_month)
-        
+
         rows = []
         for week in weeks:
             cells = []
@@ -55,37 +55,39 @@ def build_calendar_html(all_availabilities: dict[date, int]) -> str:
                 else:
                     count = all_availabilities.get(d, 0)
                     if count > 0:
-                        cells.append(f'<td class="calendar-available" data-date="{d.isoformat()}" title="{count} site(s) available">{d.day}</td>')
+                        cells.append(
+                            f'<td class="calendar-available" data-date="{d.isoformat()}" title="{count} site(s) available">{d.day}</td>'
+                        )
                     else:
                         cells.append(f'<td class="calendar-day">{d.day}</td>')
             rows.append(f"<tr>{''.join(cells)}</tr>")
-            
-        display_style = 'style="display: none;"' if month_idx > 0 else ''
+
+        display_style = 'style="display: none;"' if month_idx > 0 else ""
         month_html = (
             f'<div class="calendar-month" id="{month_id}" {display_style}>'
             f'<table class="calendar-table">'
-            f'<thead><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody>'
-            f'</table>'
-            f'</div>'
+            f"<thead><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            f"</table>"
+            f"</div>"
         )
         months_html.append(month_html)
-        
+
         curr_month += 1
         if curr_month > 12:
             curr_month = 1
             curr_year += 1
         month_idx += 1
-            
+
     header_html = (
         f'<div class="calendar-controls">'
         f'<button id="prev-month-btn" class="nav-btn" title="Previous Month" disabled>&larr;</button>'
         f'<select id="month-selector">{"".join(month_options)}</select>'
         f'<button id="next-month-btn" class="nav-btn" title="Next Month" disabled>&rarr;</button>'
         f'<button id="clear-date-filter" style="display: none;">Clear Filter</button>'
-        f'</div>'
+        f"</div>"
     )
-            
+
     return f'<div class="calendar-container">{header_html}{"".join(months_html)}</div>\n'
 
 
@@ -125,10 +127,10 @@ def build_dashboard_html(
             cards_html.append(
                 f'<div class="card card-unavailable" id="{card_id}">'
                 f'<div class="card-header">'
-                f'<h2>{safe_name}</h2>'
+                f"<h2>{safe_name}</h2>"
                 f'<span class="site-count site-count-none">No availability</span>'
-                f'</div>'
-                f'</div>'
+                f"</div>"
+                f"</div>"
             )
             continue
 
@@ -141,16 +143,18 @@ def build_dashboard_html(
 
         total = sum(len(v) for v in by_date.values())
 
-        nav_links.append(f'<li data-ref="{card_id}"><a href="#{card_id}">{safe_name}</a> <span class="nav-count">{total}</span></li>')
+        nav_links.append(
+            f'<li data-ref="{card_id}"><a href="#{card_id}">{safe_name}</a> <span class="nav-count">{total}</span></li>'
+        )
 
         rows_html = []
         for d in sorted(by_date):
             count = len(by_date[d])
             date_str = html.escape(d.strftime("%a, %b %-d"))
             rows_html.append(
-                f"<tr data-date=\"{d.isoformat()}\" data-count=\"{count}\">"
+                f'<tr data-date="{d.isoformat()}" data-count="{count}">'
                 f"<td>{date_str}</td>"
-                f"<td><span class=\"available-badge\">{count} site(s)</span></td>"
+                f'<td><span class="available-badge">{count} site(s)</span></td>'
                 f"</tr>"
             )
 
@@ -161,11 +165,11 @@ def build_dashboard_html(
 
         cards_html.append(
             f'<div class="card" id="{card_id}">'
-            f"<div class=\"card-header\">"
+            f'<div class="card-header">'
             f"<h2>{safe_name}</h2>"
-            f"<span class=\"site-count\">{total} open site(s)</span>"
+            f'<span class="site-count">{total} open site(s)</span>'
             f"</div>"
-            f"<div class=\"table-container\">"
+            f'<div class="table-container">'
             f"<table>"
             f"<thead><tr><th>Date</th><th>Available</th></tr></thead>"
             f"<tbody>{''.join(rows_html)}</tbody>"
@@ -182,9 +186,11 @@ def build_dashboard_html(
     timestamp_str = html.escape(scan_timestamp.strftime("%b %-d, %Y at %-I:%M %p"))
 
     if not cards_html:
-        body_content = '<div class="no-results">\U0001f6d1 No availability found in the current scan.</div>'
-        nav_content = ''
-        calendar_content = ''
+        body_content = (
+            '<div class="no-results">\U0001f6d1 No availability found in the current scan.</div>'
+        )
+        nav_content = ""
+        calendar_content = ""
     else:
         calendar_content = build_calendar_html(all_availabilities)
         nav_content = f'<nav class="quick-nav"><h3>Jump To</h3><ul>{"".join(nav_links)}</ul></nav>'

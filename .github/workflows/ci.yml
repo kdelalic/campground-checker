@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install -r requirements-dev.txt
+      - name: Ruff check
+        run: |
+          source venv/bin/activate
+          ruff check .
+      - name: Ruff format check
+        run: |
+          source venv/bin/activate
+          ruff format --check .
+
+  test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run tests
+        run: |
+          source venv/bin/activate
+          pytest -v

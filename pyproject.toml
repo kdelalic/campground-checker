@@ -1,0 +1,23 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["campsite_checker"]
+
+[tool.ruff.lint.per-file-ignores]
+"campsite_checker/dashboard.py" = ["E501", "W293"]
+"check_campsites.py" = ["E501"]
+"campsite_checker/config.py" = ["E501"]
+"campsite_checker/notify.py" = ["E501"]
+"campsite_checker/search.py" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

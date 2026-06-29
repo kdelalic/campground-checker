@@ -27,7 +27,47 @@ python check_campsites.py --no-dashboard           # disable even if YAML enable
 python check_campsites.py --dashboard-interval 30  # dashboard-only sites scraped every 30 min
 ```
 
-No test suite exists in this project.
+## Testing & Linting
+
+```bash
+# Install dev dependencies
+source venv/bin/activate
+pip install -r requirements-dev.txt
+
+# Run tests
+pytest -v
+
+# Run a single test file
+pytest tests/test_config.py -v
+
+# Run linting
+ruff check .
+
+# Check formatting (does not modify files)
+ruff format --check .
+
+# Auto-fix lint issues
+ruff check . --fix
+
+# Auto-format code
+ruff format .
+```
+
+### Pre-Push Checklist
+
+Before committing and pushing changes, **always**:
+
+1. Run `ruff check .` and fix any issues
+2. Run `ruff format .` to ensure consistent formatting
+3. Run `pytest -v` and ensure all tests pass
+4. Do not push if any test fails or lint error remains
+
+```bash
+# Quick pre-push command:
+ruff check . && ruff format --check . && pytest -v
+```
+
+CI will also run these checks on every push and PR. Failing checks will block the deploy workflow.
 
 ## Docker
 

@@ -27,9 +27,7 @@ def get_booking_url(results: list[AvailableCampsite]) -> str:
     return ""
 
 
-def count_matching_dates(
-    start_dt: datetime, end_dt: datetime, day_filter: set[int] | None
-) -> int:
+def count_matching_dates(start_dt: datetime, end_dt: datetime, day_filter: set[int] | None) -> int:
     """Count how many dates in [start_dt, end_dt) match the day filter."""
     if day_filter is None:
         return (end_dt.date() - start_dt.date()).days
@@ -61,8 +59,7 @@ def filter_results(
             return True
         for attr in getattr(r, "campsite_attributes", None) or []:
             if getattr(attr, "attribute_name", "") == "Site Access" and any(
-                kw in str(getattr(attr, "attribute_value", "")).upper()
-                for kw in ("BOAT", "HIKE")
+                kw in str(getattr(attr, "attribute_value", "")).upper() for kw in ("BOAT", "HIKE")
             ):
                 return True
         return False

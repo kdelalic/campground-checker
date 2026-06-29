@@ -143,8 +143,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             e
             for e in entries
             if e.get("campground_id")
-            and (e.get("provider", "RecreationDotGov"), e["campground_id"])
-            not in names
+            and (e.get("provider", "RecreationDotGov"), e["campground_id"]) not in names
         ]
         if missing:
             resolved = _lookup_campground_names(missing)
@@ -222,8 +221,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
         label = f"{name} ({campground_id})" if name else str(campground_id)
         bot.send_message(
             message.chat.id,
-            f"Added {provider} campground {label}.\n"
-            "Will be included in the next scan.",
+            f"Added {provider} campground {label}.\nWill be included in the next scan.",
         )
 
     @bot.message_handler(commands=["remove"])
@@ -352,7 +350,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             bot.send_message(
                 message.chat.id,
                 f"Alerts for campground <code>{campground_id}</code>: {status}",
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
             return
 

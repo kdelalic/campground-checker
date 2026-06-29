@@ -47,8 +47,7 @@ class _ScanStatus:
             "last_scan": self.last_scan_time.isoformat() if self.last_scan_time else None,
             "dashboard_alert_interval_minutes": self.dashboard_alert_interval_minutes,
             "last_dashboard_scan": (
-                self.last_dashboard_scan.isoformat()
-                if self.last_dashboard_scan else None
+                self.last_dashboard_scan.isoformat() if self.last_dashboard_scan else None
             ),
         }
 

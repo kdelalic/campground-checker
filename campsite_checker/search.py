@@ -35,9 +35,7 @@ def build_searcher(entry: dict, search_window: SearchWindow, args):
         # Some providers (e.g. SearchReserveCalifornia) declare recreation_area
         # as a required positional arg with no default; pass [] when only
         # campground_id is given so the constructor doesn't raise TypeError.
-        param = inspect.signature(search_class.__init__).parameters.get(
-            "recreation_area"
-        )
+        param = inspect.signature(search_class.__init__).parameters.get("recreation_area")
         if param is not None and param.default is inspect.Parameter.empty:
             kwargs["recreation_area"] = []
 
@@ -48,9 +46,7 @@ def build_searcher(entry: dict, search_window: SearchWindow, args):
     return search_class(**kwargs)
 
 
-def run_search(
-    entry: dict, searcher, verbose: bool
-) -> tuple[list[AvailableCampsite], str | None]:
+def run_search(entry: dict, searcher, verbose: bool) -> tuple[list[AvailableCampsite], str | None]:
     try:
         results = searcher.get_matching_campsites(
             log=verbose,
@@ -92,7 +88,12 @@ def search_entry(
                     if rec_area:
                         entry["_resolved_name"] = f"{rec_area} ({len(cgs)} campgrounds)"
     except Exception as exc:
-        return entry, [], f"[ERROR] Could not create searcher for campground {label}: {exc}", time.monotonic() - start
+        return (
+            entry,
+            [],
+            f"[ERROR] Could not create searcher for campground {label}: {exc}",
+            time.monotonic() - start,
+        )
     results, error = run_search(entry, searcher, verbose=args.verbose)
     return entry, results, error, time.monotonic() - start
 
@@ -104,7 +105,7 @@ def execute_searches(
     results_by_index: dict[int, tuple[dict, list[AvailableCampsite], str | None]] = {}
 
     # Limit max_workers to avoid OOM on smaller container instances
-    max_workers = min(getattr(args, 'workers', 2), len(entries))
+    max_workers = min(getattr(args, "workers", 2), len(entries))
     logger.info("\u23f3 Starting %d searches (parallelism: %d)...", len(entries), max_workers)
 
     ok_count = 0
@@ -112,7 +113,7 @@ def execute_searches(
     total_start = time.monotonic()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        search_delay = getattr(args, 'search_delay', 0.0)
+        search_delay = getattr(args, "search_delay", 0.0)
         future_to_index = {}
         for i, entry in enumerate(entries):
             future = executor.submit(search_entry, entry, search_window, args)
@@ -134,7 +135,11 @@ def execute_searches(
             elif entry.get("_resolved_name"):
                 name = entry["_resolved_name"]
             else:
-                name = get_facility_name(results) if results else f"campground {entry.get('campground_id', entry.get('recreation_area', '?'))}"
+                name = (
+                    get_facility_name(results)
+                    if results
+                    else f"campground {entry.get('campground_id', entry.get('recreation_area', '?'))}"
+                )
             provider = entry.get("provider", "RecreationDotGov")
             provider_label = PROVIDER_DISPLAY.get(provider, provider.lower())
             if error:
@@ -151,7 +156,9 @@ def execute_searches(
     total_elapsed = time.monotonic() - total_start
     logger.info(
         "Searches complete: %d ok, %d failed (%.1fs total)",
-        ok_count, fail_count, total_elapsed,
+        ok_count,
+        fail_count,
+        total_elapsed,
     )
 
     return results_by_index

@@ -4,13 +4,12 @@ import logging
 import os
 import sys
 import time
+from collections import defaultdict
 from datetime import date, datetime, timedelta
-from time import monotonic
 from pathlib import Path
+from time import monotonic
 
 from camply.containers import AvailableCampsite, SearchWindow
-
-from collections import defaultdict
 
 from .config import (
     compute_date_range,
@@ -84,7 +83,10 @@ def print_scan_header(
 
     logger.info(
         "\U0001f3d5  %sChecking %d campgrounds for %s availability%s",
-        prefix, len(entries), day_label, timestamp,
+        prefix,
+        len(entries),
+        day_label,
+        timestamp,
     )
     logger.info("   %s \u2192 %s (%d dates)", start_dt.date(), end_dt.date(), n_dates)
 
@@ -164,7 +166,9 @@ def run_once(
     if found_entries:
         logger.info(
             "\U0001f3d5  Found %d site(s) at %d campground(s) (%.1fs)",
-            total_sites, len(found_entries), elapsed,
+            total_sites,
+            len(found_entries),
+            elapsed,
         )
     else:
         logger.info("\U0001f3d5  No availability found. (%.1fs)", elapsed)
@@ -206,11 +210,7 @@ def _save_sent_keys(path: Path, keys: set[tuple[str, int, date]]) -> None:
     """Save sent keys to disk, pruning stale entries."""
     today = date.today()
     cutoff = today + timedelta(days=_SENT_KEYS_MAX_AGE_DAYS)
-    data = sorted(
-        [name, cid, d.isoformat()]
-        for name, cid, d in keys
-        if today <= d <= cutoff
-    )
+    data = sorted([name, cid, d.isoformat()] for name, cid, d in keys if today <= d <= cutoff)
     path.write_text(json.dumps(data))
 
 
@@ -238,9 +238,7 @@ def _send_notifications(
         ]
     else:
         alert_entries = [
-            (entry, results)
-            for entry, results in found_entries
-            if entry.get("alert", False)
+            (entry, results) for entry, results in found_entries if entry.get("alert", False)
         ]
 
     if not alert_entries:
@@ -295,7 +293,8 @@ def run_forever(
 
     logger.info(
         "Alert interval: %d min, dashboard interval: %d min",
-        args.alert_interval, dashboard_interval,
+        args.alert_interval,
+        dashboard_interval,
     )
 
     try:
@@ -314,8 +313,14 @@ def run_forever(
                 alert_found: list[tuple[dict, list[AvailableCampsite]]] = []
                 if alert_entries:
                     alert_keys, alert_found, alert_all = run_once(
-                        alert_entries, args, day_filter, tg_token, tg_chat_id,
-                        scan_num, dashboard_path=None, scan_type="alert",
+                        alert_entries,
+                        args,
+                        day_filter,
+                        tg_token,
+                        tg_chat_id,
+                        scan_num,
+                        dashboard_path=None,
+                        scan_type="alert",
                     )
                 else:
                     alert_keys, alert_found, alert_all = set(), [], []
@@ -327,8 +332,14 @@ def run_forever(
 
                 if dashboard_due and dashboard_entries:
                     dash_keys, dash_found, dash_all = run_once(
-                        dashboard_entries, args, day_filter, tg_token, tg_chat_id,
-                        scan_num, dashboard_path=None, scan_type="dashboard",
+                        dashboard_entries,
+                        args,
+                        day_filter,
+                        tg_token,
+                        tg_chat_id,
+                        scan_num,
+                        dashboard_path=None,
+                        scan_type="dashboard",
                     )
                     cached_dashboard_results = dash_all
                     last_dashboard_scan = monotonic()
@@ -379,7 +390,8 @@ def run_forever(
             mins_until_dash = max(0, dashboard_interval - mins_since_dash)
             logger.info(
                 "Next alert check in %d min. Next dashboard scan in ~%d min. Ctrl+C to stop.",
-                args.alert_interval, int(mins_until_dash),
+                args.alert_interval,
+                int(mins_until_dash),
             )
             time.sleep(args.alert_interval * 60)
 
@@ -408,12 +420,22 @@ def main() -> None:
 
     if args.forever:
         run_forever(
-            entries, config, args.config, args, day_filter, tg_token, tg_chat_id,
+            entries,
+            config,
+            args.config,
+            args,
+            day_filter,
+            tg_token,
+            tg_chat_id,
             dashboard_path=dashboard_path,
         )
     else:
         current_keys, found_entries, _ = run_once(
-            entries, args, day_filter, tg_token, tg_chat_id,
+            entries,
+            args,
+            day_filter,
+            tg_token,
+            tg_chat_id,
             dashboard_path=dashboard_path,
         )
         _send_notifications(found_entries, None, tg_token, tg_chat_id)

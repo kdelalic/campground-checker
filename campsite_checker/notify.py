@@ -14,9 +14,7 @@ from .results import filter_results, get_facility_name, group_results
 logger = logging.getLogger(__name__)
 
 
-def get_telegram_creds(
-    args, config: dict
-) -> tuple[str | None, str | None]:
+def get_telegram_creds(args, config: dict) -> tuple[str | None, str | None]:
     """Resolve token and chat_id with priority: CLI args > env vars > YAML config."""
     tg_cfg = config.get("telegram") or {}
     token = (
@@ -38,7 +36,14 @@ def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> 
     Retries on rate-limiting (HTTP 429) and transient network errors.
     """
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "HTML", "link_preview_options": {"is_disabled": True}}).encode()
+    payload = json.dumps(
+        {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "link_preview_options": {"is_disabled": True},
+        }
+    ).encode()
 
     for attempt in range(max_retries):
         req = urllib.request.Request(
@@ -49,7 +54,7 @@ def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> 
             return
         except urllib.error.HTTPError as exc:
             if exc.code == 429 and attempt < max_retries - 1:
-                delay = 2 ** attempt
+                delay = 2**attempt
                 logger.warning("Telegram rate-limited, retrying in %ds...", delay)
                 time.sleep(delay)
                 continue
@@ -59,7 +64,7 @@ def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> 
             return  # Non-retryable HTTP error
         except Exception as exc:
             if attempt < max_retries - 1:
-                delay = 2 ** attempt
+                delay = 2**attempt
                 logger.warning("Telegram send failed, retrying in %ds: %s", delay, exc)
                 time.sleep(delay)
                 continue

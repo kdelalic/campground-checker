@@ -86,9 +86,7 @@ def remove_campground(path: str, provider: str, campground_id: int) -> None:
         _save(path, data, yml)
 
 
-def update_campground_comment(
-    path: str, provider: str, campground_id: int, name: str
-) -> None:
+def update_campground_comment(path: str, provider: str, campground_id: int, name: str) -> None:
     """Set the inline comment on a campground entry (only if none exists)."""
     data, yml = _load(path)
     items, idx = _find_entry(data, provider, campground_id)
@@ -99,9 +97,7 @@ def update_campground_comment(
             _save(path, data, yml)
 
 
-def update_alert_field(
-    path: str, provider: str, campground_id: int, alert: bool
-) -> None:
+def update_alert_field(path: str, provider: str, campground_id: int, alert: bool) -> None:
     """Update the alert field for a campground entry."""
     data, yml = _load(path)
     items, idx = _find_entry(data, provider, campground_id)
