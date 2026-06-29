@@ -1,4 +1,4 @@
-venv/
+.venv/
 __pycache__/
 *.pyc
 .git/
@@ -7,3 +7,4 @@ __pycache__/
 firebase-debug.log
 .campsite_sent_keys.json
 dashboard.html
+venv/
