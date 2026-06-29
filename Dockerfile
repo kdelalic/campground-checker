@@ -33,4 +33,4 @@ ENV ALERT_INTERVAL="5"
 ENV SEARCH_DELAY="2"
 ENV DASHBOARD_INTERVAL="60"
 
-CMD ["sh", "-c", "python check_campsites.py --forever --dashboard --workers $WORKERS --alert-interval $ALERT_INTERVAL --search-delay $SEARCH_DELAY --dashboard-interval $DASHBOARD_INTERVAL"]
+CMD ["sh", "-c", "python check_campsites.py --forever --dashboard --workers $WORKERS --alert-interval $ALERT_INTERVAL --search-delay $SEARCH_DELAY --dashboard-interval $DASHBOARD_INTERVAL --day Friday Saturday Sunday"]
