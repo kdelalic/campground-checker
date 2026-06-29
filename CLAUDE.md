@@ -5,66 +5,64 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Install dependencies (activate venv first)
-source venv/bin/activate
-pip install -r requirements.txt
+# Install dependencies
+uv sync --all-extras
 
 # Run the checker (default: campsites.yaml, next ~6 months, Saturdays only)
-python check_campsites.py
+uv run python check_campsites.py
 
 # Common options
-python check_campsites.py -c my_sites.yaml
-python check_campsites.py --start 2026-06-01 --end 2026-08-31
-python check_campsites.py --day Friday Saturday
-python check_campsites.py --all-days
-python check_campsites.py --nights 2
-python check_campsites.py --forever --alert-interval 10
-python check_campsites.py --workers 2 --search-delay 1  # tune for low-CPU environments
-python check_campsites.py --verbose   # show camply internal logs
-python check_campsites.py --dashboard              # generate dashboard.html
-python check_campsites.py --dashboard /tmp/out.html # custom path
-python check_campsites.py --no-dashboard           # disable even if YAML enables it
-python check_campsites.py --dashboard-interval 30  # dashboard-only sites scraped every 30 min
+uv run python check_campsites.py -c my_sites.yaml
+uv run python check_campsites.py --start 2026-06-01 --end 2026-08-31
+uv run python check_campsites.py --day Friday Saturday
+uv run python check_campsites.py --all-days
+uv run python check_campsites.py --nights 2
+uv run python check_campsites.py --forever --alert-interval 10
+uv run python check_campsites.py --workers 2 --search-delay 1  # tune for low-CPU environments
+uv run python check_campsites.py --verbose   # show camply internal logs
+uv run python check_campsites.py --dashboard              # generate dashboard.html
+uv run python check_campsites.py --dashboard /tmp/out.html # custom path
+uv run python check_campsites.py --no-dashboard           # disable even if YAML enables it
+uv run python check_campsites.py --dashboard-interval 30  # dashboard-only sites scraped every 30 min
 ```
 
 ## Testing & Linting
 
 ```bash
-# Install dev dependencies
-source venv/bin/activate
-pip install -r requirements-dev.txt
+# Install dependencies (includes dev extras)
+uv sync --all-extras
 
 # Run tests
-pytest -v
+uv run pytest -v
 
 # Run a single test file
-pytest tests/test_config.py -v
+uv run pytest tests/test_config.py -v
 
 # Run linting
-ruff check .
+uv run ruff check .
 
 # Check formatting (does not modify files)
-ruff format --check .
+uv run ruff format --check .
 
 # Auto-fix lint issues
-ruff check . --fix
+uv run ruff check . --fix
 
 # Auto-format code
-ruff format .
+uv run ruff format .
 ```
 
 ### Pre-Push Checklist
 
 Before committing and pushing changes, **always**:
 
-1. Run `ruff check .` and fix any issues
-2. Run `ruff format .` to ensure consistent formatting
-3. Run `pytest -v` and ensure all tests pass
+1. Run `uv run ruff check .` and fix any issues
+2. Run `uv run ruff format .` to ensure consistent formatting
+3. Run `uv run pytest -v` and ensure all tests pass
 4. Do not push if any test fails or lint error remains
 
 ```bash
 # Quick pre-push command:
-ruff check . && ruff format --check . && pytest -v
+uv run ruff check . && uv run ruff format --check . && uv run pytest -v
 ```
 
 CI will also run these checks on every push and PR. Failing checks will block the deploy workflow.
