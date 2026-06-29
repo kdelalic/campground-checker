@@ -1,30 +1,30 @@
 campsites:
   RecreationDotGov:
     - campground_id: 233359 # Point Reyes National Seashore, CA - Point Reyes National Seashore Campground
-      alert: true
+      alert: false
     - campground_id: 232491 # Golden Gate National Recreation Area, CA - Kirby Cove Campground
-      alert: true
+      alert: false
     - campground_id: 232447 # Yosemite National Park, CA - Upper Pines Campground
       alert: false
     - campground_id: 232450 # Yosemite National Park, CA - Lower Pines Campground
-      alert: true
+      alert: false
     - campground_id: 232449 # Yosemite National Park, CA - North Pines Campground
-      alert: true
+      alert: false
     - campground_id: 232452 # Yosemite National Park, CA - Crane Flat Campground
-      alert: true
+      alert: false
     - campground_id: 232451 # Yosemite National Park, CA - Hodgdon Meadow Campground
-      alert: true
+      alert: false
     - campground_id: 232769 # Lake Tahoe Basin Management Unit, CA - Fallen Leaf Campground
     - campground_id: 233116 # Los Padres National Forest, - Kirk Creek Campground
       alert: false
     - campground_id: 232461 # Sequoia & Kings Canyon National Parks, CA - Lodgepole Campground-Sequoia And Kings Canyon National Park
-      alert: false
-    - campground_id: 253917 # Sequoia & Kings Canyon National Parks, CA - Sentinel Campground
-      alert: false
-    - campground_id: 10124502 # Sequoia & Kings Canyon National Parks, CA - Azalea Campground
-      alert: false
-    - campground_id: 232768 # Lake Tahoe Basin Management Unit, CA - Nevada Beach Campground
       alert: true
+    - campground_id: 253917 # Sequoia & Kings Canyon National Parks, CA - Sentinel Campground
+      alert: true
+    - campground_id: 10124502 # Sequoia & Kings Canyon National Parks, CA - Azalea Campground
+      alert: true
+    - campground_id: 232768 # Lake Tahoe Basin Management Unit, CA - Nevada Beach Campground
+      alert: false
 
   ReserveCalifornia:
     - campground_id: 786 # Emerald Bay SP - Upper Eagle Point (sites 1-33)
@@ -48,4 +48,4 @@ campsites:
     - campground_id: 504 # Henry Cowell Redwoods SP - Cowell Campground  South (sites 1-51)
     - campground_id: 505 # Henry Cowell Redwoods SP - Cowell Campground North (sites 52-113)
     - campground_id: 498 # Half Moon Bay SB - Francis Beach Campground
-      alert: true
+      alert: false
