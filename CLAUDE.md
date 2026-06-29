@@ -38,6 +38,10 @@ docker run -v $(pwd)/campsites.yaml:/app/campsites.yaml campsite-checker
 
 The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim. Runtime tunables via env vars: `WORKERS` (default 3), `ALERT_INTERVAL` (default 5), `SEARCH_DELAY` (default 2), `DASHBOARD_INTERVAL` (default 60). Set `SENT_KEYS_PATH` to persist dedup keys across container restarts (e.g. a mounted volume).
 
+## Disabling Campgrounds
+
+Any campground entry can be disabled by adding `enabled: false`. Disabled entries are skipped at config load time, so they don't appear in searches, the dashboard, or bot commands. To re-enable, just remove the `enabled: false` line or set it to `true`.
+
 ## Finding Campground IDs
 
 ```bash

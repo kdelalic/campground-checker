@@ -167,6 +167,9 @@ def load_config(path: str) -> tuple[list[dict], dict]:
     else:
         sys.exit("Error: 'campsites' must be a dict of providers or a list of entries")
 
+    # Filter out disabled entries (enabled: false)
+    entries = [e for e in entries if e.get("enabled", True) is not False]
+
     if len(entries) == 0:
         sys.exit("Error: no campsite entries found")
 
