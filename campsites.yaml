@@ -34,9 +34,9 @@ campsites:
     - campground_id: 232461 # Sequoia & Kings Canyon National Parks, CA - Lodgepole Campground-Sequoia And Kings Canyon National Park
       alert: true
     - campground_id: 253917 # Sequoia & Kings Canyon National Parks, CA - Sentinel Campground
-      alert: true
+      alert: false
     - campground_id: 10124502 # Sequoia & Kings Canyon National Parks, CA - Azalea Campground
-      alert: true
+      alert: false
     - campground_id: 232768 # Lake Tahoe Basin Management Unit, CA - Nevada Beach Campground
       alert: false
       enabled: true
