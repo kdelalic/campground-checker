@@ -89,6 +89,23 @@ availability changes; failed uploads are retried without rebuilding unchanged
 HTML. Full garbage collection runs every 12 scans by default and logs its
 duration, object count, and resident-memory measurement.
 
+## Monitoring
+
+Continuous mode starts an HTTP server on `PORT` (default `8000`):
+
+- `/` returns JSON health and scan status, with HTTP 503 when scans are stale.
+- `/metrics` returns Prometheus text-format counters and gauges for scan health,
+  errors, duration, monitored campgrounds, current availability, and scan timestamps.
+
+Example Prometheus scrape configuration:
+
+```yaml
+scrape_configs:
+  - job_name: campsite-checker
+    static_configs:
+      - targets: ["campsite-checker:8000"]
+```
+
 ## Telegram Notifications
 
 Get a message when availability is found.

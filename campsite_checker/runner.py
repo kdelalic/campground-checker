@@ -364,6 +364,7 @@ def run_forever(
 
     try:
         while True:
+            scan_started = monotonic()
             try:
                 scan_num += 1
 
@@ -408,11 +409,11 @@ def run_forever(
                     )
                     cached_dashboard_results = dash_all
                     last_dashboard_scan = monotonic()
-                    scan_status.last_dashboard_scan = datetime.now()
+                    scan_status.mark_dashboard_scan()
                 elif dashboard_due:
                     cached_dashboard_results = []
                     last_dashboard_scan = monotonic()
-                    scan_status.last_dashboard_scan = datetime.now()
+                    scan_status.mark_dashboard_scan()
 
                 # --- Generate dashboard from merged results ---
                 if dashboard_publisher is not None:
@@ -440,14 +441,36 @@ def run_forever(
                 if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
                     logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
 
-                scan_status.update(entries_count=len(current_entries))
+                latest_results = alert_all + cached_dashboard_results
+                scan_status.update(
+                    entries_count=len(current_entries),
+                    available_entries_count=sum(
+                        availability.available for availability in latest_results
+                    ),
+                    available_sites_count=sum(
+                        availability.total_sites for availability in latest_results
+                    ),
+                    duration_seconds=monotonic() - scan_started,
+                )
 
                 # Free scan-local data before sleeping
-                del alert_keys, alert_found, alert_all, dash_keys, current_keys, current_entries
+                del (
+                    alert_keys,
+                    alert_found,
+                    alert_all,
+                    dash_keys,
+                    current_keys,
+                    current_entries,
+                    latest_results,
+                )
 
             except Exception as exc:
                 logger.error("Scan #%d failed: %s", scan_num, exc, exc_info=True)
-                scan_status.update(entries_count=0, error=True)
+                scan_status.update(
+                    entries_count=0,
+                    duration_seconds=monotonic() - scan_started,
+                    error=True,
+                )
 
             _maybe_collect_garbage(scan_num, gc_interval)
 
