@@ -74,7 +74,7 @@ docker build -t campsite-checker .
 docker run -v $(pwd)/campsites.yaml:/app/campsites.yaml:ro campsite-checker
 ```
 
-The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim. Runtime tunables via env vars: `WORKERS` (default 3), `ALERT_INTERVAL` (default 5), `SEARCH_DELAY` (default 2), `DASHBOARD_INTERVAL` (default 60). Set `SENT_KEYS_PATH` to persist dedup keys across container restarts (e.g. a mounted volume).
+The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim. Runtime tunables via env vars: `WORKERS` (default 4), `ALERT_INTERVAL` (default 5), `SEARCH_DELAY` (default 1), `BATCH_SIZE` (default 4), `DASHBOARD_INTERVAL` (default 30), and `GC_INTERVAL` (default 12). Set `SENT_KEYS_PATH` to persist dedup keys across container restarts (e.g. a mounted volume).
 
 ## Deployment
 
@@ -113,7 +113,7 @@ The project is a thin wrapper around the [camply](https://github.com/juftin/camp
 - `campsite_checker/dashboard.py` — Static HTML dashboard generation. Produces a self-contained HTML file with availability tables per campground.
 - `campsite_checker/upload.py` — Optional Cloudflare R2 upload for the dashboard. Uses boto3 S3-compatible API. Credentials resolved via env vars or YAML `dashboard.r2` section.
 - `campsite_checker/server.py` — Health check HTTP server. Returns JSON with scan count, error count, last scan time, uptime. Returns 503 if the scanner appears stuck. Runs on `PORT` env var (default 8000).
-- `campsite_checker/runner.py` — Orchestrates single-run (`run_once`) and polling loop (`run_forever`). In `--forever` mode, uses two-tier scanning: entries with `alert: true` are searched every `--alert-interval` minutes (default 5), while dashboard-only entries are searched every `--dashboard-interval` minutes (default 60, configurable via CLI, `dashboard.interval` YAML key, or `DASHBOARD_INTERVAL` env var). The dashboard is regenerated every iteration by merging fresh alert results with cached dashboard-only results. Individual scan failures are caught and logged without stopping the loop. Persists sent notification keys to `SENT_KEYS_PATH` (default `.campsite_sent_keys.json`) to avoid duplicate Telegram alerts across scans.
+- `campsite_checker/runner.py` — Orchestrates single-run (`run_once`) and polling loop (`run_forever`). In `--forever` mode, uses two-tier scanning: entries with `alert: true` are searched every `--alert-interval` minutes (default 5), while dashboard-only entries are searched every `--dashboard-interval` minutes (CLI default 60; container default 30; configurable via CLI, `dashboard.interval` YAML key, or `DASHBOARD_INTERVAL` env var). The dashboard is regenerated every iteration by merging fresh alert results with cached dashboard-only results. Individual scan failures are caught and logged without stopping the loop. Persists sent notification keys to `SENT_KEYS_PATH` (default `.campsite_sent_keys.json`) to avoid duplicate Telegram alerts across scans.
 - `grafana/campground-checker.json` — Canonical provisioned Grafana dashboard for the Prometheus metrics exposed by `server.py`. The deploy workflow copies it into the homelab monitoring stack; update it in the same change as any metric rename or removal.
 
 **Key design decisions:**

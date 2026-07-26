@@ -83,6 +83,10 @@ Each scan logs per-provider batch counts, median duration, slowest duration, and
 total scan time. Use those measurements together with error rates and memory
 usage when tuning the values for a deployment.
 
+The container defaults to a one-second per-provider batch submission delay and
+refreshes dashboard-only campgrounds every 30 minutes. Both remain configurable
+with the `SEARCH_DELAY` and `DASHBOARD_INTERVAL` environment variables.
+
 In continuous mode, stable Recreation.gov campsite metadata is cached for up to
 24 hours. Dashboard files and R2 objects are only updated when semantic
 availability changes; failed uploads are retried without rebuilding unchanged
