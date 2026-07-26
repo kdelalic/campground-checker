@@ -4,9 +4,79 @@ import logging
 import os
 import socketserver
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+
+def _stringify_label(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return ",".join(str(item) for item in value)
+    return str(value)
+
+
+def _escape_label_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+@dataclass(frozen=True, slots=True)
+class CampgroundMetric:
+    config_index: int
+    provider: str
+    campground_id: str
+    recreation_area: str
+    campsite_id: str
+    name: str
+    alert: bool
+    available: bool
+    available_sites: int
+    scan_success: bool
+
+    @classmethod
+    def from_entry(
+        cls,
+        entry: dict,
+        *,
+        config_index: int,
+        available: bool,
+        available_sites: int,
+        scan_success: bool = True,
+    ) -> "CampgroundMetric":
+        provider = _stringify_label(entry.get("provider", "RecreationDotGov"))
+        campground_id = _stringify_label(entry.get("campground_id"))
+        recreation_area = _stringify_label(entry.get("recreation_area"))
+        campsite_id = _stringify_label(entry.get("campsite_id"))
+        name = _stringify_label(entry.get("name"))
+        if not name:
+            name = campground_id or recreation_area or campsite_id or f"entry-{config_index}"
+        return cls(
+            config_index=config_index,
+            provider=provider,
+            campground_id=campground_id,
+            recreation_area=recreation_area,
+            campsite_id=campsite_id,
+            name=name,
+            alert=entry.get("alert", False),
+            available=available,
+            available_sites=available_sites,
+            scan_success=scan_success,
+        )
+
+    def labels(self) -> str:
+        labels = (
+            ("config_index", str(self.config_index)),
+            ("provider", self.provider),
+            ("campground_id", self.campground_id),
+            ("recreation_area", self.recreation_area),
+            ("campsite_id", self.campsite_id),
+            ("name", self.name),
+            ("alert", str(self.alert).lower()),
+        )
+        rendered = ",".join(f'{key}="{_escape_label_value(value)}"' for key, value in labels)
+        return f"{{{rendered}}}"
 
 
 class _ScanStatus:
@@ -21,6 +91,7 @@ class _ScanStatus:
         self.entries_count: int = 0
         self.available_entries_count: int = 0
         self.available_sites_count: int = 0
+        self.campgrounds: tuple[CampgroundMetric, ...] = ()
         self.last_scan_duration_seconds: float = 0
         self.alert_interval_minutes: int = 5
         self.dashboard_interval_minutes: int = 60
@@ -41,6 +112,7 @@ class _ScanStatus:
         entries_count: int,
         available_entries_count: int = 0,
         available_sites_count: int = 0,
+        campgrounds: list[CampgroundMetric] | tuple[CampgroundMetric, ...] = (),
         duration_seconds: float = 0,
         error: bool = False,
     ) -> None:
@@ -50,6 +122,7 @@ class _ScanStatus:
             self.entries_count = entries_count
             self.available_entries_count = available_entries_count
             self.available_sites_count = available_sites_count
+            self.campgrounds = tuple(campgrounds)
             self.last_scan_duration_seconds = duration_seconds
             if error:
                 self.error_count += 1
@@ -171,6 +244,7 @@ class _ScanStatus:
                     last_dashboard_timestamp,
                 ),
             )
+            campgrounds = self.campgrounds
 
         lines = []
         for name, help_text, metric_type, value in metrics:
@@ -180,6 +254,28 @@ class _ScanStatus:
                     f"# TYPE {name} {metric_type}",
                     f"{name} {value}",
                 )
+            )
+        campground_metrics = (
+            (
+                "campsite_checker_campground_available",
+                "Whether the configured campground has availability in its latest results.",
+                lambda campground: int(campground.available),
+            ),
+            (
+                "campsite_checker_campground_campsites_available",
+                "Available campsite-date combinations for the configured campground.",
+                lambda campground: campground.available_sites,
+            ),
+            (
+                "campsite_checker_campground_last_scan_success",
+                "Whether the latest search for the configured campground succeeded.",
+                lambda campground: int(campground.scan_success),
+            ),
+        )
+        for name, help_text, get_value in campground_metrics:
+            lines.extend((f"# HELP {name} {help_text}", f"# TYPE {name} gauge"))
+            lines.extend(
+                f"{name}{campground.labels()} {get_value(campground)}" for campground in campgrounds
             )
         return "\n".join(lines) + "\n"
 

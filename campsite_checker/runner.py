@@ -181,11 +181,13 @@ def run_once(
 
     # Collect, filter per-task, and merge results back per original entry
     errors: set[str] = set()
+    failed_entries: set[int] = set()
     entry_filtered: dict = defaultdict(list)
     for task_idx, (orig_idx, _task_entry, task_filter) in enumerate(search_tasks):
         _te, results, error = results_by_task[task_idx]
         if error:
             errors.add(error)
+            failed_entries.add(orig_idx)
             continue
         filtered = filter_results(results, task_filter)
         entry_filtered[orig_idx].extend(filtered)
@@ -197,7 +199,11 @@ def run_once(
     total_sites = 0
 
     for i, entry in enumerate(entries):
-        availability = process_filtered_results(entry, entry_filtered.get(i, []))
+        availability = process_filtered_results(
+            entry,
+            entry_filtered.get(i, []),
+            search_succeeded=i not in failed_entries,
+        )
         all_with_results.append(availability)
         current_keys.update(availability.notification_keys)
         if availability.available:
@@ -320,7 +326,7 @@ def run_forever(
     dashboard_path: str | None = None,
 ) -> None:
     from .bot import ConfigState, create_bot, start_bot_polling
-    from .server import scan_status, start_healthcheck_server
+    from .server import CampgroundMetric, scan_status, start_healthcheck_server
 
     scan_status.alert_interval_minutes = args.alert_interval
 
@@ -442,6 +448,16 @@ def run_forever(
                     logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
 
                 latest_results = alert_all + cached_dashboard_results
+                campground_metrics = [
+                    CampgroundMetric.from_entry(
+                        availability.entry,
+                        config_index=index,
+                        available=availability.available,
+                        available_sites=availability.total_sites,
+                        scan_success=availability.search_succeeded,
+                    )
+                    for index, availability in enumerate(latest_results)
+                ]
                 scan_status.update(
                     entries_count=len(current_entries),
                     available_entries_count=sum(
@@ -450,6 +466,7 @@ def run_forever(
                     available_sites_count=sum(
                         availability.total_sites for availability in latest_results
                     ),
+                    campgrounds=campground_metrics,
                     duration_seconds=monotonic() - scan_started,
                 )
 
@@ -461,6 +478,7 @@ def run_forever(
                     dash_keys,
                     current_keys,
                     current_entries,
+                    campground_metrics,
                     latest_results,
                 )
 

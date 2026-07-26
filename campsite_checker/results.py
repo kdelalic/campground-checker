@@ -20,6 +20,7 @@ class ProcessedAvailability:
     campsite_ids_by_date: dict[date, frozenset[int | str]]
     notification_keys: frozenset[NotificationKey]
     total_sites: int
+    search_succeeded: bool = True
 
     @property
     def available(self) -> bool:
@@ -128,6 +129,8 @@ def filter_results(
 def process_filtered_results(
     entry: dict,
     results: list[AvailableCampsite],
+    *,
+    search_succeeded: bool = True,
 ) -> ProcessedAvailability:
     """Deduplicate and normalize results that have already been filtered."""
     seen: set[tuple[int | str, date]] = set()
@@ -156,6 +159,7 @@ def process_filtered_results(
         campsite_ids_by_date=frozen_by_date,
         notification_keys=notification_keys,
         total_sites=sum(len(ids) for ids in frozen_by_date.values()),
+        search_succeeded=search_succeeded,
     )
 
 

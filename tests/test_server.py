@@ -4,7 +4,7 @@ import io
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
-from campsite_checker.server import HealthCheckHandler, _ScanStatus
+from campsite_checker.server import CampgroundMetric, HealthCheckHandler, _ScanStatus
 
 
 class TestScanStatusHealth:
@@ -118,6 +118,47 @@ class TestPrometheusMetrics:
         assert "campsite_checker_campsites_available 9" in metrics
         assert "campsite_checker_last_scan_duration_seconds 1.25" in metrics
         assert not metrics.endswith("\n\n")
+
+    def test_per_campground_metrics(self):
+        status = _ScanStatus()
+        campground = CampgroundMetric.from_entry(
+            {
+                "provider": "RecreationDotGov",
+                "campground_id": 232447,
+                "campsite_id": [42, 43],
+                "name": 'Upper "Pines"\\Camp',
+                "alert": True,
+            },
+            config_index=3,
+            available=True,
+            available_sites=7,
+            scan_success=False,
+        )
+        status.update(
+            entries_count=1,
+            available_entries_count=1,
+            available_sites_count=7,
+            campgrounds=[campground],
+        )
+
+        metrics = status.to_prometheus()
+        labels = (
+            '{config_index="3",provider="RecreationDotGov",campground_id="232447",'
+            'recreation_area="",campsite_id="42,43",name="Upper \\"Pines\\"\\\\Camp",'
+            'alert="true"}'
+        )
+        assert f"campsite_checker_campground_available{labels} 1" in metrics
+        assert f"campsite_checker_campground_campsites_available{labels} 7" in metrics
+        assert f"campsite_checker_campground_last_scan_success{labels} 0" in metrics
+
+    def test_campground_name_falls_back_to_stable_id(self):
+        campground = CampgroundMetric.from_entry(
+            {"provider": "ReserveCalifornia", "campground_id": 786},
+            config_index=0,
+            available=False,
+            available_sites=0,
+        )
+        assert campground.name == "786"
 
     def test_metrics_endpoint(self, monkeypatch):
         status = _ScanStatus()
