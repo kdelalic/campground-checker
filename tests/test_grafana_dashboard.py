@@ -69,14 +69,25 @@ def test_dashboard_visualizes_per_campground_metrics():
 
     panels = {panel["title"]: panel for panel in dashboard["panels"]}
     expected_panels = {
-        "Available Campsite Dates by Campground",
-        "Campground Search Status",
-        "Campground Availability History",
+        "Availability by Campground",
+        "Failed Campground Searches",
+        "Campgrounds with Search Errors",
+        "Availability Events",
     }
     assert expected_panels <= panels.keys()
 
-    for title in expected_panels:
+    detail_panels = {
+        "Availability by Campground",
+        "Campgrounds with Search Errors",
+        "Availability Events",
+    }
+    for title in detail_panels:
         panel = panels[title]
-        assert all("{{name}}" in target["legendFormat"] for target in panel["targets"])
+        assert all(target["legendFormat"] == "{{name}}" for target in panel["targets"])
         assert all("$provider" in target["expr"] for target in panel["targets"])
         assert all("$alert" in target["expr"] for target in panel["targets"])
+
+    assert panels["Availability by Campground"]["type"] == "table"
+    assert panels["Campgrounds with Search Errors"]["type"] == "table"
+    assert panels["Availability Events"]["type"] == "state-timeline"
+    assert "== 1" in panels["Availability Events"]["targets"][0]["expr"]

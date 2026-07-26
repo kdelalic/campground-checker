@@ -1223,7 +1223,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Latest available campsite-date combinations for each configured campground. Dashboard-only entries retain their most recent results until the next dashboard scan.",
+      "description": "Latest available campsite-date combinations for every configured campground, sorted by count. Dashboard-only entries retain their most recent results until the next dashboard scan.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1246,32 +1246,64 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Campground"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 500
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Available campsite dates"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 12,
+        "h": 14,
+        "w": 16,
         "x": 0,
         "y": 26
       },
       "id": 16,
       "options": {
-        "displayMode": "gradient",
-        "maxVizHeight": 300,
-        "minVizHeight": 16,
-        "minVizWidth": 8,
-        "namePlacement": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
           "fields": "",
-          "values": false
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color"
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Available campsite dates"
+          }
+        ]
       },
       "targets": [
         {
@@ -1280,55 +1312,60 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "campsite_checker_campground_campsites_available{provider=~\"$provider\", alert=~\"$alert\"}",
+          "expr": "sort_desc(campsite_checker_campground_campsites_available{provider=~\"$provider\", alert=~\"$alert\"})",
           "instant": true,
-          "legendFormat": "{{name}} · {{provider}}",
+          "legendFormat": "{{name}}",
           "range": false,
           "refId": "A"
         }
       ],
-      "title": "Available Campsite Dates by Campground",
-      "type": "bargauge"
+      "title": "Availability by Campground",
+      "transformations": [
+        {
+          "id": "seriesToRows",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "Metric": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "Metric": "Campground",
+              "Value": "Available campsite dates"
+            }
+          }
+        }
+      ],
+      "type": "table"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Latest provider-search result for each configured campground. A failed search is distinct from a successful search that found no availability.",
+      "description": "Number of configured campgrounds whose latest provider search failed.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 1,
-                  "text": "Failed"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "Succeeded"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "max": 1,
+          "mappings": [],
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "green",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "red",
                 "value": 1
               }
             ]
@@ -1338,17 +1375,17 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
+        "h": 6,
+        "w": 8,
+        "x": 16,
         "y": 26
       },
       "id": 17,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -1357,7 +1394,7 @@
           "values": false
         },
         "showPercentChange": false,
-        "textMode": "value_and_name",
+        "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
@@ -1367,14 +1404,14 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "campsite_checker_campground_last_scan_success{provider=~\"$provider\", alert=~\"$alert\"}",
+          "expr": "sum(1 - campsite_checker_campground_last_scan_success{provider=~\"$provider\", alert=~\"$alert\"}) or vector(0)",
           "instant": true,
-          "legendFormat": "{{name}} · {{provider}}",
+          "legendFormat": "Failed searches",
           "range": false,
           "refId": "A"
         }
       ],
-      "title": "Campground Search Status",
+      "title": "Failed Campground Searches",
       "type": "stat"
     },
     {
@@ -1382,7 +1419,94 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Availability state over time for each configured campground. Check Campground Search Status before interpreting a zero as confirmed unavailability.",
+      "description": "Campgrounds whose latest provider search failed. An empty table means every search succeeded.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Campground"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "id": 18,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(1 - campsite_checker_campground_last_scan_success{provider=~\"$provider\", alert=~\"$alert\"}) > 0",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Campgrounds with Search Errors",
+      "transformations": [
+        {
+          "id": "seriesToRows",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "indexByName": {
+              "Metric": 0
+            },
+            "renameByName": {
+              "Metric": "Campground"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Availability events over the selected time range. Campgrounds with no availability are omitted to keep the view readable.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1391,11 +1515,6 @@
           "mappings": [
             {
               "options": {
-                "0": {
-                  "color": "dark-gray",
-                  "index": 1,
-                  "text": "No availability"
-                },
                 "1": {
                   "color": "green",
                   "index": 0,
@@ -1411,12 +1530,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-gray",
-                "value": null
-              },
-              {
                 "color": "green",
-                "value": 1
+                "value": null
               }
             ]
           },
@@ -1425,12 +1540,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 12,
+        "h": 10,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 40
       },
-      "id": 18,
+      "id": 19,
       "options": {
         "alignValue": "left",
         "legend": {
@@ -1440,7 +1555,7 @@
         },
         "mergeValues": true,
         "rowHeight": 0.8,
-        "showValue": "auto",
+        "showValue": "never",
         "tooltip": {
           "hideZeros": false,
           "mode": "single",
@@ -1454,14 +1569,14 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "campsite_checker_campground_available{provider=~\"$provider\", alert=~\"$alert\"}",
+          "expr": "campsite_checker_campground_available{provider=~\"$provider\", alert=~\"$alert\"} == 1",
           "instant": false,
-          "legendFormat": "{{name}} · {{provider}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Campground Availability History",
+      "title": "Availability Events",
       "type": "state-timeline"
     }
   ],

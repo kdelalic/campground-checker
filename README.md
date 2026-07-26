@@ -167,8 +167,9 @@ The canonical Grafana dashboard is versioned at
 provisioned dashboard directory, so metric renames or removals should update the
 dashboard in the same pull request. The test suite verifies that every
 `campsite_checker_*` metric referenced by the dashboard is still exported. Its
-per-campground panels show current campsite-date counts, provider-search status,
-and availability history, with provider and alert-tier filters.
+per-campground panels provide a compact availability table, a failed-search
+summary and error list, and an availability-events timeline, with provider and
+alert-tier filters.
 
 Useful PromQL queries:
 
