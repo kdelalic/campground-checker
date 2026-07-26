@@ -56,6 +56,8 @@ def test_poll_deadline_stays_anchored_and_skips_overruns():
 
 
 def test_alerts_continue_while_dashboard_scan_runs(monkeypatch, tmp_path):
+    from campsite_checker.server import scan_status
+
     events = []
     sent_keys_path = tmp_path / "sent.json"
     alert_key = ("Alert Camp", 1, date.today() + timedelta(days=1))
@@ -63,6 +65,7 @@ def test_alerts_continue_while_dashboard_scan_runs(monkeypatch, tmp_path):
     release_dashboard = threading.Event()
     dashboard_finished = threading.Event()
     sleep_calls = 0
+    initial_dashboard_scans = scan_status.dashboard_scan_count
 
     def fake_run_once(entries, *args, scan_type=None, **kwargs):
         if scan_type == "alert":
@@ -86,7 +89,10 @@ def test_alerts_continue_while_dashboard_scan_runs(monkeypatch, tmp_path):
         if sleep_calls == 1:
             assert dashboard_started.wait(timeout=2)
             return
-        release_dashboard.set()
+        if sleep_calls == 2:
+            release_dashboard.set()
+            assert dashboard_finished.wait(timeout=2)
+            return
         raise KeyboardInterrupt
 
     monkeypatch.setattr("campsite_checker.runner.run_once", fake_run_once)
@@ -126,5 +132,9 @@ def test_alerts_continue_while_dashboard_scan_runs(monkeypatch, tmp_path):
         "alert",
         "notify",
         "dashboard-end",
+        "alert",
+        "notify",
     ]
     assert _load_sent_keys(sent_keys_path) == {alert_key}
+    assert scan_status.dashboard_scan_in_progress is False
+    assert scan_status.dashboard_scan_count == initial_dashboard_scans + 1

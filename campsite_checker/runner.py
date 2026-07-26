@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from time import monotonic
@@ -316,6 +317,15 @@ def _send_notifications(
     return len(alert_entries)
 
 
+@dataclass(slots=True)
+class DashboardScanOutcome:
+    keys: set[NotificationKey]
+    results: list[ProcessedAvailability]
+    duration_seconds: float
+    completed_at: datetime
+    error: Exception | None = None
+
+
 def _run_dashboard_scan(
     entries: list[dict],
     args,
@@ -323,19 +333,30 @@ def _run_dashboard_scan(
     tg_token: str | None,
     tg_chat_id: str | None,
     scan_num: int,
-) -> tuple[set[NotificationKey], list[ProcessedAvailability], datetime]:
+) -> DashboardScanOutcome:
     """Run dashboard-only work in the background and retain its completion time."""
-    keys, _found, all_results = run_once(
-        entries,
-        args,
-        day_filter,
-        tg_token,
-        tg_chat_id,
-        scan_num,
-        dashboard_path=None,
-        scan_type="dashboard",
+    started = monotonic()
+    try:
+        keys, _found, all_results = run_once(
+            entries,
+            args,
+            day_filter,
+            tg_token,
+            tg_chat_id,
+            scan_num,
+            dashboard_path=None,
+            scan_type="dashboard",
+        )
+        error = None
+    except Exception as exc:
+        keys, all_results, error = set(), [], exc
+    return DashboardScanOutcome(
+        keys=keys,
+        results=all_results,
+        duration_seconds=monotonic() - started,
+        completed_at=datetime.now(timezone.utc),
+        error=error,
     )
-    return keys, all_results, datetime.now(timezone.utc)
 
 
 def run_forever(
@@ -384,12 +405,7 @@ def run_forever(
         max_workers=1,
         thread_name_prefix="dashboard-scan",
     )
-    dashboard_future: (
-        concurrent.futures.Future[
-            tuple[set[NotificationKey], list[ProcessedAvailability], datetime]
-        ]
-        | None
-    ) = None
+    dashboard_future: concurrent.futures.Future[DashboardScanOutcome] | None = None
     gc_interval = max(0, int(getattr(args, "gc_interval", 12)))
     alert_period_seconds = max(1.0, args.alert_interval * 60)
     next_alert_deadline = monotonic()
@@ -442,20 +458,31 @@ def run_forever(
                 # Collect completed dashboard work after the priority alert path.
                 if dashboard_future is not None and dashboard_future.done():
                     try:
-                        (
-                            dash_keys,
-                            cached_dashboard_results,
-                            dashboard_completed_at,
-                        ) = dashboard_future.result()
+                        dashboard_outcome = dashboard_future.result()
                     except Exception as exc:
                         logger.error("Dashboard scan failed: %s", exc, exc_info=True)
-                        scan_status.mark_dashboard_scan()
+                        scan_status.finish_dashboard_scan(
+                            duration_seconds=max(0.0, monotonic() - last_dashboard_started),
+                            error=True,
+                        )
                     else:
-                        dashboard_snapshot_ready = True
-                        scan_status.mark_dashboard_scan(dashboard_completed_at)
-                        prev_keys |= dash_keys
-                        if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
-                            logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
+                        if dashboard_outcome.error is not None:
+                            logger.error("Dashboard scan failed: %s", dashboard_outcome.error)
+                            scan_status.finish_dashboard_scan(
+                                duration_seconds=dashboard_outcome.duration_seconds,
+                                error=True,
+                                when=dashboard_outcome.completed_at,
+                            )
+                        else:
+                            dashboard_snapshot_ready = True
+                            cached_dashboard_results = dashboard_outcome.results
+                            scan_status.finish_dashboard_scan(
+                                duration_seconds=dashboard_outcome.duration_seconds,
+                                when=dashboard_outcome.completed_at,
+                            )
+                            prev_keys |= dashboard_outcome.keys
+                            if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
+                                logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
                     dashboard_future = None
 
                 # Start due dashboard-only work without blocking the alert scheduler.
@@ -476,6 +503,7 @@ def run_forever(
                         tg_chat_id,
                         scan_num,
                     )
+                    scan_status.start_dashboard_scan()
                     logger.info(
                         "Started background dashboard scan for %d campground(s)",
                         len(dashboard_entries),
@@ -484,7 +512,8 @@ def run_forever(
                     cached_dashboard_results = []
                     dashboard_snapshot_ready = True
                     last_dashboard_started = now
-                    scan_status.mark_dashboard_scan()
+                    scan_status.start_dashboard_scan()
+                    scan_status.finish_dashboard_scan(duration_seconds=0)
 
                 # --- Generate dashboard from merged results ---
                 if dashboard_publisher is not None and dashboard_snapshot_ready:

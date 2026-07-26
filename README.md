@@ -137,6 +137,10 @@ Process-wide metrics have no application-defined labels:
 | `campsite_checker_alert_interval_seconds` | Gauge | Configured interval between alert scans. |
 | `campsite_checker_dashboard_interval_seconds` | Gauge | Configured interval between dashboard-only scans. |
 | `campsite_checker_last_dashboard_scan_timestamp_seconds` | Gauge | Unix timestamp of the latest dashboard-only scan, or `0` before the first one. |
+| `campsite_checker_dashboard_scans_total` | Counter | Completed background dashboard scans. |
+| `campsite_checker_dashboard_scan_errors_total` | Counter | Background dashboard scans that ended with an error. |
+| `campsite_checker_dashboard_scan_in_progress` | Gauge | `1` while the background dashboard worker is scanning; otherwise `0`. |
+| `campsite_checker_last_dashboard_scan_duration_seconds` | Gauge | Duration of the latest completed background dashboard scan. |
 
 These metrics are emitted once per provider, using the `provider` label:
 

@@ -124,6 +124,29 @@ class TestPrometheusMetrics:
             in metrics
         )
 
+    def test_dashboard_worker_lifecycle_metrics(self):
+        status = _ScanStatus()
+        status.start_dashboard_scan()
+
+        running_metrics = status.to_prometheus()
+        assert "campsite_checker_dashboard_scan_in_progress 1" in running_metrics
+
+        completed_at = datetime(2026, 7, 26, 12, 5, tzinfo=timezone.utc)
+        status.finish_dashboard_scan(
+            duration_seconds=125.5,
+            error=True,
+            when=completed_at,
+        )
+        metrics = status.to_prometheus()
+
+        assert "campsite_checker_dashboard_scan_in_progress 0" in metrics
+        assert "campsite_checker_dashboard_scans_total 1" in metrics
+        assert "campsite_checker_dashboard_scan_errors_total 1" in metrics
+        assert "campsite_checker_last_dashboard_scan_duration_seconds 125.5" in metrics
+        assert (
+            f"campsite_checker_last_dashboard_scan_timestamp_seconds {completed_at.timestamp()}"
+        ) in metrics
+
     def test_metrics_after_scan(self):
         status = _ScanStatus()
         status.update(

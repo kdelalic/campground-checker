@@ -100,6 +100,10 @@ class _ScanStatus:
         self.alert_interval_minutes: int = 5
         self.dashboard_interval_minutes: int = 60
         self.last_dashboard_scan: datetime | None = None
+        self.dashboard_scan_count: int = 0
+        self.dashboard_scan_error_count: int = 0
+        self.dashboard_scan_in_progress: bool = False
+        self.last_dashboard_scan_duration_seconds: float = 0
 
     @property
     def dashboard_alert_interval_minutes(self) -> int:
@@ -135,9 +139,24 @@ class _ScanStatus:
         with self._lock:
             self.last_alert_scan = when or datetime.now(timezone.utc)
 
-    def mark_dashboard_scan(self, when: datetime | None = None) -> None:
+    def start_dashboard_scan(self) -> None:
         with self._lock:
+            self.dashboard_scan_in_progress = True
+
+    def finish_dashboard_scan(
+        self,
+        *,
+        duration_seconds: float,
+        error: bool = False,
+        when: datetime | None = None,
+    ) -> None:
+        with self._lock:
+            self.dashboard_scan_in_progress = False
             self.last_dashboard_scan = when or datetime.now(timezone.utc)
+            self.last_dashboard_scan_duration_seconds = duration_seconds
+            self.dashboard_scan_count += 1
+            if error:
+                self.dashboard_scan_error_count += 1
 
     def is_healthy(self) -> bool:
         """Healthy if we've had an alert scan within 2x its configured interval."""
@@ -171,6 +190,10 @@ class _ScanStatus:
                 "last_dashboard_scan": (
                     self.last_dashboard_scan.isoformat() if self.last_dashboard_scan else None
                 ),
+                "dashboard_scan_count": self.dashboard_scan_count,
+                "dashboard_scan_error_count": self.dashboard_scan_error_count,
+                "dashboard_scan_in_progress": self.dashboard_scan_in_progress,
+                "last_dashboard_scan_duration_seconds": (self.last_dashboard_scan_duration_seconds),
                 "provider_throttles": [
                     {
                         "provider": throttle.provider,
@@ -272,6 +295,30 @@ class _ScanStatus:
                     "Unix timestamp of the most recent dashboard scan.",
                     "gauge",
                     last_dashboard_timestamp,
+                ),
+                (
+                    "campsite_checker_dashboard_scans_total",
+                    "Total number of completed background dashboard scans.",
+                    "counter",
+                    self.dashboard_scan_count,
+                ),
+                (
+                    "campsite_checker_dashboard_scan_errors_total",
+                    "Total number of background dashboard scans that ended with an error.",
+                    "counter",
+                    self.dashboard_scan_error_count,
+                ),
+                (
+                    "campsite_checker_dashboard_scan_in_progress",
+                    "Whether a background dashboard scan is currently running.",
+                    "gauge",
+                    int(self.dashboard_scan_in_progress),
+                ),
+                (
+                    "campsite_checker_last_dashboard_scan_duration_seconds",
+                    "Duration of the most recent background dashboard scan in seconds.",
+                    "gauge",
+                    self.last_dashboard_scan_duration_seconds,
                 ),
             )
             campgrounds = self.campgrounds

@@ -67,6 +67,14 @@ uv run ruff check . && uv run ruff format --check . && uv run pytest -v
 
 CI will also run these checks on every push and PR. Failing checks will block the deploy workflow.
 
+## Observability Changes
+
+Keep Prometheus metrics, the metric reference in `README.md`, and
+`grafana/campground-checker.json` in sync. Any metric addition, rename, removal,
+label change, or semantic change must update the Grafana dashboard and
+`tests/test_grafana_dashboard.py` in the same change. Dashboard panels must not
+reference metrics that the `/metrics` endpoint does not export.
+
 ## Docker
 
 ```bash
