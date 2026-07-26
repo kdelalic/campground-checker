@@ -134,6 +134,13 @@ def parse_args() -> argparse.Namespace:
         metavar="MINUTES",
         help="Minutes between dashboard-only campground scans in --forever mode (default: 60)",
     )
+    parser.add_argument(
+        "--gc-interval",
+        type=int,
+        default=12,
+        metavar="SCANS",
+        help="Run measured full garbage collection every N scans (default: 12; 0 disables)",
+    )
     return parser.parse_args()
 
 

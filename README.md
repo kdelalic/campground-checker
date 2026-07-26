@@ -74,11 +74,20 @@ python check_campsites.py --batch-size 2
 
 # Pace requests to each provider independently
 python check_campsites.py --search-delay 1
+
+# Disable periodic forced GC, or choose a different scan interval
+python check_campsites.py --gc-interval 0
 ```
 
 Each scan logs per-provider batch counts, median duration, slowest duration, and
 total scan time. Use those measurements together with error rates and memory
 usage when tuning the values for a deployment.
+
+In continuous mode, stable Recreation.gov campsite metadata is cached for up to
+24 hours. Dashboard files and R2 objects are only updated when semantic
+availability changes; failed uploads are retried without rebuilding unchanged
+HTML. Full garbage collection runs every 12 scans by default and logs its
+duration, object count, and resident-memory measurement.
 
 ## Telegram Notifications
 

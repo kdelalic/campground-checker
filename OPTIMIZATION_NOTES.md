@@ -18,7 +18,7 @@ scheduling and reduce repeated setup.
 
 ## Implementation Status
 
-Items 1–4 were implemented in July 2026:
+Items 1–7 were implemented in July 2026:
 
 - Search submission delay is now applied per provider while completed work is
   consumed continuously. The Docker default delay changed from two seconds to
@@ -30,6 +30,14 @@ Items 1–4 were implemented in July 2026:
 - Search results are filtered, deduplicated, grouped, named, and keyed into a
   shared `ProcessedAvailability` model. Terminal, Telegram, and dashboard
   consumers reuse that model.
+- Stable Recreation.gov campsite metadata uses a 32-entry, 24-hour,
+  thread-safe LRU cache. R2 uploads reuse one boto3 client per process.
+- Semantic fingerprints prevent unchanged dashboard writes and uploads.
+  Failed uploads remain eligible for retry, and unchanged sent-key state is not
+  rewritten.
+- Full garbage collection runs every 12 scans by default and reports duration,
+  collected objects, generation counts, and memory. Polling uses anchored
+  deadlines to avoid accumulating scan-duration drift.
 
 Targeted tests cover batch compatibility, batch bounds, result partitioning,
 batch errors, CLI tuning defaults, deduplication, and normalized grouping.
@@ -126,84 +134,63 @@ Camply results for tests and callers outside the main scan path.
 ### 5. Reuse long-lived clients and stable metadata
 
 **Impact:** Medium  
-**Effort:** Medium
+**Status:** Implemented
 
-Every scan reconstructs Camply searchers. In addition,
-`campsite_checker/upload.py:53-69` creates a new boto3 S3 client for every
-dashboard upload.
+The search layer retains Recreation.gov campsite metadata by provider and exact
+facility-ID set. The cache is thread-safe, limited to 32 entries, and expires
+entries after 24 hours so long-running processes periodically refresh provider
+metadata.
 
-Potential improvements:
-
-- Cache stable campground metadata by `(provider, campground_id)`.
-- Reuse the boto3 client and its HTTP connection pool.
-- Investigate whether Camply exposes reusable provider clients or sessions.
-
-Do not cache entire Camply searchers until their lifecycle is understood.
-Searchers may retain mutable results, search-window state, sessions, or large
-pandas objects.
+`R2Uploader` lazily constructs one boto3 client and reuses its HTTP connection
+pool for subsequent uploads. Mutable Camply searcher objects are deliberately
+not cached because they retain results, search-window state, and pandas data.
 
 ### 6. Skip unchanged writes and uploads
 
 **Impact:** Medium for hosted deployments  
-**Effort:** Low to medium
+**Status:** Implemented
 
-In forever mode, `campsite_checker/runner.py:352-365` regenerates and uploads the
-dashboard after every alert scan. The sent-key file is also rewritten every
-iteration.
+`DashboardPublisher` hashes dashboard-relevant configuration and availability
+without including the generated timestamp. Unchanged state skips both HTML
+generation and R2 upload. Upload success has its own fingerprint, so a failed
+upload is retried on the next scan without rewriting unchanged HTML.
 
-Compute a stable hash of the semantic availability state. When it has not
-changed:
-
-- Skip the R2 upload.
-- Skip rewriting the sent-key file.
-- Optionally skip rebuilding the dashboard.
-
-The dashboard currently includes a generated timestamp. Exclude that timestamp
-from the semantic hash, or decide explicitly whether each scan timestamp must be
-published even when availability is unchanged.
+Sent-key JSON is serialized deterministically and written only when its pruned
+content changes.
 
 ### 7. Measure forced garbage collection
 
 **Impact:** Unknown  
-**Effort:** Low
+**Status:** Implemented with a reduced default frequency
 
-`campsite_checker/runner.py:384-387` calls `gc.collect()` after every scan. A full
-collection can introduce pauses, and it does not guarantee that Python returns
-memory to the operating system.
-
-Instrument:
-
-- Time spent inside `gc.collect()`
-- Objects collected
-- RSS immediately before and after collection
-- Long-term RSS with and without forced collection
-
-Keep forced collection only if measurements show that it controls meaningful
-memory growth.
+Full collection now runs every 12 scans rather than every scan. Each collection
+logs elapsed time, collected object count, generation counts, and current Linux
+RSS or peak RSS on other supported Unix platforms. `--gc-interval 0` disables
+forced collection for comparison.
 
 ## Smaller Opportunities
 
-These changes are lower priority because network time should dominate:
+Completed smaller changes:
 
-- Cache whether each provider constructor requires an explicit
-  `recreation_area` argument instead of calling `inspect.signature()` for every
-  searcher construction.
-- Precompute the inverse weekday-name mapping used by scan-header formatting.
-- Reuse the R2 client even if unchanged-upload detection is not implemented.
-- Use deadline-based polling so scan duration does not continually shift the
-  intended schedule.
-- Separate the dashboard's static CSS and JavaScript template from dynamic card
-  data to reduce repeated string construction.
+- Provider constructor introspection is cached.
+- Weekday display labels are precomputed.
+- R2 clients and connection pools are reused.
+- Deadline-based polling prevents cumulative schedule drift and skips missed
+  periods after overruns.
+
+Separating the dashboard's static CSS and JavaScript remains low priority because
+semantic fingerprinting now skips the entire rendering path when availability
+is unchanged.
 
 ## Suggested Implementation Order
 
-1. Add performance instrumentation.
-2. Benchmark `SEARCH_DELAY=0`.
-3. Benchmark worker counts.
-4. Normalize results once and update all consumers.
-5. Reuse the R2 client and skip unchanged persistence.
-6. Prototype bounded provider batching.
-7. Evaluate forced garbage collection using recorded memory data.
+The implementation phase is complete. The remaining work is operational:
+
+1. Benchmark worker and batch sizes on the deployment host.
+2. Compare GC metrics with the default interval and with forced GC disabled.
+3. Monitor metadata-cache hit logs, provider throttling, and upload retry rates.
+4. Revisit static dashboard template extraction only if changed-state rendering
+   appears in a profile.
 
 ## Benchmark Checklist
 

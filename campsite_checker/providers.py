@@ -28,3 +28,5 @@ WEEKDAY_NAMES = {
     "saturday": 5,
     "sunday": 6,
 }
+
+WEEKDAY_LABELS = {value: name.capitalize() for name, value in WEEKDAY_NAMES.items()}

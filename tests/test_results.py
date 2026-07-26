@@ -4,6 +4,7 @@ from datetime import date, datetime
 from types import SimpleNamespace
 
 from campsite_checker.results import (
+    availability_fingerprint,
     count_matching_dates,
     filter_results,
     format_results,
@@ -200,6 +201,15 @@ class TestProcessedAvailability:
         processed = process_results({}, results, {5})
 
         assert [result.campsite_id for result in processed.campsites] == [1]
+
+    def test_fingerprint_changes_only_with_semantic_state(self):
+        entry = {"provider": "RecreationDotGov", "campground_id": 100}
+        first = process_results(entry, [make_campsite(campsite_id=1)], None)
+        same = process_results(entry, [make_campsite(campsite_id=1)], None)
+        changed = process_results(entry, [make_campsite(campsite_id=2)], None)
+
+        assert availability_fingerprint([first]) == availability_fingerprint([same])
+        assert availability_fingerprint([first]) != availability_fingerprint([changed])
 
 
 # ── format_results ──────────────────────────────────────────────────────────

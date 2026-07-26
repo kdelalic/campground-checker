@@ -25,6 +25,7 @@ class TestParseArgs:
         assert args.workers == 4
         assert args.batch_size == 4
         assert args.search_delay == 0.0
+        assert args.gc_interval == 12
 
     def test_search_tuning_overrides(self, monkeypatch):
         monkeypatch.setattr(
@@ -37,6 +38,8 @@ class TestParseArgs:
                 "2",
                 "--search-delay",
                 "0.5",
+                "--gc-interval",
+                "0",
             ],
         )
 
@@ -45,6 +48,7 @@ class TestParseArgs:
         assert args.workers == 6
         assert args.batch_size == 2
         assert args.search_delay == 0.5
+        assert args.gc_interval == 0
 
 
 # ── parse_day_names ──────────────────────────────────────────────────────────

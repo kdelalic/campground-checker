@@ -1,6 +1,11 @@
 """Tests for campsite_checker.providers."""
 
-from campsite_checker.providers import PROVIDER_DISPLAY, PROVIDER_MAP, WEEKDAY_NAMES
+from campsite_checker.providers import (
+    PROVIDER_DISPLAY,
+    PROVIDER_MAP,
+    WEEKDAY_LABELS,
+    WEEKDAY_NAMES,
+)
 
 
 class TestProviderMap:
@@ -36,3 +41,7 @@ class TestWeekdayNames:
     def test_values_are_unique(self):
         values = list(WEEKDAY_NAMES.values())
         assert len(values) == len(set(values))
+
+    def test_precomputed_labels_match_names(self):
+        assert WEEKDAY_LABELS[0] == "Monday"
+        assert WEEKDAY_LABELS[6] == "Sunday"

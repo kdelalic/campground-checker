@@ -1,11 +1,63 @@
 import calendar
 import html
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from camply.containers import AvailableCampsite
 
-from .results import ProcessedAvailability, process_results
+from .results import (
+    ProcessedAvailability,
+    availability_fingerprint,
+    process_results,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardPublishResult:
+    written: bool
+    uploaded: bool
+    public_url: str | None = None
+
+
+class DashboardPublisher:
+    """Write and upload a dashboard only when semantic availability changes."""
+
+    def __init__(self, output_path: str, uploader: Any = None):
+        self.output_path = output_path
+        self.uploader = uploader
+        self.last_written_fingerprint: str | None = None
+        self.last_uploaded_fingerprint: str | None = None
+
+    def publish(
+        self,
+        availabilities: list[ProcessedAvailability],
+        day_filter: set[int] | None = None,
+    ) -> DashboardPublishResult:
+        fingerprint = availability_fingerprint(availabilities)
+        written = (
+            fingerprint != self.last_written_fingerprint or not Path(self.output_path).exists()
+        )
+        if written:
+            generate_dashboard(availabilities, day_filter, self.output_path)
+            self.last_written_fingerprint = fingerprint
+
+        uploaded = False
+        public_url = None
+        if self.uploader is not None and fingerprint != self.last_uploaded_fingerprint:
+            upload_result = self.uploader.upload(self.output_path)
+            if upload_result.success:
+                uploaded = True
+                public_url = upload_result.public_url
+                self.last_uploaded_fingerprint = fingerprint
+
+        return DashboardPublishResult(
+            written=written,
+            uploaded=uploaded,
+            public_url=public_url,
+        )
 
 
 def get_dashboard_path(args, config: dict) -> str | None:

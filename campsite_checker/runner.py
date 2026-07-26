@@ -24,7 +24,7 @@ from .notify import (
     get_telegram_creds,
     send_telegram,
 )
-from .providers import WEEKDAY_NAMES
+from .providers import WEEKDAY_LABELS
 from .results import (
     NotificationKey,
     ProcessedAvailability,
@@ -44,6 +44,62 @@ logging.basicConfig(
 logging.getLogger("camply").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
+
+
+def _resident_memory_mb() -> float | None:
+    """Return current RSS on Linux or peak RSS on other Unix platforms."""
+    try:
+        statm = Path("/proc/self/statm").read_text().split()
+        return int(statm[1]) * os.sysconf("SC_PAGE_SIZE") / (1024 * 1024)
+    except (FileNotFoundError, IndexError, OSError, ValueError):
+        pass
+
+    try:
+        import resource
+
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        divisor = 1024 * 1024 if sys.platform == "darwin" else 1024
+        return rss / divisor
+    except (ImportError, OSError, ValueError):
+        return None
+
+
+def _maybe_collect_garbage(scan_num: int, interval: int) -> bool:
+    """Run and measure a full collection at the configured scan interval."""
+    if interval <= 0 or scan_num % interval != 0:
+        return False
+    before_mb = _resident_memory_mb()
+    generation_counts = gc.get_count()
+    started = monotonic()
+    collected = gc.collect()
+    elapsed = monotonic() - started
+    after_mb = _resident_memory_mb()
+    memory_label = (
+        f", memory {before_mb:.1f}→{after_mb:.1f} MiB"
+        if before_mb is not None and after_mb is not None
+        else ""
+    )
+    logger.info(
+        "Garbage collection: %d object(s), %.3fs%s (generations before: %s)",
+        collected,
+        elapsed,
+        memory_label,
+        generation_counts,
+    )
+    return True
+
+
+def _advance_poll_deadline(
+    previous_deadline: float,
+    period_seconds: float,
+    now: float,
+) -> float:
+    """Advance an anchored poll deadline, skipping periods lost to overruns."""
+    next_deadline = previous_deadline + period_seconds
+    if next_deadline <= now:
+        missed_periods = int((now - next_deadline) // period_seconds) + 1
+        next_deadline += missed_periods * period_seconds
+    return next_deadline
 
 
 def _resolve_dashboard_interval(args, raw_config: dict) -> int:
@@ -69,13 +125,12 @@ def print_scan_header(
     scan_num: int | None = None,
     scan_type: str | None = None,
 ) -> None:
-    inv = {v: k for k, v in WEEKDAY_NAMES.items()}
     if day_filter is None:
         day_label = "all-day"
     elif len(day_filter) == 1:
-        day_label = inv[next(iter(day_filter))].capitalize()
+        day_label = WEEKDAY_LABELS[next(iter(day_filter))]
     else:
-        day_label = "/".join(inv[d].capitalize() for d in sorted(day_filter))
+        day_label = "/".join(WEEKDAY_LABELS[d] for d in sorted(day_filter))
 
     n_dates = count_matching_dates(start_dt, end_dt, day_filter)
 
@@ -201,13 +256,20 @@ def _load_sent_keys(path: Path) -> set[NotificationKey]:
         return set()
 
 
-def _save_sent_keys(path: Path, keys: set[NotificationKey]) -> None:
-    """Save sent keys to disk, pruning stale entries."""
+def _save_sent_keys(path: Path, keys: set[NotificationKey]) -> bool:
+    """Save changed sent keys to disk, pruning stale entries."""
     today = date.today()
     cutoff = today + timedelta(days=_SENT_KEYS_MAX_AGE_DAYS)
     data = [[name, cid, d.isoformat()] for name, cid, d in keys if today <= d <= cutoff]
     data.sort(key=lambda row: (row[0], str(row[1]), row[2]))
-    path.write_text(json.dumps(data))
+    serialized = json.dumps(data, separators=(",", ":"))
+    try:
+        if path.read_text() == serialized:
+            return False
+    except FileNotFoundError:
+        pass
+    path.write_text(serialized)
+    return True
 
 
 def _send_notifications(
@@ -274,15 +336,23 @@ def run_forever(
     prev_keys = _load_sent_keys(SENT_KEYS_FILE)
     scan_num = 0
 
-    r2_config = None
+    dashboard_publisher = None
     if dashboard_path:
-        from .upload import get_r2_config
+        from .dashboard import DashboardPublisher
+        from .upload import R2Uploader, get_r2_config
 
         r2_config = get_r2_config(args, raw_config)
+        r2_uploader = None
+        if r2_config:
+            r2_uploader = R2Uploader(r2_config)
+        dashboard_publisher = DashboardPublisher(dashboard_path, r2_uploader)
 
     dashboard_interval = _resolve_dashboard_interval(args, raw_config)
     last_dashboard_scan: float = 0.0  # monotonic; 0 forces first-iteration scan
     cached_dashboard_results: list[ProcessedAvailability] = []
+    gc_interval = max(0, int(getattr(args, "gc_interval", 12)))
+    alert_period_seconds = max(1.0, args.alert_interval * 60)
+    next_alert_deadline = monotonic()
 
     scan_status.dashboard_interval_minutes = dashboard_interval
 
@@ -345,19 +415,21 @@ def run_forever(
                     scan_status.last_dashboard_scan = datetime.now()
 
                 # --- Generate dashboard from merged results ---
-                if dashboard_path:
-                    from .dashboard import generate_dashboard
-
+                if dashboard_publisher is not None:
                     merged = alert_all + cached_dashboard_results
-                    generate_dashboard(merged, None, dashboard_path)
-                    logger.info("   Dashboard written to %s", dashboard_path)
-
-                    if r2_config:
-                        from .upload import upload_to_r2
-
-                        url = upload_to_r2(dashboard_path, r2_config)
-                        if url:
-                            logger.info("Dashboard uploaded to %s", url)
+                    publish_result = dashboard_publisher.publish(merged)
+                    if publish_result.written:
+                        logger.info("   Dashboard written to %s", dashboard_path)
+                    else:
+                        logger.debug("Dashboard availability unchanged; skipping rewrite")
+                    if publish_result.uploaded:
+                        if publish_result.public_url:
+                            logger.info(
+                                "Dashboard uploaded to %s",
+                                publish_result.public_url,
+                            )
+                        else:
+                            logger.info("Dashboard uploaded to R2")
 
                 # --- Notifications (alert entries only) ---
                 _send_notifications(alert_found, tg_token, tg_chat_id, prev_keys)
@@ -365,7 +437,8 @@ def run_forever(
                 # --- Persist dedup keys from both tiers ---
                 current_keys = alert_keys | dash_keys
                 prev_keys |= current_keys
-                _save_sent_keys(SENT_KEYS_FILE, prev_keys)
+                if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
+                    logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
 
                 scan_status.update(entries_count=len(current_entries))
 
@@ -376,19 +449,23 @@ def run_forever(
                 logger.error("Scan #%d failed: %s", scan_num, exc, exc_info=True)
                 scan_status.update(entries_count=0, error=True)
 
-            # Force garbage collection between scans so Python returns memory
-            # to the OS.  camply searchers, HTTP sessions, and pandas DataFrames
-            # from the just-finished scan become unreachable here.
-            gc.collect()
+            _maybe_collect_garbage(scan_num, gc_interval)
 
             mins_since_dash = (monotonic() - last_dashboard_scan) / 60
             mins_until_dash = max(0, dashboard_interval - mins_since_dash)
+            now = monotonic()
+            next_alert_deadline = _advance_poll_deadline(
+                next_alert_deadline,
+                alert_period_seconds,
+                now,
+            )
+            sleep_seconds = max(0.0, next_alert_deadline - monotonic())
             logger.info(
-                "Next alert check in %d min. Next dashboard scan in ~%d min. Ctrl+C to stop.",
-                args.alert_interval,
+                "Next alert check in %.1f min. Next dashboard scan in ~%d min. Ctrl+C to stop.",
+                sleep_seconds / 60,
                 int(mins_until_dash),
             )
-            time.sleep(args.alert_interval * 60)
+            time.sleep(sleep_seconds)
 
     except KeyboardInterrupt:
         logger.info("\U0001f3d5  Stopped.")
@@ -436,10 +513,13 @@ def main() -> None:
         _send_notifications(found_entries, tg_token, tg_chat_id)
 
         if dashboard_path:
-            from .upload import get_r2_config, upload_to_r2
+            from .upload import R2Uploader, get_r2_config
 
             r2_config = get_r2_config(args, config)
             if r2_config:
-                url = upload_to_r2(dashboard_path, r2_config)
-                if url:
-                    logger.info("Dashboard uploaded to %s", url)
+                upload_result = R2Uploader(r2_config).upload(dashboard_path)
+                if upload_result.success:
+                    if upload_result.public_url:
+                        logger.info("Dashboard uploaded to %s", upload_result.public_url)
+                    else:
+                        logger.info("Dashboard uploaded to R2")

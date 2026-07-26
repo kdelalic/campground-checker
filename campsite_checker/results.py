@@ -1,3 +1,5 @@
+import hashlib
+import json
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -22,6 +24,39 @@ class ProcessedAvailability:
     @property
     def available(self) -> bool:
         return bool(self.campsites)
+
+
+def availability_fingerprint(
+    availabilities: list[ProcessedAvailability],
+) -> str:
+    """Hash dashboard-relevant state without including the generated timestamp."""
+    payload = []
+    for availability in availabilities:
+        entry = availability.entry
+        entry_identity = {
+            "provider": entry.get("provider", "RecreationDotGov"),
+            "campground_id": entry.get("campground_id"),
+            "recreation_area": entry.get("recreation_area"),
+            "campsite_id": entry.get("campsite_id"),
+            "name": entry.get("name"),
+        }
+        dates = [
+            [
+                booking_date.isoformat(),
+                sorted(campsite_ids, key=str),
+            ]
+            for booking_date, campsite_ids in sorted(availability.campsite_ids_by_date.items())
+        ]
+        payload.append(
+            {
+                "entry": entry_identity,
+                "facility_name": availability.facility_name,
+                "booking_url": availability.booking_url,
+                "dates": dates,
+            }
+        )
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(serialized.encode()).hexdigest()
 
 
 def get_facility_name(results: list[AvailableCampsite]) -> str:

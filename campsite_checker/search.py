@@ -2,9 +2,12 @@ import concurrent.futures
 import inspect
 import logging
 import statistics
+import threading
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any
 
 from camply.containers import AvailableCampsite, SearchWindow
 
@@ -12,6 +15,75 @@ from .providers import PROVIDER_DISPLAY, PROVIDER_MAP
 from .results import get_facility_name
 
 logger = logging.getLogger(__name__)
+
+
+class SearchMetadataCache:
+    """Thread-safe bounded cache for stable Camply campsite metadata."""
+
+    def __init__(
+        self,
+        max_entries: int = 32,
+        ttl_seconds: float = 24 * 60 * 60,
+        clock=time.monotonic,
+    ):
+        self.max_entries = max_entries
+        self.ttl_seconds = ttl_seconds
+        self._clock = clock
+        self._entries: OrderedDict[
+            tuple[str, tuple[str, ...]],
+            tuple[float, Any],
+        ] = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(provider: str, searcher) -> tuple[str, tuple[str, ...]] | None:
+        if not hasattr(searcher, "campsite_metadata"):
+            return None
+        facility_ids = tuple(
+            sorted(
+                str(campground.facility_id) for campground in getattr(searcher, "campgrounds", [])
+            )
+        )
+        return (provider, facility_ids) if facility_ids else None
+
+    def hydrate(self, provider: str, searcher) -> bool:
+        key = self._key(provider, searcher)
+        if key is None:
+            return False
+        with self._lock:
+            cached = self._entries.get(key)
+            if cached is None:
+                return False
+            expires_at, metadata = cached
+            if expires_at <= self._clock():
+                del self._entries[key]
+                return False
+            self._entries.move_to_end(key)
+        searcher.campsite_metadata = metadata
+        return True
+
+    def store(self, provider: str, searcher) -> bool:
+        key = self._key(provider, searcher)
+        metadata = getattr(searcher, "campsite_metadata", None)
+        if key is None or metadata is None:
+            return False
+        with self._lock:
+            self._entries[key] = (self._clock() + self.ttl_seconds, metadata)
+            self._entries.move_to_end(key)
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+        return True
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._entries)
+
+
+SEARCH_METADATA_CACHE = SearchMetadataCache()
 
 
 @dataclass(slots=True)
@@ -31,6 +103,7 @@ class SearchOutcome:
     elapsed: float
     resolved_names: dict[str, str]
     resolved_name: str | None
+    metadata_reused: bool | None = None
 
 
 def _as_list(value):
@@ -51,6 +124,12 @@ def _effective_nights(entry: dict, args) -> int:
 
 def _effective_weekends_only(entry: dict, args) -> bool:
     return args.weekends_only or entry.get("weekends_only", False)
+
+
+@lru_cache(maxsize=None)
+def _requires_recreation_area(search_class: type) -> bool:
+    param = inspect.signature(search_class.__init__).parameters.get("recreation_area")
+    return param is not None and param.default is inspect.Parameter.empty
 
 
 def _batch_key(entry: dict, args) -> tuple | None:
@@ -136,8 +215,7 @@ def build_searcher(entry: dict, search_window: SearchWindow, args):
         # Some providers (e.g. SearchReserveCalifornia) declare recreation_area
         # as a required positional arg with no default; pass [] when only
         # campground_id is given so the constructor doesn't raise TypeError.
-        param = inspect.signature(search_class.__init__).parameters.get("recreation_area")
-        if param is not None and param.default is inspect.Parameter.empty:
+        if _requires_recreation_area(search_class):
             kwargs["recreation_area"] = []
 
     if entry.get("campsite_id"):
@@ -190,6 +268,12 @@ def _search_payload(entry: dict, search_window: SearchWindow, args) -> SearchOut
     try:
         searcher = build_searcher(entry, search_window, args)
         resolved_names, resolved_name = _resolved_searcher_names(searcher)
+        metadata_cacheable = hasattr(searcher, "campsite_metadata")
+        metadata_hit = SEARCH_METADATA_CACHE.hydrate(
+            entry.get("provider", "RecreationDotGov"), searcher
+        )
+        if metadata_hit:
+            logger.debug("Reused cached campsite metadata for %s", label)
     except Exception as exc:
         return SearchOutcome(
             results=[],
@@ -199,12 +283,14 @@ def _search_payload(entry: dict, search_window: SearchWindow, args) -> SearchOut
             resolved_name=None,
         )
     results, error = run_search(entry, searcher, verbose=args.verbose)
+    SEARCH_METADATA_CACHE.store(entry.get("provider", "RecreationDotGov"), searcher)
     return SearchOutcome(
         results=results,
         error=error,
         elapsed=time.monotonic() - start,
         resolved_names=resolved_names,
         resolved_name=resolved_name,
+        metadata_reused=metadata_hit if metadata_cacheable else None,
     )
 
 
@@ -284,6 +370,7 @@ def execute_searches(
     total_start = time.monotonic()
     durations_by_provider: dict[str, list[float]] = defaultdict(list)
     entries_by_provider: dict[str, int] = defaultdict(int)
+    metadata_reuse_by_provider: dict[str, list[bool]] = defaultdict(list)
     remaining = list(batches)
     next_submission: dict[str, float] = defaultdict(float)
 
@@ -342,6 +429,8 @@ def execute_searches(
                 batch_size = len(batch.entries)
                 durations_by_provider[batch.provider].append(outcome.elapsed)
                 entries_by_provider[batch.provider] += batch_size
+                if outcome.metadata_reused is not None:
+                    metadata_reuse_by_provider[batch.provider].append(outcome.metadata_reused)
                 if outcome.error:
                     fail_count += batch_size
                     suffix = " [ERROR]"
@@ -383,13 +472,20 @@ def execute_searches(
     total_elapsed = time.monotonic() - total_start
     for provider, durations in durations_by_provider.items():
         provider_label = PROVIDER_DISPLAY.get(provider, provider.lower())
+        metadata_observations = metadata_reuse_by_provider[provider]
+        metadata_label = (
+            f", metadata reused {sum(metadata_observations)}/{len(metadata_observations)}"
+            if metadata_observations
+            else ""
+        )
         logger.info(
-            "   %s: %d campground(s), %d batch(es), median %.1fs, slowest %.1fs",
+            "   %s: %d campground(s), %d batch(es), median %.1fs, slowest %.1fs%s",
             provider_label,
             entries_by_provider[provider],
             len(durations),
             statistics.median(durations),
             max(durations),
+            metadata_label,
         )
     logger.info(
         "Searches complete: %d ok, %d failed in %d batch(es) (%.1fs total)",
