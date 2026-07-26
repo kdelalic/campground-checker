@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 from campsite_checker.server import CampgroundMetric, HealthCheckHandler, _ScanStatus
+from campsite_checker.throttle import ProviderThrottleRegistry
 
 
 class TestScanStatusHealth:
@@ -179,3 +180,28 @@ class TestPrometheusMetrics:
             "text/plain; version=0.0.4; charset=utf-8",
         )
         assert b"campsite_checker_scans_total 1" in handler.wfile.getvalue()
+
+    def test_provider_throttle_metrics(self):
+        registry = ProviderThrottleRegistry(clock=lambda: 100)
+        registry.ensure("ReserveCalifornia")
+        registry.record_rate_limit("RecreationDotGov", retry_after_seconds=75)
+        status = _ScanStatus(throttle_registry=registry)
+
+        metrics = status.to_prometheus()
+
+        assert (
+            'campsite_checker_provider_rate_limit_events_total{provider="RecreationDotGov"} 1'
+        ) in metrics
+        assert (
+            'campsite_checker_provider_throttle_cooldown_seconds{provider="RecreationDotGov"} 75'
+        ) in metrics
+        assert (
+            "campsite_checker_provider_throttle_last_backoff_seconds"
+            '{provider="RecreationDotGov"} 75'
+        ) in metrics
+        assert (
+            'campsite_checker_provider_consecutive_rate_limits{provider="RecreationDotGov"} 1'
+        ) in metrics
+        assert (
+            'campsite_checker_provider_rate_limit_events_total{provider="ReserveCalifornia"} 0'
+        ) in metrics

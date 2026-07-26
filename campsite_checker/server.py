@@ -7,6 +7,8 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from .throttle import PROVIDER_THROTTLES, ProviderThrottleRegistry
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,8 +84,9 @@ class CampgroundMetric:
 class _ScanStatus:
     """Tracks scan metrics for the health check endpoint."""
 
-    def __init__(self):
+    def __init__(self, throttle_registry: ProviderThrottleRegistry | None = None):
         self._lock = threading.RLock()
+        self.throttle_registry = throttle_registry or PROVIDER_THROTTLES
         self.start_time = datetime.now(timezone.utc)
         self.last_scan_time: datetime | None = None
         self.scan_count: int = 0
@@ -142,6 +145,7 @@ class _ScanStatus:
     def to_dict(self) -> dict:
         with self._lock:
             uptime = (datetime.now(timezone.utc) - self.start_time).total_seconds()
+            provider_throttles = self.throttle_registry.snapshot()
             return {
                 "status": "ok" if self.is_healthy() else "unhealthy",
                 "uptime_seconds": int(uptime),
@@ -158,6 +162,16 @@ class _ScanStatus:
                 "last_dashboard_scan": (
                     self.last_dashboard_scan.isoformat() if self.last_dashboard_scan else None
                 ),
+                "provider_throttles": [
+                    {
+                        "provider": throttle.provider,
+                        "rate_limit_events": throttle.rate_limit_events,
+                        "consecutive_rate_limits": throttle.consecutive_rate_limits,
+                        "cooldown_seconds": throttle.cooldown_seconds,
+                        "last_backoff_seconds": throttle.last_backoff_seconds,
+                    }
+                    for throttle in provider_throttles
+                ],
             }
 
     def to_prometheus(self) -> str:
@@ -245,6 +259,7 @@ class _ScanStatus:
                 ),
             )
             campgrounds = self.campgrounds
+            provider_throttles = self.throttle_registry.snapshot()
 
         lines = []
         for name, help_text, metric_type, value in metrics:
@@ -276,6 +291,39 @@ class _ScanStatus:
             lines.extend((f"# HELP {name} {help_text}", f"# TYPE {name} gauge"))
             lines.extend(
                 f"{name}{campground.labels()} {get_value(campground)}" for campground in campgrounds
+            )
+        provider_metrics = (
+            (
+                "campsite_checker_provider_rate_limit_events_total",
+                "Provider rate-limit responses observed after request retries were exhausted.",
+                "counter",
+                lambda throttle: throttle.rate_limit_events,
+            ),
+            (
+                "campsite_checker_provider_throttle_cooldown_seconds",
+                "Seconds remaining in the adaptive provider cooldown.",
+                "gauge",
+                lambda throttle: throttle.cooldown_seconds,
+            ),
+            (
+                "campsite_checker_provider_throttle_last_backoff_seconds",
+                "Most recent adaptive backoff applied for the provider in seconds.",
+                "gauge",
+                lambda throttle: throttle.last_backoff_seconds,
+            ),
+            (
+                "campsite_checker_provider_consecutive_rate_limits",
+                "Consecutive provider rate limits without a subsequent successful request.",
+                "gauge",
+                lambda throttle: throttle.consecutive_rate_limits,
+            ),
+        )
+        for name, help_text, metric_type, get_value in provider_metrics:
+            lines.extend((f"# HELP {name} {help_text}", f"# TYPE {name} {metric_type}"))
+            lines.extend(
+                f'{name}{{provider="{_escape_label_value(throttle.provider)}"}} '
+                f"{get_value(throttle)}"
+                for throttle in provider_throttles
             )
         return "\n".join(lines) + "\n"
 

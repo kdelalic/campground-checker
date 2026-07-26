@@ -41,5 +41,7 @@ ENV SEARCH_DELAY="1"
 ENV BATCH_SIZE="4"
 ENV DASHBOARD_INTERVAL="30"
 ENV GC_INTERVAL="12"
+ENV THROTTLE_BASE_DELAY="30"
+ENV THROTTLE_MAX_DELAY="900"
 
 CMD ["sh", "-c", "python check_campsites.py --forever --dashboard --workers $WORKERS --alert-interval $ALERT_INTERVAL --search-delay $SEARCH_DELAY --batch-size $BATCH_SIZE --dashboard-interval $DASHBOARD_INTERVAL --gc-interval $GC_INTERVAL"]

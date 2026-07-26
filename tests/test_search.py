@@ -14,6 +14,7 @@ from campsite_checker.search import (
     build_search_batches,
     execute_searches,
 )
+from campsite_checker.throttle import ProviderThrottleRegistry
 
 from .conftest import make_campsite
 
@@ -148,6 +149,71 @@ class TestExecuteSearches:
     def test_empty_entry_list_returns_immediately(self):
         assert execute_searches([], make_window(), make_args()) == {}
 
+    def test_rate_limit_skips_queued_provider_but_continues_others(self, monkeypatch):
+        entries = [
+            {"provider": "RecreationDotGov", "campground_id": 10},
+            {"provider": "RecreationDotGov", "campground_id": 20},
+            {"provider": "ReserveCalifornia", "campground_id": 30},
+        ]
+        calls = []
+
+        def clock():
+            return 100.0
+
+        registry = ProviderThrottleRegistry(clock=clock)
+
+        def fake_search(entry, search_window, args):
+            calls.append((entry["provider"], entry["campground_id"]))
+            if entry["provider"] == "RecreationDotGov":
+                return SearchOutcome(
+                    results=[],
+                    error="[WARNING] 429 Too Many Requests",
+                    elapsed=0.01,
+                    resolved_names={},
+                    resolved_name=None,
+                    rate_limited=True,
+                    retry_after_seconds=45,
+                    started_at=99,
+                )
+            return SearchOutcome(
+                results=[],
+                error=None,
+                elapsed=0.01,
+                resolved_names={},
+                resolved_name=None,
+                started_at=100,
+            )
+
+        monkeypatch.setattr("campsite_checker.search.PROVIDER_THROTTLES", registry)
+        monkeypatch.setattr("campsite_checker.search._search_payload", fake_search)
+
+        results = execute_searches(
+            entries,
+            make_window(),
+            make_args(batch_size=1, workers=1),
+        )
+
+        assert calls == [
+            ("RecreationDotGov", 10),
+            ("ReserveCalifornia", 30),
+        ]
+        assert "cooldown is active" in results[1][2]
+        assert results[2][2] is None
+        snapshot = {item.provider: item for item in registry.snapshot()}
+        assert snapshot["RecreationDotGov"].rate_limit_events == 1
+        assert snapshot["RecreationDotGov"].cooldown_seconds == 45
+
+        calls.clear()
+        next_results = execute_searches(
+            entries,
+            make_window(),
+            make_args(batch_size=1, workers=1),
+        )
+
+        assert calls == [("ReserveCalifornia", 30)]
+        assert "cooldown is active" in next_results[0][2]
+        assert "cooldown is active" in next_results[1][2]
+
 
 class TestSearchMetadataCache:
     def test_hydrates_matching_searcher(self):
@@ -264,7 +330,9 @@ def test_search_payload_reuses_cached_metadata(monkeypatch):
         if searcher.campsite_metadata is None:
             metadata_fetches.append(1)
             searcher.campsite_metadata = object()
-        return [], None
+        from campsite_checker.throttle import RateLimitDetection
+
+        return [], None, RateLimitDetection(rate_limited=False)
 
     SEARCH_METADATA_CACHE.clear()
     monkeypatch.setattr("campsite_checker.search.build_searcher", fake_build_searcher)

@@ -74,7 +74,7 @@ docker build -t campsite-checker .
 docker run -v $(pwd)/campsites.yaml:/app/campsites.yaml:ro campsite-checker
 ```
 
-The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim. Runtime tunables via env vars: `WORKERS` (default 4), `ALERT_INTERVAL` (default 5), `SEARCH_DELAY` (default 1), `BATCH_SIZE` (default 4), `DASHBOARD_INTERVAL` (default 30), and `GC_INTERVAL` (default 12). Set `SENT_KEYS_PATH` to persist dedup keys across container restarts (e.g. a mounted volume).
+The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and uses Python 3.14-slim. Runtime tunables via env vars: `WORKERS` (default 4), `ALERT_INTERVAL` (default 5), `SEARCH_DELAY` (default 1), `BATCH_SIZE` (default 4), `DASHBOARD_INTERVAL` (default 30), `GC_INTERVAL` (default 12), `THROTTLE_BASE_DELAY` (default 30 seconds), and `THROTTLE_MAX_DELAY` (default 900 seconds). Set `SENT_KEYS_PATH` to persist dedup keys across container restarts (e.g. a mounted volume).
 
 ## Deployment
 
@@ -105,7 +105,8 @@ The project is a thin wrapper around the [camply](https://github.com/juftin/camp
 
 - `campsite_checker/config.py` — CLI argument parsing (`parse_args`), YAML config loading (`load_config`), date range computation, day-of-week filter resolution. Supports two YAML formats: provider-keyed dict (new) and flat list with optional `provider` field (legacy).
 - `campsite_checker/providers.py` — Maps provider name strings (`RecreationDotGov`, `Yellowstone`, `GoingToCamp`, `ReserveCalifornia`) to camply search classes; weekday name → integer mapping.
-- `campsite_checker/search.py` — Builds camply searcher objects from config entries (`build_searcher`) and runs all searches in parallel via `ThreadPoolExecutor` (`execute_searches`). Handles a provider-specific quirk: `ReserveCalifornia` requires a `recreation_area` positional arg even when only `campground_id` is given, so an empty list is passed in that case.
+- `campsite_checker/search.py` — Builds camply searcher objects from config entries (`build_searcher`) and runs bounded search batches in parallel via `ThreadPoolExecutor` (`execute_searches`). Batch submissions are paced independently per provider. Handles a provider-specific quirk: `ReserveCalifornia` requires a `recreation_area` positional arg even when only `campground_id` is given, so an empty list is passed in that case.
+- `campsite_checker/throttle.py` — Detects provider HTTP 429 responses, including exceptions wrapped by retry libraries, and maintains process-wide provider cooldowns. Backoff starts at `THROTTLE_BASE_DELAY`, doubles on consecutive limits, honors longer `Retry-After` values, and caps the computed exponential delay at `THROTTLE_MAX_DELAY`. Queued work for a throttled provider is skipped until a later scan while other providers continue.
 - `campsite_checker/results.py` — Post-search filtering: excludes boat/hike-in sites, applies day-of-week filter, formats terminal output.
 - `campsite_checker/notify.py` — Telegram notification logic: credential resolution (CLI > env vars > YAML), deduplication via `result_keys`, per-campground alert filtering, sends HTML-formatted messages via Telegram Bot API.
 - `campsite_checker/yaml_editor.py` — Round-trip YAML handling via `ruamel.yaml`. `parse_yaml_comments` is the only function still called; it recovers campground names from the inline comments in `campsites.yaml` for `bot.py`. The mutating helpers (`append_campground`, `remove_campground`, `update_campground_comment`, `update_alert_field`) are retained and still tested, but nothing calls them now that `campsites.yaml` is git-managed and mounted read-only.
@@ -118,7 +119,7 @@ The project is a thin wrapper around the [camply](https://github.com/juftin/camp
 
 **Key design decisions:**
 
-- All campground searches run concurrently (one thread per entry).
+- Compatible campground searches are grouped into bounded batches; batches run concurrently with per-provider submission pacing.
 - Telegram deduplication in `--forever` mode: a key is `(facility_name, campsite_id, booking_date)`. Keys are persisted to disk and pruned of past dates on each load.
 - Day-of-week filtering (default: Saturday only) is applied in post-processing, not in the camply search itself.
 - Telegram credential priority: CLI flags > `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` env vars > `telegram.bot_token`/`telegram.chat_id` in YAML config.

@@ -13,6 +13,7 @@ from camply.containers import AvailableCampsite, SearchWindow
 
 from .providers import PROVIDER_DISPLAY, PROVIDER_MAP
 from .results import get_facility_name
+from .throttle import PROVIDER_THROTTLES, RateLimitDetection, detect_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,9 @@ class SearchOutcome:
     resolved_names: dict[str, str]
     resolved_name: str | None
     metadata_reused: bool | None = None
+    rate_limited: bool = False
+    retry_after_seconds: float | None = None
+    started_at: float = 0
 
 
 def _as_list(value):
@@ -224,17 +228,25 @@ def build_searcher(entry: dict, search_window: SearchWindow, args):
     return search_class(**kwargs)
 
 
-def run_search(entry: dict, searcher, verbose: bool) -> tuple[list[AvailableCampsite], str | None]:
+def run_search(
+    entry: dict,
+    searcher,
+    verbose: bool,
+) -> tuple[list[AvailableCampsite], str | None, RateLimitDetection]:
     try:
         results = searcher.get_matching_campsites(
             log=verbose,
             verbose=verbose,
             continuous=False,
         )
-        return results or [], None
+        return results or [], None, RateLimitDetection(rate_limited=False)
     except Exception as exc:
         label = entry.get("campground_id") or entry.get("recreation_area") or "unknown"
-        return [], f"[WARNING] Search failed for campground {label}: {exc}"
+        return (
+            [],
+            f"[WARNING] Search failed for campground {label}: {exc}",
+            detect_rate_limit(exc),
+        )
 
 
 def _facility_label(campground) -> str | None:
@@ -275,14 +287,18 @@ def _search_payload(entry: dict, search_window: SearchWindow, args) -> SearchOut
         if metadata_hit:
             logger.debug("Reused cached campsite metadata for %s", label)
     except Exception as exc:
+        rate_limit = detect_rate_limit(exc)
         return SearchOutcome(
             results=[],
             error=f"[ERROR] Could not create searcher for campground {label}: {exc}",
             elapsed=time.monotonic() - start,
             resolved_names={},
             resolved_name=None,
+            rate_limited=rate_limit.rate_limited,
+            retry_after_seconds=rate_limit.retry_after_seconds,
+            started_at=start,
         )
-    results, error = run_search(entry, searcher, verbose=args.verbose)
+    results, error, rate_limit = run_search(entry, searcher, verbose=args.verbose)
     SEARCH_METADATA_CACHE.store(entry.get("provider", "RecreationDotGov"), searcher)
     return SearchOutcome(
         results=results,
@@ -291,6 +307,9 @@ def _search_payload(entry: dict, search_window: SearchWindow, args) -> SearchOut
         resolved_names=resolved_names,
         resolved_name=resolved_name,
         metadata_reused=metadata_hit if metadata_cacheable else None,
+        rate_limited=rate_limit.rate_limited,
+        retry_after_seconds=rate_limit.retry_after_seconds,
+        started_at=start,
     )
 
 
@@ -351,6 +370,8 @@ def execute_searches(
     batches = build_search_batches(entries, args)
     if not batches:
         return results_by_index
+    for provider in {batch.provider for batch in batches}:
+        PROVIDER_THROTTLES.ensure(provider)
 
     requested_workers = max(1, int(getattr(args, "workers", 2)))
     max_workers = min(requested_workers, len(batches))
@@ -371,8 +392,39 @@ def execute_searches(
     durations_by_provider: dict[str, list[float]] = defaultdict(list)
     entries_by_provider: dict[str, int] = defaultdict(int)
     metadata_reuse_by_provider: dict[str, list[bool]] = defaultdict(list)
-    remaining = list(batches)
     next_submission: dict[str, float] = defaultdict(float)
+
+    def skip_batch(batch: SearchBatch, cooldown_seconds: float) -> None:
+        nonlocal fail_count
+        error = (
+            f"[WARNING] Skipping {batch.provider} search while provider cooldown is active "
+            f"({cooldown_seconds:.0f}s remaining)"
+        )
+        for index, entry in zip(batch.member_indices, batch.entries, strict=True):
+            results_by_index[index] = (entry, [], error)
+        fail_count += len(batch.entries)
+
+    remaining = []
+    skipped_by_provider: dict[str, tuple[int, float]] = {}
+    for batch in batches:
+        cooldown = PROVIDER_THROTTLES.cooldown_seconds(batch.provider)
+        if cooldown <= 0:
+            remaining.append(batch)
+            continue
+        skip_batch(batch, cooldown)
+        skipped_count, longest_cooldown = skipped_by_provider.get(batch.provider, (0, 0))
+        skipped_by_provider[batch.provider] = (
+            skipped_count + len(batch.entries),
+            max(longest_cooldown, cooldown),
+        )
+    for provider, (skipped_count, cooldown) in skipped_by_provider.items():
+        logger.warning(
+            "Provider %s cooldown active; skipped %d campground(s), retrying next scan "
+            "(%.0fs remaining)",
+            PROVIDER_DISPLAY.get(provider, provider),
+            skipped_count,
+            cooldown,
+        )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         active: dict[concurrent.futures.Future, SearchBatch] = {}
@@ -437,6 +489,10 @@ def execute_searches(
                 else:
                     ok_count += batch_size
                     suffix = ""
+                    PROVIDER_THROTTLES.record_success(
+                        batch.provider,
+                        request_started_at=outcome.started_at,
+                    )
 
                 provider_label = PROVIDER_DISPLAY.get(batch.provider, batch.provider.lower())
                 logger.info(
@@ -449,6 +505,26 @@ def execute_searches(
                 )
                 if outcome.error and outcome.error.startswith("[WARNING]"):
                     logger.warning(outcome.error)
+                if outcome.rate_limited:
+                    delay = PROVIDER_THROTTLES.record_rate_limit(
+                        batch.provider,
+                        retry_after_seconds=outcome.retry_after_seconds,
+                    )
+                    queued_for_provider = [
+                        queued for queued in remaining if queued.provider == batch.provider
+                    ]
+                    remaining = [
+                        queued for queued in remaining if queued.provider != batch.provider
+                    ]
+                    for queued in queued_for_provider:
+                        skip_batch(queued, delay)
+                    logger.warning(
+                        "Provider %s rate limited; applying %.0fs cooldown and skipping "
+                        "%d queued campground(s)",
+                        provider_label,
+                        delay,
+                        sum(len(queued.entries) for queued in queued_for_provider),
+                    )
 
                 for index, entry in zip(batch.member_indices, batch.entries, strict=True):
                     if "name" not in entry and "_resolved_name" not in entry:

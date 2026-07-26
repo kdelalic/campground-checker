@@ -86,6 +86,13 @@ usage when tuning the values for a deployment.
 The container defaults to a one-second per-provider batch submission delay and
 refreshes dashboard-only campgrounds every 30 minutes. Both remain configurable
 with the `SEARCH_DELAY` and `DASHBOARD_INTERVAL` environment variables.
+If a provider still returns HTTP 429 after Camply's retries, the checker skips
+that provider's queued work and applies an adaptive cooldown. The cooldown
+starts at 30 seconds, doubles on consecutive rate limits, honors a longer
+`Retry-After` response, and caps the computed exponential backoff at 15 minutes.
+A successful request begun after the most recent rate limit resets the backoff
+streak. Configure the bounds with `THROTTLE_BASE_DELAY` and
+`THROTTLE_MAX_DELAY` (seconds).
 
 In continuous mode, stable Recreation.gov campsite metadata is cached for up to
 24 hours. Dashboard files and R2 objects are only updated when semantic
@@ -128,6 +135,15 @@ Process-wide metrics have no application-defined labels:
 | `campsite_checker_alert_interval_seconds` | Gauge | Configured interval between alert scans. |
 | `campsite_checker_dashboard_interval_seconds` | Gauge | Configured interval between dashboard-only scans. |
 | `campsite_checker_last_dashboard_scan_timestamp_seconds` | Gauge | Unix timestamp of the latest dashboard-only scan, or `0` before the first one. |
+
+These metrics are emitted once per provider, using the `provider` label:
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `campsite_checker_provider_rate_limit_events_total` | Counter | Rate-limit responses observed after Camply's request retries were exhausted. |
+| `campsite_checker_provider_throttle_cooldown_seconds` | Gauge | Seconds remaining in the provider's adaptive cooldown. |
+| `campsite_checker_provider_throttle_last_backoff_seconds` | Gauge | Most recent cooldown applied to the provider. |
+| `campsite_checker_provider_consecutive_rate_limits` | Gauge | Consecutive rate limits without a subsequent successful request. |
 
 These metrics are emitted once per configured campground:
 
@@ -197,6 +213,12 @@ time() - campsite_checker_last_scan_timestamp_seconds
 
 # Rate of whole-cycle errors over the last hour
 rate(campsite_checker_scan_errors_total[1h])
+
+# Providers currently in an adaptive cooldown
+campsite_checker_provider_throttle_cooldown_seconds > 0
+
+# Provider rate-limit responses observed in the last hour
+increase(campsite_checker_provider_rate_limit_events_total[1h]) > 0
 ```
 
 ## Telegram Notifications

@@ -91,3 +91,21 @@ def test_dashboard_visualizes_per_campground_metrics():
     assert panels["Campgrounds with Search Errors"]["type"] == "table"
     assert panels["Availability Events"]["type"] == "state-timeline"
     assert "== 1" in panels["Availability Events"]["targets"][0]["expr"]
+
+
+def test_dashboard_visualizes_adaptive_provider_throttling():
+    dashboard = json.loads(DASHBOARD_PATH.read_text())
+    panels = {panel["title"]: panel for panel in dashboard["panels"]}
+
+    event_panel = panels["Provider Rate-limit Events"]
+    cooldown_panel = panels["Adaptive Provider Cooldown"]
+
+    assert event_panel["type"] == "timeseries"
+    assert cooldown_panel["type"] == "timeseries"
+    assert "campsite_checker_provider_rate_limit_events_total" in event_panel["targets"][0]["expr"]
+    assert (
+        "campsite_checker_provider_throttle_cooldown_seconds"
+        in cooldown_panel["targets"][0]["expr"]
+    )
+    assert "$provider" in event_panel["targets"][0]["expr"]
+    assert "$provider" in cooldown_panel["targets"][0]["expr"]
