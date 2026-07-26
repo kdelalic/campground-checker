@@ -2,7 +2,7 @@ import hashlib
 import json
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from camply.containers import AvailableCampsite
 
@@ -85,16 +85,16 @@ def get_booking_url(results: list[AvailableCampsite]) -> str:
 
 def count_matching_dates(start_dt: datetime, end_dt: datetime, day_filter: set[int] | None) -> int:
     """Count how many dates in [start_dt, end_dt) match the day filter."""
+    total_days = (end_dt.date() - start_dt.date()).days
     if day_filter is None:
-        return (end_dt.date() - start_dt.date()).days
-    count = 0
-    d = start_dt.date()
-    end = end_dt.date()
-    while d < end:
-        if d.weekday() in day_filter:
-            count += 1
-        d += timedelta(days=1)
-    return count
+        return total_days
+
+    full_weeks, remaining_days = divmod(total_days, 7)
+    count = full_weeks * len(day_filter)
+    start_weekday = start_dt.weekday()
+    return count + sum(
+        (start_weekday + offset) % 7 in day_filter for offset in range(remaining_days)
+    )
 
 
 def filter_results(
@@ -120,10 +120,16 @@ def filter_results(
                 return True
         return False
 
-    results = [r for r in results if not _is_excluded(r)]
-    if day_filter is not None:
-        results = [r for r in results if r.booking_date.weekday() in day_filter]
-    return results
+    if day_filter is None:
+        return [result for result in results if not _is_excluded(result)]
+
+    # Apply the cheap, selective weekday check first so excluded-site metadata
+    # is only inspected for dates the caller can actually use.
+    return [
+        result
+        for result in results
+        if result.booking_date.weekday() in day_filter and not _is_excluded(result)
+    ]
 
 
 def process_filtered_results(
@@ -135,21 +141,24 @@ def process_filtered_results(
     """Deduplicate and normalize results that have already been filtered."""
     seen: set[tuple[int | str, date]] = set()
     unique: list[AvailableCampsite] = []
+    by_date: dict[date, set[int | str]] = defaultdict(set)
+    unique_dates: list[date] = []
     for result in results:
-        key = (result.campsite_id, result.booking_date.date())
+        booking_date = result.booking_date.date()
+        key = (result.campsite_id, booking_date)
         if key not in seen:
             seen.add(key)
             unique.append(result)
+            unique_dates.append(booking_date)
+            by_date[booking_date].add(result.campsite_id)
 
     name = get_facility_name(unique)
     url = get_booking_url(unique)
-    by_date: dict[date, set[int | str]] = defaultdict(set)
-    for result in unique:
-        by_date[result.booking_date.date()].add(result.campsite_id)
 
     frozen_by_date = {booking_date: frozenset(ids) for booking_date, ids in by_date.items()}
     notification_keys = frozenset(
-        (name, result.campsite_id, result.booking_date.date()) for result in unique
+        (name, result.campsite_id, booking_date)
+        for result, booking_date in zip(unique, unique_dates, strict=True)
     )
     return ProcessedAvailability(
         entry=entry,
@@ -158,7 +167,7 @@ def process_filtered_results(
         booking_url=url,
         campsite_ids_by_date=frozen_by_date,
         notification_keys=notification_keys,
-        total_sites=sum(len(ids) for ids in frozen_by_date.values()),
+        total_sites=len(unique),
         search_succeeded=search_succeeded,
     )
 
