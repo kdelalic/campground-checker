@@ -4,10 +4,12 @@ from datetime import datetime
 
 from campsite_checker.notify import (
     _MAX_TG_LEN,
+    build_processed_telegram_message,
     build_telegram_message,
     filter_new_results,
     result_keys,
 )
+from campsite_checker.results import process_results
 
 from .conftest import make_campsite
 
@@ -72,6 +74,19 @@ class TestBuildTelegramMessage:
         msgs = build_telegram_message(entries, None)
         assert "<script>" not in msgs[0]
         assert "&lt;script&gt;" in msgs[0]
+
+    def test_formats_preprocessed_availability(self):
+        processed = process_results(
+            {"name": "Test"},
+            [make_campsite(booking_date=datetime(2026, 7, 4))],
+            None,
+        )
+
+        msgs = build_processed_telegram_message([processed])
+
+        assert len(msgs) == 1
+        assert "Test Area — Test Campground" in msgs[0]
+        assert "1 open site(s)" in msgs[0]
 
 
 # ── result_keys ─────────────────────────────────────────────────────────────

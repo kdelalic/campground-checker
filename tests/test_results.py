@@ -10,6 +10,7 @@ from campsite_checker.results import (
     get_booking_url,
     get_facility_name,
     group_results,
+    process_results,
 )
 
 from .conftest import make_campsite
@@ -158,6 +159,47 @@ class TestGroupResults:
     def test_filtered_out_returns_none(self):
         results = [make_campsite(campsite_type="BOAT-IN")]
         assert group_results(results, None) is None
+
+
+class TestProcessedAvailability:
+    def test_filters_deduplicates_and_groups_once(self):
+        results = [
+            make_campsite(
+                campsite_id=1,
+                booking_date=datetime(2026, 7, 4),
+            ),
+            make_campsite(
+                campsite_id=1,
+                booking_date=datetime(2026, 7, 4),
+            ),
+            make_campsite(
+                campsite_id=2,
+                booking_date=datetime(2026, 7, 11),
+            ),
+            make_campsite(
+                campsite_id=3,
+                booking_date=datetime(2026, 7, 11),
+                campsite_type="BOAT-IN",
+            ),
+        ]
+
+        processed = process_results({"alert": True}, results, None)
+
+        assert len(processed.campsites) == 2
+        assert processed.total_sites == 2
+        assert processed.campsite_ids_by_date[date(2026, 7, 4)] == frozenset({1})
+        assert processed.campsite_ids_by_date[date(2026, 7, 11)] == frozenset({2})
+        assert len(processed.notification_keys) == 2
+
+    def test_day_filter_is_applied_before_normalization(self):
+        results = [
+            make_campsite(campsite_id=1, booking_date=datetime(2026, 7, 4)),
+            make_campsite(campsite_id=2, booking_date=datetime(2026, 7, 6)),
+        ]
+
+        processed = process_results({}, results, {5})
+
+        assert [result.campsite_id for result in processed.campsites] == [1]
 
 
 # ── format_results ──────────────────────────────────────────────────────────

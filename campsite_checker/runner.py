@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from time import monotonic
 
-from camply.containers import AvailableCampsite, SearchWindow
+from camply.containers import SearchWindow
 
 from .config import (
     compute_date_range,
@@ -19,14 +19,20 @@ from .config import (
     resolve_day_filter,
 )
 from .notify import (
-    build_telegram_message,
-    filter_new_results,
+    build_processed_telegram_message,
+    filter_new_availability,
     get_telegram_creds,
-    result_keys,
     send_telegram,
 )
 from .providers import WEEKDAY_NAMES
-from .results import count_matching_dates, filter_results, format_results, group_results
+from .results import (
+    NotificationKey,
+    ProcessedAvailability,
+    count_matching_dates,
+    filter_results,
+    format_processed_results,
+    process_filtered_results,
+)
 from .search import execute_searches
 
 logging.basicConfig(
@@ -100,8 +106,12 @@ def run_once(
     scan_num: int | None = None,
     dashboard_path: str | None = None,
     scan_type: str | None = None,
-) -> tuple[set[tuple[str, int, date]], list[tuple[dict, list[AvailableCampsite]]]]:
-    """Run one scan. Returns (current_keys, found_entries, all_with_results)."""
+) -> tuple[
+    set[NotificationKey],
+    list[ProcessedAvailability],
+    list[ProcessedAvailability],
+]:
+    """Run one scan and return keys, available entries, and every processed entry."""
     scan_start = monotonic()
     start_dt, end_dt = compute_date_range(args)
     search_window = SearchWindow(start_date=start_dt, end_date=end_dt)
@@ -115,50 +125,35 @@ def run_once(
     results_by_task = execute_searches(task_entries, search_window, args)
 
     # Collect, filter per-task, and merge results back per original entry
-    errors: list[str] = []
+    errors: set[str] = set()
     entry_filtered: dict = defaultdict(list)
     for task_idx, (orig_idx, _task_entry, task_filter) in enumerate(search_tasks):
         _te, results, error = results_by_task[task_idx]
         if error:
-            errors.append(error)
+            errors.add(error)
             continue
         filtered = filter_results(results, task_filter)
         entry_filtered[orig_idx].extend(filtered)
 
     # Deduplicate per original entry and build output
-    found_entries: list[tuple[dict, list[AvailableCampsite]]] = []
-    all_with_results: list[tuple[dict, list[AvailableCampsite]]] = []
-    current_keys: set[tuple[str, int, date]] = set()
+    found_entries: list[ProcessedAvailability] = []
+    all_with_results: list[ProcessedAvailability] = []
+    current_keys: set[NotificationKey] = set()
     total_sites = 0
 
     for i, entry in enumerate(entries):
-        results = entry_filtered.get(i)
-        if not results:
-            all_with_results.append((entry, []))
-            continue
-        # Deduplicate by (campsite_id, booking_date)
-        seen: set[tuple[int, date]] = set()
-        unique: list[AvailableCampsite] = []
-        for r in results:
-            key = (r.campsite_id, r.booking_date.date())
-            if key not in seen:
-                seen.add(key)
-                unique.append(r)
-        results = unique
-        all_with_results.append((entry, results))
-
-        current_keys |= result_keys(entry, results, None)
-        grouped = group_results(results, None)
-        if grouped:
-            _name, _by_date, count, _url = grouped
-            total_sites += count
-            found_entries.append((entry, results))
+        availability = process_filtered_results(entry, entry_filtered.get(i, []))
+        all_with_results.append(availability)
+        current_keys.update(availability.notification_keys)
+        if availability.available:
+            total_sites += availability.total_sites
+            found_entries.append(availability)
 
     for error in errors:
         logger.warning(error)
 
-    for entry, results in found_entries:
-        formatted = format_results(entry, results, None)
+    for availability in found_entries:
+        formatted = format_processed_results(availability)
         if formatted:
             print(formatted)
 
@@ -188,7 +183,7 @@ SENT_KEYS_FILE = Path(os.environ.get("SENT_KEYS_PATH", ".campsite_sent_keys.json
 _SENT_KEYS_MAX_AGE_DAYS = 14  # Only keep keys for dates within this window
 
 
-def _load_sent_keys(path: Path) -> set[tuple[str, int, date]]:
+def _load_sent_keys(path: Path) -> set[NotificationKey]:
     """Load previously sent keys from disk, pruning stale entries."""
     if not path.exists():
         return set()
@@ -206,20 +201,20 @@ def _load_sent_keys(path: Path) -> set[tuple[str, int, date]]:
         return set()
 
 
-def _save_sent_keys(path: Path, keys: set[tuple[str, int, date]]) -> None:
+def _save_sent_keys(path: Path, keys: set[NotificationKey]) -> None:
     """Save sent keys to disk, pruning stale entries."""
     today = date.today()
     cutoff = today + timedelta(days=_SENT_KEYS_MAX_AGE_DAYS)
-    data = sorted([name, cid, d.isoformat()] for name, cid, d in keys if today <= d <= cutoff)
+    data = [[name, cid, d.isoformat()] for name, cid, d in keys if today <= d <= cutoff]
+    data.sort(key=lambda row: (row[0], str(row[1]), row[2]))
     path.write_text(json.dumps(data))
 
 
 def _send_notifications(
-    found_entries: list[tuple[dict, list[AvailableCampsite]]],
-    day_filter: set[int] | None,
+    found_entries: list[ProcessedAvailability],
     tg_token: str | None,
     tg_chat_id: str | None,
-    prev_keys: set[tuple[str, int, date]] | None = None,
+    prev_keys: set[NotificationKey] | None = None,
 ) -> int:
     """Filter and send Telegram notifications. Returns count of campgrounds notified.
 
@@ -231,20 +226,20 @@ def _send_notifications(
 
     if prev_keys is not None:
         alert_entries = [
-            (entry, new_results)
-            for entry, results in found_entries
-            for new_results in [filter_new_results(entry, results, day_filter, prev_keys)]
-            if new_results
+            new_availability
+            for availability in found_entries
+            for new_availability in [filter_new_availability(availability, prev_keys)]
+            if new_availability.available
         ]
     else:
         alert_entries = [
-            (entry, results) for entry, results in found_entries if entry.get("alert", False)
+            availability for availability in found_entries if availability.entry.get("alert", False)
         ]
 
     if not alert_entries:
         return 0
 
-    msgs = build_telegram_message(alert_entries, day_filter)
+    msgs = build_processed_telegram_message(alert_entries)
     for msg in msgs:
         send_telegram(tg_token, tg_chat_id, msg)
 
@@ -287,7 +282,7 @@ def run_forever(
 
     dashboard_interval = _resolve_dashboard_interval(args, raw_config)
     last_dashboard_scan: float = 0.0  # monotonic; 0 forces first-iteration scan
-    cached_dashboard_results: list[tuple[dict, list[AvailableCampsite]]] = []
+    cached_dashboard_results: list[ProcessedAvailability] = []
 
     scan_status.dashboard_interval_minutes = dashboard_interval
 
@@ -309,8 +304,8 @@ def run_forever(
                 dashboard_entries = [e for e in current_entries if not e.get("alert", False)]
 
                 # --- Alert scan (every iteration) ---
-                alert_keys: set[tuple[str, int, date]] = set()
-                alert_found: list[tuple[dict, list[AvailableCampsite]]] = []
+                alert_keys: set[NotificationKey] = set()
+                alert_found: list[ProcessedAvailability] = []
                 if alert_entries:
                     alert_keys, alert_found, alert_all = run_once(
                         alert_entries,
@@ -328,7 +323,7 @@ def run_forever(
                 # --- Dashboard-only scan (when interval elapsed) ---
                 now = monotonic()
                 dashboard_due = (now - last_dashboard_scan) >= dashboard_interval * 60
-                dash_keys: set[tuple[str, int, date]] = set()
+                dash_keys: set[NotificationKey] = set()
 
                 if dashboard_due and dashboard_entries:
                     dash_keys, dash_found, dash_all = run_once(
@@ -365,7 +360,7 @@ def run_forever(
                             logger.info("Dashboard uploaded to %s", url)
 
                 # --- Notifications (alert entries only) ---
-                _send_notifications(alert_found, None, tg_token, tg_chat_id, prev_keys)
+                _send_notifications(alert_found, tg_token, tg_chat_id, prev_keys)
 
                 # --- Persist dedup keys from both tiers ---
                 current_keys = alert_keys | dash_keys
@@ -438,7 +433,7 @@ def main() -> None:
             tg_chat_id,
             dashboard_path=dashboard_path,
         )
-        _send_notifications(found_entries, None, tg_token, tg_chat_id)
+        _send_notifications(found_entries, tg_token, tg_chat_id)
 
         if dashboard_path:
             from .upload import get_r2_config, upload_to_r2

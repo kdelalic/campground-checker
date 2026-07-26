@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 def make_campsite(
     campsite_id=1,
+    facility_id=100,
     facility_name="Test Campground",
     recreation_area="Test Area",
     booking_date=None,
@@ -28,6 +29,7 @@ def make_campsite(
         ]
     return SimpleNamespace(
         campsite_id=campsite_id,
+        facility_id=facility_id,
         facility_name=facility_name,
         recreation_area=recreation_area,
         booking_date=booking_date,

@@ -59,6 +59,27 @@ python check_campsites.py --forever
 python check_campsites.py --forever --interval 10
 ```
 
+## Search Performance Tuning
+
+Compatible campgrounds are searched in bounded batches, and batches run
+concurrently. The defaults are four workers, four campgrounds per batch, and no
+extra submission delay:
+
+```bash
+# More concurrency for a host with sufficient memory and provider headroom
+python check_campsites.py --workers 6
+
+# Smaller batches, or disable batching with --batch-size 1
+python check_campsites.py --batch-size 2
+
+# Pace requests to each provider independently
+python check_campsites.py --search-delay 1
+```
+
+Each scan logs per-provider batch counts, median duration, slowest duration, and
+total scan time. Use those measurements together with error rates and memory
+usage when tuning the values for a deployment.
+
 ## Telegram Notifications
 
 Get a message when availability is found.

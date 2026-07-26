@@ -9,10 +9,43 @@ from campsite_checker.config import (
     compute_date_range,
     expand_search_tasks,
     load_config,
+    parse_args,
     parse_day_names,
     resolve_day_filter,
     resolve_entry_day_filter,
 )
+
+
+class TestParseArgs:
+    def test_search_tuning_defaults(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["check_campsites.py"])
+
+        args = parse_args()
+
+        assert args.workers == 4
+        assert args.batch_size == 4
+        assert args.search_delay == 0.0
+
+    def test_search_tuning_overrides(self, monkeypatch):
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "check_campsites.py",
+                "--workers",
+                "6",
+                "--batch-size",
+                "2",
+                "--search-delay",
+                "0.5",
+            ],
+        )
+
+        args = parse_args()
+
+        assert args.workers == 6
+        assert args.batch_size == 2
+        assert args.search_delay == 0.5
+
 
 # ── parse_day_names ──────────────────────────────────────────────────────────
 

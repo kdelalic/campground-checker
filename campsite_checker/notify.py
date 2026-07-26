@@ -5,11 +5,15 @@ import os
 import time
 import urllib.error
 import urllib.request
-from datetime import date
 
 from camply.containers import AvailableCampsite
 
-from .results import filter_results, get_facility_name, group_results
+from .results import (
+    NotificationKey,
+    ProcessedAvailability,
+    process_filtered_results,
+    process_results,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,22 +88,29 @@ def build_telegram_message(
     Campground sections are kept intact; a new message is started whenever
     adding the next section would exceed the limit.
     """
+    processed = [
+        process_results(entry, results, day_filter) for entry, results in entries_with_results
+    ]
+    return build_processed_telegram_message(processed)
+
+
+def build_processed_telegram_message(
+    availabilities: list[ProcessedAvailability],
+) -> list[str]:
+    """Format normalized availability as Telegram HTML messages."""
     header = "\U0001f3d5 <b>Campsite Availability Found!</b>"
-
     sections: list[str] = []
-    for entry, results in entries_with_results:
-        grouped = group_results(results, day_filter)
-        if grouped is None:
+    for availability in availabilities:
+        if not availability.available:
             continue
-        name, by_date, total, url = grouped
-        safe_name = html.escape(name)
+        safe_name = html.escape(availability.facility_name)
 
-        lines = [f"\n<b>{safe_name}</b> — {total} open site(s)"]
-        for d in sorted(by_date):
-            count = len(by_date[d])
+        lines = [f"\n<b>{safe_name}</b> — {availability.total_sites} open site(s)"]
+        for d in sorted(availability.campsite_ids_by_date):
+            count = len(availability.campsite_ids_by_date[d])
             lines.append(f"  \U0001f4c5 {d.strftime('%a, %b %-d')}: {count} site(s)")
-        if url:
-            safe_url = html.escape(url)
+        if availability.booking_url:
+            safe_url = html.escape(availability.booking_url)
             lines.append(f'  \U0001f517 <a href="{safe_url}">Book now</a>')
         sections.append("\n".join(lines))
 
@@ -127,25 +138,40 @@ def build_telegram_message(
 
 def result_keys(
     entry: dict, results: list[AvailableCampsite], day_filter: set[int] | None
-) -> frozenset[tuple[str, int, date]]:
+) -> frozenset[NotificationKey]:
     """Return a frozenset of (name, campsite_id, booking_date) for deduplication."""
-    filtered = filter_results(results, day_filter)
-    name = get_facility_name(filtered) if filtered else "Unknown"
-    return frozenset((name, r.campsite_id, r.booking_date.date()) for r in filtered)
+    return process_results(entry, results, day_filter).notification_keys
+
+
+def filter_new_availability(
+    availability: ProcessedAvailability,
+    prev_keys: set[NotificationKey],
+) -> ProcessedAvailability:
+    """Return a normalized availability containing only previously unseen results."""
+    if not availability.entry.get("alert", False):
+        return process_filtered_results(availability.entry, [])
+    new_results = [
+        result
+        for result in availability.campsites
+        if (
+            availability.facility_name,
+            result.campsite_id,
+            result.booking_date.date(),
+        )
+        not in prev_keys
+    ]
+    return process_filtered_results(availability.entry, new_results)
 
 
 def filter_new_results(
     entry: dict,
     results: list[AvailableCampsite],
     day_filter: set[int] | None,
-    prev_keys: set[tuple[str, int, date]],
+    prev_keys: set[NotificationKey],
 ) -> list[AvailableCampsite]:
     """Return only results whose keys are not in *prev_keys*.
 
     Returns an empty list if the entry has alert disabled (``alert: false``).
     """
-    if not entry.get("alert", False):
-        return []
-    filtered = filter_results(results, day_filter)
-    name = get_facility_name(filtered) if filtered else "Unknown"
-    return [r for r in filtered if (name, r.campsite_id, r.booking_date.date()) not in prev_keys]
+    availability = process_results(entry, results, day_filter)
+    return list(filter_new_availability(availability, prev_keys).campsites)

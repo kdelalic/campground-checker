@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 
 from camply.containers import AvailableCampsite
 
-from .results import filter_results, get_booking_url, get_facility_name
+from .results import ProcessedAvailability, process_results
 
 
 def get_dashboard_path(args, config: dict) -> str | None:
@@ -92,7 +92,7 @@ def build_calendar_html(all_availabilities: dict[date, int]) -> str:
 
 
 def build_dashboard_html(
-    entries_with_results: list[tuple[dict, list[AvailableCampsite]]],
+    entries_with_results: list[tuple[dict, list[AvailableCampsite]] | ProcessedAvailability],
     day_filter: set[int] | None,
     scan_timestamp: datetime | None = None,
 ) -> str:
@@ -104,20 +104,26 @@ def build_dashboard_html(
     nav_links = []
     all_availabilities = defaultdict(int)
 
-    for entry, results in entries_with_results:
-        filtered = filter_results(results, day_filter)
+    availabilities = [
+        item
+        if isinstance(item, ProcessedAvailability)
+        else process_results(item[0], item[1], day_filter)
+        for item in entries_with_results
+    ]
 
+    for availability in availabilities:
+        entry = availability.entry
         # Resolve the display name: use camply result metadata when available,
         # otherwise fall back to the entry's config-level name.
-        if filtered:
-            name = get_facility_name(filtered)
+        if availability.available:
+            name = availability.facility_name
         else:
             name = entry.get("name") or f"Campground #{entry.get('campground_id', '?')}"
 
         safe_name = html.escape(name)
         card_id = f"site-{len(cards_html)}"
 
-        if not filtered:
+        if not availability.available:
             # No availability for this campground — show a muted card.
             nav_links.append(
                 f'<li data-ref="{card_id}" data-unavailable="true">'
@@ -134,14 +140,10 @@ def build_dashboard_html(
             )
             continue
 
-        url = get_booking_url(filtered)
-
-        by_date: dict[date, list[AvailableCampsite]] = defaultdict(list)
-        for r in filtered:
-            by_date[r.booking_date.date()].append(r)
-            all_availabilities[r.booking_date.date()] += 1
-
-        total = sum(len(v) for v in by_date.values())
+        by_date = availability.campsite_ids_by_date
+        for booking_date, campsite_ids in by_date.items():
+            all_availabilities[booking_date] += len(campsite_ids)
+        total = availability.total_sites
 
         nav_links.append(
             f'<li data-ref="{card_id}"><a href="#{card_id}">{safe_name}</a> <span class="nav-count">{total}</span></li>'
@@ -159,8 +161,8 @@ def build_dashboard_html(
             )
 
         book_link = ""
-        if url:
-            safe_url = html.escape(url)
+        if availability.booking_url:
+            safe_url = html.escape(availability.booking_url)
             book_link = f'<div class="book-action"><a class="book-link" href="{safe_url}" target="_blank">Book now &rarr;</a></div>'
 
         cards_html.append(
@@ -572,7 +574,7 @@ def write_dashboard(html_content: str, output_path: str) -> None:
 
 
 def generate_dashboard(
-    entries_with_results: list[tuple[dict, list[AvailableCampsite]]],
+    entries_with_results: list[tuple[dict, list[AvailableCampsite]] | ProcessedAvailability],
     day_filter: set[int] | None,
     output_path: str,
 ) -> str:

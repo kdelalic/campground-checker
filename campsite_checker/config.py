@@ -109,16 +109,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=2,
+        default=4,
         metavar="N",
-        help="Max concurrent campsite searches (default: 2; reduce for low-CPU environments)",
+        help="Max concurrent campsite search batches (default: 4)",
     )
     parser.add_argument(
         "--search-delay",
         type=float,
         default=0.0,
         metavar="SECONDS",
-        help="Seconds to sleep between search submissions (default: 0; use 1-2 on low-CPU environments)",
+        help="Minimum seconds between batch submissions to the same provider (default: 0)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Maximum compatible campgrounds per Camply search batch (default: 4; use 1 to disable)",
     )
     parser.add_argument(
         "--dashboard-interval",

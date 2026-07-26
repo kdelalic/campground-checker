@@ -1,7 +1,27 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from camply.containers import AvailableCampsite
+
+NotificationKey = tuple[str, int | str, date]
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessedAvailability:
+    """Normalized availability data shared by every output consumer."""
+
+    entry: dict
+    campsites: tuple[AvailableCampsite, ...]
+    facility_name: str
+    booking_url: str
+    campsite_ids_by_date: dict[date, frozenset[int | str]]
+    notification_keys: frozenset[NotificationKey]
+    total_sites: int
+
+    @property
+    def available(self) -> bool:
+        return bool(self.campsites)
 
 
 def get_facility_name(results: list[AvailableCampsite]) -> str:
@@ -70,6 +90,49 @@ def filter_results(
     return results
 
 
+def process_filtered_results(
+    entry: dict,
+    results: list[AvailableCampsite],
+) -> ProcessedAvailability:
+    """Deduplicate and normalize results that have already been filtered."""
+    seen: set[tuple[int | str, date]] = set()
+    unique: list[AvailableCampsite] = []
+    for result in results:
+        key = (result.campsite_id, result.booking_date.date())
+        if key not in seen:
+            seen.add(key)
+            unique.append(result)
+
+    name = get_facility_name(unique)
+    url = get_booking_url(unique)
+    by_date: dict[date, set[int | str]] = defaultdict(set)
+    for result in unique:
+        by_date[result.booking_date.date()].add(result.campsite_id)
+
+    frozen_by_date = {booking_date: frozenset(ids) for booking_date, ids in by_date.items()}
+    notification_keys = frozenset(
+        (name, result.campsite_id, result.booking_date.date()) for result in unique
+    )
+    return ProcessedAvailability(
+        entry=entry,
+        campsites=tuple(unique),
+        facility_name=name,
+        booking_url=url,
+        campsite_ids_by_date=frozen_by_date,
+        notification_keys=notification_keys,
+        total_sites=sum(len(ids) for ids in frozen_by_date.values()),
+    )
+
+
+def process_results(
+    entry: dict,
+    results: list[AvailableCampsite],
+    day_filter: set[int] | None,
+) -> ProcessedAvailability:
+    """Filter, deduplicate, and normalize raw Camply results once."""
+    return process_filtered_results(entry, filter_results(results, day_filter))
+
+
 def group_results(
     results: list[AvailableCampsite],
     day_filter: set[int] | None,
@@ -79,16 +142,32 @@ def group_results(
     Returns None if no results remain after filtering, otherwise returns
     (facility_name, by_date, total_sites, booking_url).
     """
-    filtered = filter_results(results, day_filter)
-    if not filtered:
+    processed = process_results({}, results, day_filter)
+    if not processed.available:
         return None
-    name = get_facility_name(filtered)
-    by_date: dict[date, set] = defaultdict(set)
-    for r in filtered:
-        by_date[r.booking_date.date()].add(r.campsite_id)
-    total = sum(len(s) for s in by_date.values())
-    url = get_booking_url(filtered)
-    return name, by_date, total, url
+    by_date = {
+        booking_date: set(ids) for booking_date, ids in processed.campsite_ids_by_date.items()
+    }
+    return (
+        processed.facility_name,
+        by_date,
+        processed.total_sites,
+        processed.booking_url,
+    )
+
+
+def format_processed_results(processed: ProcessedAvailability) -> str | None:
+    """Format normalized availability for terminal output."""
+    if not processed.available:
+        return None
+
+    lines = [f"\n**{processed.facility_name}** — {processed.total_sites} open site(s)"]
+    for d in sorted(processed.campsite_ids_by_date):
+        count = len(processed.campsite_ids_by_date[d])
+        lines.append(f"  \U0001f4c5 {d.strftime('%a, %b %-d')}: {count} site(s)")
+    if processed.booking_url:
+        lines.append(f"  \U0001f517 {processed.booking_url}")
+    return "\n".join(lines)
 
 
 def format_results(
@@ -96,16 +175,5 @@ def format_results(
     results: list[AvailableCampsite],
     day_filter: set[int] | None,
 ) -> str | None:
-    """Returns formatted string if there are results, None otherwise."""
-    grouped = group_results(results, day_filter)
-    if grouped is None:
-        return None
-    name, by_date, total, url = grouped
-
-    lines = [f"\n**{name}** — {total} open site(s)"]
-    for d in sorted(by_date):
-        count = len(by_date[d])
-        lines.append(f"  \U0001f4c5 {d.strftime('%a, %b %-d')}: {count} site(s)")
-    if url:
-        lines.append(f"  \U0001f517 {url}")
-    return "\n".join(lines)
+    """Filter and format raw results for backward-compatible callers."""
+    return format_processed_results(process_results(entry, results, day_filter))

@@ -35,9 +35,10 @@ COPY . .
 
 RUN chmod +x check_campsites.py
 
-ENV WORKERS="3"
+ENV WORKERS="4"
 ENV ALERT_INTERVAL="5"
-ENV SEARCH_DELAY="2"
+ENV SEARCH_DELAY="0"
+ENV BATCH_SIZE="4"
 ENV DASHBOARD_INTERVAL="60"
 
-CMD ["sh", "-c", "python check_campsites.py --forever --dashboard --workers $WORKERS --alert-interval $ALERT_INTERVAL --search-delay $SEARCH_DELAY --dashboard-interval $DASHBOARD_INTERVAL"]
+CMD ["sh", "-c", "python check_campsites.py --forever --dashboard --workers $WORKERS --alert-interval $ALERT_INTERVAL --search-delay $SEARCH_DELAY --batch-size $BATCH_SIZE --dashboard-interval $DASHBOARD_INTERVAL"]
