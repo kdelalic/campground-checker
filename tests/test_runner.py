@@ -1,12 +1,14 @@
 """Tests for polling, persistence, and garbage-collection helpers."""
 
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 from campsite_checker.runner import (
     _advance_poll_deadline,
     _load_sent_keys,
     _maybe_collect_garbage,
     _save_sent_keys,
+    run_forever,
 )
 
 
@@ -50,3 +52,52 @@ def test_poll_deadline_stays_anchored_and_skips_overruns():
     assert _advance_poll_deadline(100.0, 60.0, now=120.0) == 160.0
     assert _advance_poll_deadline(100.0, 60.0, now=161.0) == 220.0
     assert _advance_poll_deadline(100.0, 60.0, now=281.0) == 340.0
+
+
+def test_alerts_are_notified_and_persisted_before_dashboard_scan(monkeypatch, tmp_path):
+    events = []
+    sent_keys_path = tmp_path / "sent.json"
+    alert_key = ("Alert Camp", 1, date.today() + timedelta(days=1))
+
+    def fake_run_once(entries, *args, scan_type=None, **kwargs):
+        events.append(scan_type)
+        if scan_type == "alert":
+            return {alert_key}, ["available"], []
+        raise KeyboardInterrupt
+
+    def fake_send_notifications(found, token, chat_id, prev_keys):
+        events.append("notify")
+        assert found == ["available"]
+        assert prev_keys == set()
+        return 1
+
+    monkeypatch.setattr("campsite_checker.runner.run_once", fake_run_once)
+    monkeypatch.setattr(
+        "campsite_checker.runner._send_notifications",
+        fake_send_notifications,
+    )
+    monkeypatch.setattr("campsite_checker.runner.SENT_KEYS_FILE", sent_keys_path)
+    monkeypatch.setattr(
+        "campsite_checker.server.start_healthcheck_server",
+        lambda: None,
+    )
+
+    run_forever(
+        entries=[
+            {"provider": "RecreationDotGov", "campground_id": 1, "alert": True},
+            {"provider": "ReserveCalifornia", "campground_id": 2, "alert": False},
+        ],
+        raw_config={},
+        config_path="campsites.yaml",
+        args=SimpleNamespace(
+            alert_interval=1,
+            dashboard_interval=10,
+            gc_interval=0,
+        ),
+        day_filter=None,
+        tg_token=None,
+        tg_chat_id=None,
+    )
+
+    assert events == ["alert", "notify", "dashboard"]
+    assert _load_sent_keys(sent_keys_path) == {alert_key}

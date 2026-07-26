@@ -83,9 +83,10 @@ Each scan logs per-provider batch counts, median duration, slowest duration, and
 total scan time. Use those measurements together with error rates and memory
 usage when tuning the values for a deployment.
 
-The container defaults to a one-second per-provider batch submission delay and
-refreshes dashboard-only campgrounds every 15 minutes. Both remain configurable
-with the `SEARCH_DELAY` and `DASHBOARD_INTERVAL` environment variables.
+The container searches alert-enabled campgrounds every minute, refreshes
+dashboard-only campgrounds every 10 minutes, and applies a one-second
+per-provider batch submission delay. These remain configurable with the
+`ALERT_INTERVAL`, `DASHBOARD_INTERVAL`, and `SEARCH_DELAY` environment variables.
 If a provider still returns HTTP 429 after Camply's retries, the checker skips
 that provider's queued work and applies an adaptive cooldown. The cooldown
 starts at 30 seconds, doubles on consecutive rate limits, honors a longer
@@ -224,6 +225,8 @@ increase(campsite_checker_provider_rate_limit_events_total[1h]) > 0
 ## Telegram Notifications
 
 Get a message when availability is found.
+In continuous mode, alert-enabled campgrounds are searched first and new
+availability is notified and checkpointed before dashboard-only searches begin.
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token.
 2. Get your chat ID: send your bot a message, then visit

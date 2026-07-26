@@ -397,6 +397,12 @@ def run_forever(
                 else:
                     alert_keys, alert_found, alert_all = set(), [], []
 
+                # Notify and checkpoint alert keys before lower-priority dashboard work.
+                _send_notifications(alert_found, tg_token, tg_chat_id, prev_keys)
+                prev_keys |= alert_keys
+                if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
+                    logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
+
                 # --- Dashboard-only scan (when interval elapsed) ---
                 now = monotonic()
                 dashboard_due = (now - last_dashboard_scan) >= dashboard_interval * 60
@@ -438,12 +444,8 @@ def run_forever(
                         else:
                             logger.info("Dashboard uploaded to R2")
 
-                # --- Notifications (alert entries only) ---
-                _send_notifications(alert_found, tg_token, tg_chat_id, prev_keys)
-
-                # --- Persist dedup keys from both tiers ---
-                current_keys = alert_keys | dash_keys
-                prev_keys |= current_keys
+                # --- Persist dashboard-only dedup keys ---
+                prev_keys |= dash_keys
                 if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
                     logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
 
@@ -476,7 +478,6 @@ def run_forever(
                     alert_found,
                     alert_all,
                     dash_keys,
-                    current_keys,
                     current_entries,
                     campground_metrics,
                     latest_results,
