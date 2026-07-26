@@ -84,7 +84,7 @@ total scan time. Use those measurements together with error rates and memory
 usage when tuning the values for a deployment.
 
 The container defaults to a one-second per-provider batch submission delay and
-refreshes dashboard-only campgrounds every 30 minutes. Both remain configurable
+refreshes dashboard-only campgrounds every 15 minutes. Both remain configurable
 with the `SEARCH_DELAY` and `DASHBOARD_INTERVAL` environment variables.
 If a provider still returns HTTP 429 after Camply's retries, the checker skips
 that provider's queued work and applies an adaptive cooldown. The cooldown
