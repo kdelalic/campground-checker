@@ -15,3 +15,5 @@ jobs:
           git fetch --prune origin
           git reset --hard origin/main
           docker compose up -d --build --remove-orphans
+          install -m 0644 grafana/campground-checker.json \
+            /srv/docker/monitoring/grafana/dashboards/campground-checker.json

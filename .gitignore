@@ -45,6 +45,8 @@ Thumbs.db
 
 # JSON files
 *.json
+!grafana/
+!grafana/*.json
 *.log
 
 dashboard.html
