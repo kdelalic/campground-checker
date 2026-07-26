@@ -96,7 +96,11 @@ streak. Configure the bounds with `THROTTLE_BASE_DELAY` and
 `THROTTLE_MAX_DELAY` (seconds).
 
 In continuous mode, stable Recreation.gov campsite metadata is cached for up to
-24 hours. Dashboard files and R2 objects are only updated when semantic
+24 hours. Resolved Recreation.gov facility identities (campground name and
+recreation area) are also cached for 24 hours, which removes one RIDB API round
+trip per campground from every scan's searcher construction; transient lookup
+failures are never cached and are retried on the next scan. Dashboard files and
+R2 objects are only updated when semantic
 availability changes; failed uploads are retried without rebuilding unchanged
 HTML. Full garbage collection runs every 12 scans by default and logs its
 duration, object count, and resident-memory measurement.
