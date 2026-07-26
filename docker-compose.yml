@@ -3,8 +3,14 @@ services:
     build: .
     restart: unless-stopped
     volumes:
-      - ./campsites.yaml:/app/campsites.yaml
+      # Config is git-managed and the source of truth, so the container gets it
+      # read-only. Change monitored campgrounds by editing this file and pushing.
+      - ./campsites.yaml:/app/campsites.yaml:ro
+      # Telegram dedup keys, persisted so a redeploy doesn't re-alert on
+      # availability you have already been told about.
+      - ./state:/app/state
     environment:
+      - SENT_KEYS_PATH=/app/state/sent_keys.json
       - TELEGRAM_BOT_TOKEN
       - TELEGRAM_CHAT_ID
       - R2_ACCOUNT_ID
