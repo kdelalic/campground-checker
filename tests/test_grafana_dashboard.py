@@ -109,3 +109,16 @@ def test_dashboard_visualizes_adaptive_provider_throttling():
     )
     assert "$provider" in event_panel["targets"][0]["expr"]
     assert "$provider" in cooldown_panel["targets"][0]["expr"]
+
+
+def test_dashboard_uses_dedicated_alert_scan_timestamp():
+    dashboard = json.loads(DASHBOARD_PATH.read_text())
+    panels = {panel["title"]: panel for panel in dashboard["panels"]}
+    panel = panels["Last Alert Scan Age"]
+
+    assert (
+        panel["targets"][0]["expr"]
+        == "time() - max(campsite_checker_last_alert_scan_timestamp_seconds)"
+    )
+    thresholds = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
+    assert thresholds[-1] == {"color": "red", "value": 120}

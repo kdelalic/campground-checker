@@ -124,7 +124,7 @@ Process-wide metrics have no application-defined labels:
 
 | Metric | Type | Description |
 | --- | --- | --- |
-| `campsite_checker_up` | Gauge | `1` while the checker is warming up or the latest scan is less than two alert intervals old; otherwise `0`. |
+| `campsite_checker_up` | Gauge | `1` while the checker is warming up or the latest alert scan is less than two alert intervals old; otherwise `0`. |
 | `campsite_checker_uptime_seconds` | Gauge | Seconds since the process started. |
 | `campsite_checker_scans_total` | Counter | Completed scan cycles, including cycles that ended with an error. |
 | `campsite_checker_scan_errors_total` | Counter | Scan cycles that ended with an unhandled error. Individual campground failures are reported by the per-campground success metric. |
@@ -133,6 +133,7 @@ Process-wide metrics have no application-defined labels:
 | `campsite_checker_campsites_available` | Gauge | Available campsite-date combinations in the latest combined results. This is not a count of unique physical sites. |
 | `campsite_checker_last_scan_duration_seconds` | Gauge | Wall-clock duration of the latest scan cycle. |
 | `campsite_checker_last_scan_timestamp_seconds` | Gauge | Unix timestamp when the latest scan cycle completed, or `0` before the first cycle. |
+| `campsite_checker_last_alert_scan_timestamp_seconds` | Gauge | Unix timestamp when the latest priority alert scan completed, or `0` before the first alert scan. |
 | `campsite_checker_alert_interval_seconds` | Gauge | Configured interval between alert scans. |
 | `campsite_checker_dashboard_interval_seconds` | Gauge | Configured interval between dashboard-only scans. |
 | `campsite_checker_last_dashboard_scan_timestamp_seconds` | Gauge | Unix timestamp of the latest dashboard-only scan, or `0` before the first one. |
@@ -209,7 +210,7 @@ and campsite_checker_campground_last_scan_success == 1
 sum by (provider) (campsite_checker_campground_available == 1)
 
 # Alert scan has not completed within two configured intervals
-time() - campsite_checker_last_scan_timestamp_seconds
+time() - campsite_checker_last_alert_scan_timestamp_seconds
   > 2 * campsite_checker_alert_interval_seconds
 
 # Rate of whole-cycle errors over the last hour
@@ -226,7 +227,9 @@ increase(campsite_checker_provider_rate_limit_events_total[1h]) > 0
 
 Get a message when availability is found.
 In continuous mode, alert-enabled campgrounds are searched first and new
-availability is notified and checkpointed before dashboard-only searches begin.
+availability is notified and checkpointed immediately. Dashboard-only scans run
+in a separate non-overlapping background worker, so they cannot block the next
+priority alert scan.
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token.
 2. Get your chat ID: send your bot a message, then visit

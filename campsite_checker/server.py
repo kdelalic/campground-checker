@@ -89,6 +89,7 @@ class _ScanStatus:
         self.throttle_registry = throttle_registry or PROVIDER_THROTTLES
         self.start_time = datetime.now(timezone.utc)
         self.last_scan_time: datetime | None = None
+        self.last_alert_scan: datetime | None = None
         self.scan_count: int = 0
         self.error_count: int = 0
         self.entries_count: int = 0
@@ -130,16 +131,21 @@ class _ScanStatus:
             if error:
                 self.error_count += 1
 
-    def mark_dashboard_scan(self) -> None:
+    def mark_alert_scan(self, when: datetime | None = None) -> None:
         with self._lock:
-            self.last_dashboard_scan = datetime.now(timezone.utc)
+            self.last_alert_scan = when or datetime.now(timezone.utc)
+
+    def mark_dashboard_scan(self, when: datetime | None = None) -> None:
+        with self._lock:
+            self.last_dashboard_scan = when or datetime.now(timezone.utc)
 
     def is_healthy(self) -> bool:
-        """Healthy if we've had a scan within 2x the interval (or haven't started yet)."""
+        """Healthy if we've had an alert scan within 2x its configured interval."""
         with self._lock:
-            if self.last_scan_time is None:
+            latest_alert_scan = self.last_alert_scan or self.last_scan_time
+            if latest_alert_scan is None:
                 return True  # Still warming up
-            elapsed = (datetime.now(timezone.utc) - self.last_scan_time).total_seconds()
+            elapsed = (datetime.now(timezone.utc) - latest_alert_scan).total_seconds()
             return elapsed < self.alert_interval_minutes * 2 * 60
 
     def to_dict(self) -> dict:
@@ -156,6 +162,9 @@ class _ScanStatus:
                 "available_sites_count": self.available_sites_count,
                 "last_scan_duration_seconds": self.last_scan_duration_seconds,
                 "last_scan": self.last_scan_time.isoformat() if self.last_scan_time else None,
+                "last_alert_scan": (
+                    self.last_alert_scan.isoformat() if self.last_alert_scan else None
+                ),
                 "dashboard_interval_minutes": self.dashboard_interval_minutes,
                 # Retained for compatibility with the original health response.
                 "dashboard_alert_interval_minutes": self.dashboard_interval_minutes,
@@ -181,6 +190,7 @@ class _ScanStatus:
             uptime = (now - self.start_time).total_seconds()
             healthy = self.is_healthy()
             last_scan_timestamp = self.last_scan_time.timestamp() if self.last_scan_time else 0
+            last_alert_timestamp = self.last_alert_scan.timestamp() if self.last_alert_scan else 0
             last_dashboard_timestamp = (
                 self.last_dashboard_scan.timestamp() if self.last_dashboard_scan else 0
             )
@@ -238,6 +248,12 @@ class _ScanStatus:
                     "Unix timestamp of the most recent completed scan cycle.",
                     "gauge",
                     last_scan_timestamp,
+                ),
+                (
+                    "campsite_checker_last_alert_scan_timestamp_seconds",
+                    "Unix timestamp of the most recent completed alert scan.",
+                    "gauge",
+                    last_alert_timestamp,
                 ),
                 (
                     "campsite_checker_alert_interval_seconds",

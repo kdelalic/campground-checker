@@ -1,5 +1,6 @@
 """Tests for polling, persistence, and garbage-collection helpers."""
 
+import threading
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -54,28 +55,46 @@ def test_poll_deadline_stays_anchored_and_skips_overruns():
     assert _advance_poll_deadline(100.0, 60.0, now=281.0) == 340.0
 
 
-def test_alerts_are_notified_and_persisted_before_dashboard_scan(monkeypatch, tmp_path):
+def test_alerts_continue_while_dashboard_scan_runs(monkeypatch, tmp_path):
     events = []
     sent_keys_path = tmp_path / "sent.json"
     alert_key = ("Alert Camp", 1, date.today() + timedelta(days=1))
+    dashboard_started = threading.Event()
+    release_dashboard = threading.Event()
+    dashboard_finished = threading.Event()
+    sleep_calls = 0
 
     def fake_run_once(entries, *args, scan_type=None, **kwargs):
-        events.append(scan_type)
         if scan_type == "alert":
+            events.append("alert")
             return {alert_key}, ["available"], []
-        raise KeyboardInterrupt
+        events.append("dashboard-start")
+        dashboard_started.set()
+        assert release_dashboard.wait(timeout=2)
+        events.append("dashboard-end")
+        dashboard_finished.set()
+        return set(), [], []
 
     def fake_send_notifications(found, token, chat_id, prev_keys):
         events.append("notify")
         assert found == ["available"]
-        assert prev_keys == set()
         return 1
+
+    def fake_sleep(seconds):
+        nonlocal sleep_calls
+        sleep_calls += 1
+        if sleep_calls == 1:
+            assert dashboard_started.wait(timeout=2)
+            return
+        release_dashboard.set()
+        raise KeyboardInterrupt
 
     monkeypatch.setattr("campsite_checker.runner.run_once", fake_run_once)
     monkeypatch.setattr(
         "campsite_checker.runner._send_notifications",
         fake_send_notifications,
     )
+    monkeypatch.setattr("campsite_checker.runner.time.sleep", fake_sleep)
     monkeypatch.setattr("campsite_checker.runner.SENT_KEYS_FILE", sent_keys_path)
     monkeypatch.setattr(
         "campsite_checker.server.start_healthcheck_server",
@@ -99,5 +118,13 @@ def test_alerts_are_notified_and_persisted_before_dashboard_scan(monkeypatch, tm
         tg_chat_id=None,
     )
 
-    assert events == ["alert", "notify", "dashboard"]
+    assert dashboard_finished.wait(timeout=2)
+    assert events == [
+        "alert",
+        "notify",
+        "dashboard-start",
+        "alert",
+        "notify",
+        "dashboard-end",
+    ]
     assert _load_sent_keys(sent_keys_path) == {alert_key}

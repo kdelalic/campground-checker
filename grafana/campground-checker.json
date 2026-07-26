@@ -123,11 +123,11 @@
               },
               {
                 "color": "yellow",
-                "value": 450
+                "value": 90
               },
               {
                 "color": "red",
-                "value": 600
+                "value": 120
               }
             ]
           },
@@ -165,7 +165,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "time() - max(campsite_checker_last_scan_timestamp_seconds)",
+          "expr": "time() - max(campsite_checker_last_alert_scan_timestamp_seconds)",
           "instant": true,
           "legendFormat": "Last Alert Scan Age",
           "range": false,

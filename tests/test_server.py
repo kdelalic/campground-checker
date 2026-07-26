@@ -25,6 +25,14 @@ class TestScanStatusHealth:
         status.last_scan_time = datetime.now(timezone.utc) - timedelta(minutes=20)
         assert status.is_healthy() is False
 
+    def test_alert_timestamp_drives_health_when_available(self):
+        status = _ScanStatus()
+        status.alert_interval_minutes = 1
+        status.last_scan_time = datetime.now(timezone.utc)
+        status.last_alert_scan = datetime.now(timezone.utc) - timedelta(minutes=3)
+
+        assert status.is_healthy() is False
+
 
 class TestScanStatusUpdate:
     def test_increments_scan_count(self):
@@ -77,6 +85,7 @@ class TestScanStatusToDict:
         assert d["error_count"] == 0
         assert d["entries_count"] == 0
         assert d["last_scan"] is None
+        assert d["last_alert_scan"] is None
 
     def test_after_update(self):
         status = _ScanStatus()
@@ -101,6 +110,19 @@ class TestPrometheusMetrics:
         assert "campsite_checker_scans_total 0" in metrics
         assert "campsite_checker_up 1" in metrics
         assert "campsite_checker_last_scan_timestamp_seconds 0" in metrics
+        assert "campsite_checker_last_alert_scan_timestamp_seconds 0" in metrics
+
+    def test_alert_scan_timestamp_metric(self):
+        status = _ScanStatus()
+        completed_at = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
+        status.mark_alert_scan(completed_at)
+
+        metrics = status.to_prometheus()
+
+        assert (
+            f"campsite_checker_last_alert_scan_timestamp_seconds {completed_at.timestamp()}"
+            in metrics
+        )
 
     def test_metrics_after_scan(self):
         status = _ScanStatus()
