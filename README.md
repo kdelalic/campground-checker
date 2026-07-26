@@ -166,7 +166,9 @@ The canonical Grafana dashboard is versioned at
 `grafana/campground-checker.json`. Homelab deployments copy it into Grafana's
 provisioned dashboard directory, so metric renames or removals should update the
 dashboard in the same pull request. The test suite verifies that every
-`campsite_checker_*` metric referenced by the dashboard is still exported.
+`campsite_checker_*` metric referenced by the dashboard is still exported. Its
+per-campground panels show current campsite-date counts, provider-search status,
+and availability history, with provider and alert-tier filters.
 
 Useful PromQL queries:
 
