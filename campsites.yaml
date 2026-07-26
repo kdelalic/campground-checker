@@ -8,7 +8,7 @@ campsites:
       alert: false
       enabled: true
     - campground_id: 232491 # Golden Gate National Recreation Area, CA - Kirby Cove Campground
-      alert: false
+      alert: true
       enabled: true
     - campground_id: 232447 # Yosemite National Park, CA - Upper Pines Campground
       alert: false
@@ -32,7 +32,7 @@ campsites:
       alert: false
       enabled: true
     - campground_id: 232461 # Sequoia & Kings Canyon National Parks, CA - Lodgepole Campground-Sequoia And Kings Canyon National Park
-      alert: true
+      alert: false
     - campground_id: 253917 # Sequoia & Kings Canyon National Parks, CA - Sentinel Campground
       alert: false
     - campground_id: 10124502 # Sequoia & Kings Canyon National Parks, CA - Azalea Campground
