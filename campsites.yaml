@@ -61,7 +61,7 @@ campsites:
       alert: false
       enabled: true
     - campground_id: 454 # D.L. Bliss SP - Beach Camp (sites 141-165)
-      alert: false
+      alert: true
       enabled: true
     - campground_id: 653 # Samuel P. Taylor SP - Creekside Loop (sites 1-25)
       alert: false
