@@ -1,0 +1,105 @@
+{#
+  Self-contained availability dashboard. The CSS and JS are inlined verbatim
+  from sibling static assets: the page is uploaded to object storage as a
+  single file, so it must never reference an external asset.
+#}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campsite Availability</title>
+<style>
+{{ css|safe }}
+</style>
+</head>
+<body data-refresh-seconds="{{ refresh_seconds }}">
+<div class="container">
+<header>
+<h1>&#x1F3D5; Campsite Availability</h1>
+<p class="timestamp">Last updated: <span id="last-updated" data-timestamp="{{ timestamp_iso }}">{{ timestamp_label }}</span></p>
+{% if stats %}
+<p class="stat-line"><strong>{{ stats.available }}</strong> of {{ stats.total }} campgrounds with availability{% if stats.soonest %} &middot; soonest <strong>{{ stats.soonest }}</strong>{% endif %}{% if stats.failed %} &middot; <span class="stat-failed">&#9888; {{ stats.failed }} scan(s) failed</span>{% endif %}</p>
+{% endif %}
+</header>
+
+{% if months %}
+<div class="calendar-container">
+<div class="calendar-controls">
+<button id="prev-month-btn" class="nav-btn" title="Previous Month" disabled>&larr;</button>
+<select id="month-selector">{% for month in months %}<option value="{{ month.id }}">{{ month.label }}</option>{% endfor %}</select>
+<button id="next-month-btn" class="nav-btn" title="Next Month" disabled>&rarr;</button>
+<button id="clear-date-filter" style="display: none;">Clear Filter</button>
+</div>
+{% for month in months %}
+<div class="calendar-month" id="{{ month.id }}"{% if not loop.first %} style="display: none;"{% endif %}>
+<table class="calendar-table">
+<thead><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr></thead>
+<tbody>
+{% for week in month.weeks %}
+<tr>{% for cell in week %}
+  {%- if cell.kind == "available" -%}
+    <td class="calendar-available" data-date="{{ cell.iso }}" tabindex="0" role="button" aria-label="{{ cell.label }}" title="{{ cell.count }} site(s) available">{{ cell.day }}</td>
+  {%- elif cell.kind == "day" -%}
+    <td class="calendar-day">{{ cell.day }}</td>
+  {%- else -%}
+    <td class="calendar-empty"></td>
+  {%- endif -%}
+{% endfor %}</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% if cards %}
+<nav class="quick-nav"><h3>Jump To</h3><ul>
+{%- for card in cards %}
+<li data-ref="{{ card.id }}"{% if card.state != "available" %} data-unavailable="true"{% endif %}{% if card.state == "failed" %} data-failed="true"{% endif %}><a href="#{{ card.id }}">{{ card.name }}</a> {% if card.state == "failed" %}<span class="nav-count nav-failed" title="Scan failed">&#9888;</span>{% elif card.state == "empty" %}<span class="nav-count nav-none">&mdash;</span>{% else %}<span class="nav-count">{{ card.total }}</span>{% endif %}</li>
+{%- endfor %}
+</ul></nav>
+
+{% for card in cards %}
+<div class="{{ card.css_class }}" id="{{ card.id }}">
+<div class="card-header">
+<h2>{{ card.name }}</h2>
+{% if card.state == "failed" %}
+<span class="site-count site-count-failed">&#9888; Scan failed &mdash; data may be stale</span>
+{% else %}
+<span class="card-badges">{% if card.partial %}<span class="site-count site-count-failed">&#9888; Partial scan</span>{% endif %}<span class="site-count{% if card.state == "empty" %} site-count-none{% endif %}">{% if card.state == "empty" %}No availability{% else %}{{ card.total }} open site(s){% endif %}</span></span>
+{% endif %}
+</div>
+{% if card.rows %}
+<div class="table-container">
+<table>
+<thead><tr><th>Date</th><th>Available</th></tr></thead>
+<tbody>
+{% for row in card.rows %}
+<tr data-date="{{ row.iso }}" data-count="{{ row.count }}">
+<td>{% if row.sites %}<details class="date-detail"><summary>{{ row.label }}</summary><ul class="site-list">
+{%- for site in row.sites %}
+<li>{% if site.url %}<a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.name }}</a>{% else %}{{ site.name }}{% endif %}{% if site.loop %}<span class="site-loop">{{ site.loop }}</span>{% endif %}</li>
+{%- endfor %}
+</ul></details>{% else %}{{ row.label }}{% endif %}</td>
+<td><span class="available-badge">{{ row.count }} site(s)</span></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+{% if card.booking_url %}
+<div class="book-action"><a class="book-link" href="{{ card.booking_url }}" target="_blank">Book now &rarr;</a></div>
+{% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="no-results">&#x1F6D1; No availability found in the current scan.</div>
+{% endif %}
+</div>
+<script>
+{{ js|safe }}
+</script>
+</body>
+</html>

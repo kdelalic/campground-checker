@@ -1,9 +1,16 @@
 """Tests for dashboard rendering from normalized availability."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from importlib.resources import files
 from types import SimpleNamespace
 
-from campsite_checker.dashboard import DashboardPublisher, build_dashboard_html
+from campsite_checker.dashboard import (
+    CardView,
+    DashboardPublisher,
+    build_calendar_months,
+    build_dashboard_html,
+    read_asset,
+)
 from campsite_checker.results import process_filtered_results, process_results
 
 from .conftest import make_campsite
@@ -195,6 +202,8 @@ class TestRefreshAndAccessibility:
         assert "window.location.reload()" in content
 
     def test_refresh_interval_is_configurable(self):
+        """The interval reaches the static script through markup, so the JS
+        asset stays a plain file with nothing templated into it."""
         content = build_dashboard_html(
             [process_filtered_results({}, [make_campsite()])],
             None,
@@ -202,7 +211,18 @@ class TestRefreshAndAccessibility:
             refresh_seconds=42,
         )
 
-        assert "const REFRESH_MS = 42 * 1000;" in content
+        assert '<body data-refresh-seconds="42">' in content
+
+    def test_refresh_can_be_disabled(self):
+        content = build_dashboard_html(
+            [process_filtered_results({}, [make_campsite()])],
+            None,
+            scan_timestamp=datetime(2026, 7, 26, tzinfo=timezone.utc),
+            refresh_seconds=0,
+        )
+
+        assert '<body data-refresh-seconds="0">' in content
+        assert "if (refreshSeconds > 0) {" in content
 
     def test_calendar_days_are_keyboard_operable(self):
         content = render([process_filtered_results({}, [make_campsite()])])
@@ -217,6 +237,82 @@ class TestRefreshAndAccessibility:
         assert "<script src=" not in content
         assert "<link " not in content
         assert "@import" not in content
+
+
+class TestTemplateAssets:
+    """The page is uploaded to object storage as one file, so the CSS and JS
+    live in sibling static assets that are inlined at render time."""
+
+    def test_static_assets_are_inlined_verbatim(self):
+        content = render([process_filtered_results({}, [make_campsite()])])
+
+        assert read_asset("dashboard.css") in content
+        assert read_asset("dashboard.js") in content
+
+    def test_inlined_script_is_not_html_escaped(self):
+        """Autoescaping protects the data, but must not mangle the assets:
+        escaped JS operators would silently break the page."""
+        content = render([process_filtered_results({}, [make_campsite()])])
+
+        assert "idx <= 0" in content
+        assert "refreshDue && document.visibilityState" in content
+        assert "&amp;&amp;" not in content
+        assert "&lt;=" not in content
+
+    def test_assets_ship_inside_the_package(self):
+        templates = files("campsite_checker").joinpath("templates")
+
+        for name in ("dashboard.html.j2", "dashboard.css", "dashboard.js"):
+            assert templates.joinpath(name).is_file(), name
+
+    def test_asset_reads_are_cached(self):
+        read_asset.cache_clear()
+        first = read_asset("dashboard.css")
+        second = read_asset("dashboard.css")
+
+        assert first is second
+        assert read_asset.cache_info().hits == 1
+
+
+class TestViewModels:
+    def test_calendar_spans_every_month_between_first_and_last_date(self):
+        months = build_calendar_months({date(2026, 8, 2): 1, date(2026, 10, 4): 2})
+
+        assert [month.label for month in months] == [
+            "August 2026",
+            "September 2026",
+            "October 2026",
+        ]
+        assert [month.id for month in months] == ["cal-month-0", "cal-month-1", "cal-month-2"]
+
+    def test_calendar_marks_only_dates_with_availability(self):
+        (month,) = build_calendar_months({date(2026, 8, 2): 3})
+        cells = [cell for week in month.weeks for cell in week]
+
+        available = [cell for cell in cells if cell.kind == "available"]
+        assert [(cell.iso, cell.count) for cell in available] == [("2026-08-02", 3)]
+        # Days from the neighbouring months render as blanks, not as 0-count days.
+        assert any(cell.kind == "empty" for cell in cells)
+
+    def test_calendar_is_empty_without_availability(self):
+        assert build_calendar_months({}) == []
+
+    def test_card_css_class_per_state(self):
+        def card(state, partial=False):
+            return CardView(
+                id="site-0",
+                name="X",
+                state=state,
+                total=0,
+                rows=(),
+                booking_url="",
+                partial=partial,
+            ).css_class
+
+        assert card("available") == "card"
+        assert card("available", partial=True) == "card card-partial"
+        assert card("empty") == "card card-unavailable"
+        assert card("failed") == "card card-unavailable card-failed"
 
 
 class FakeUploader:
