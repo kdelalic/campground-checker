@@ -93,6 +93,36 @@ def test_dashboard_visualizes_per_campground_metrics():
     assert "== 1" in panels["Availability Events"]["targets"][0]["expr"]
 
 
+def test_dashboard_organizes_panels_into_rows():
+    dashboard = json.loads(DASHBOARD_PATH.read_text())
+    rows = [panel for panel in dashboard["panels"] if panel["type"] == "row"]
+
+    assert [row["title"] for row in rows] == [
+        "Health at a Glance",
+        "Availability",
+        "Availability Trends",
+        "Alert Scans & Notifications",
+        "Provider Throttling",
+        "Background Dashboard Worker",
+    ]
+    # Rows must stay uncollapsed so child panels remain at the top level of
+    # "panels", where the other tests (and Grafana provisioning) expect them.
+    assert all(row["collapsed"] is False for row in rows)
+
+
+def test_dashboard_panels_do_not_overlap():
+    dashboard = json.loads(DASHBOARD_PATH.read_text())
+    rects = [
+        (pos["x"], pos["y"], pos["w"], pos["h"])
+        for pos in (panel["gridPos"] for panel in dashboard["panels"])
+    ]
+
+    assert all(x + w <= 24 for x, y, w, h in rects)
+    for i, (ax, ay, aw, ah) in enumerate(rects):
+        for bx, by, bw, bh in rects[i + 1 :]:
+            assert ax + aw <= bx or bx + bw <= ax or ay + ah <= by or by + bh <= ay
+
+
 def test_dashboard_visualizes_adaptive_provider_throttling():
     dashboard = json.loads(DASHBOARD_PATH.read_text())
     panels = {panel["title"]: panel for panel in dashboard["panels"]}
@@ -110,6 +140,16 @@ def test_dashboard_visualizes_adaptive_provider_throttling():
     assert "$provider" in event_panel["targets"][0]["expr"]
     assert "$provider" in cooldown_panel["targets"][0]["expr"]
 
+    cooldown_exprs = {target["expr"] for target in cooldown_panel["targets"]}
+    assert any(
+        "campsite_checker_provider_throttle_last_backoff_seconds" in expr for expr in cooldown_exprs
+    )
+
+    streak_panel = panels["Consecutive Provider Rate Limits"]
+    assert streak_panel["type"] == "timeseries"
+    assert "campsite_checker_provider_consecutive_rate_limits" in streak_panel["targets"][0]["expr"]
+    assert "$provider" in streak_panel["targets"][0]["expr"]
+
 
 def test_dashboard_visualizes_notification_delivery():
     dashboard = json.loads(DASHBOARD_PATH.read_text())
@@ -120,6 +160,12 @@ def test_dashboard_visualizes_notification_delivery():
     queries = {target["expr"] for target in panel["targets"]}
     assert any("campsite_checker_notifications_sent_total" in query for query in queries)
     assert any("campsite_checker_notifications_failed_total" in query for query in queries)
+
+    totals = panels["Notifications in Selected Range"]
+    assert totals["type"] == "stat"
+    totals_queries = {target["expr"] for target in totals["targets"]}
+    assert any("campsite_checker_notifications_sent_total" in query for query in totals_queries)
+    assert any("campsite_checker_notifications_failed_total" in query for query in totals_queries)
 
 
 def test_dashboard_uses_dedicated_alert_scan_timestamp():
