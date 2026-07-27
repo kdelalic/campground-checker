@@ -4,8 +4,9 @@ from datetime import date, datetime, timedelta
 
 import yaml
 
-from . import yaml_editor
-from .providers import PROVIDER_MAP, WEEKDAY_NAMES
+from . import yaml_comments
+from .providers import PROVIDER_MAP
+from .weekdays import WEEKDAY_NAMES
 
 
 class DateWindowExhausted(Exception):
@@ -190,7 +191,7 @@ def load_config(path: str) -> tuple[list[dict], dict]:
     if len(entries) == 0:
         sys.exit("Error: no campsite entries found")
 
-    names = yaml_editor.parse_yaml_comments(path)
+    names = yaml_comments.parse_yaml_comments(path)
     for entry in entries:
         if "name" not in entry:
             cid = entry.get("campground_id")

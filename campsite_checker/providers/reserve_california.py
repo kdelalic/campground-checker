@@ -1,19 +1,16 @@
+"""ReserveCalifornia (UseDirect) provider hardening.
+
+Stock camply UseDirect calls carry no HTTP timeout and cache their offline
+metadata inside site-packages; both are corrected here.
+"""
+
 import logging
 import os
 import pathlib
 
 from camply.providers.base_provider import ProviderError
 from camply.providers.usedirect.variations import ReserveCalifornia
-from camply.search import (
-    SearchGoingToCamp,
-    SearchReserveCalifornia,
-    SearchYellowstone,
-)
-
-from .recreation_gov import (
-    IdentityCachedRecreationDotGov,
-    NativeSearchRecreationDotGov,
-)
+from camply.search import SearchReserveCalifornia
 
 logger = logging.getLogger(__name__)
 
@@ -89,37 +86,3 @@ class TimeoutSearchReserveCalifornia(SearchReserveCalifornia):
     """SearchReserveCalifornia wired to the timeout-enforcing provider."""
 
     provider_class = TimeoutReserveCalifornia
-
-
-PROVIDER_MAP: dict[str, type] = {
-    "RecreationDotGov": NativeSearchRecreationDotGov,
-    "Yellowstone": SearchYellowstone,
-    "GoingToCamp": SearchGoingToCamp,
-    "ReserveCalifornia": TimeoutSearchReserveCalifornia,
-}
-
-# Provider classes used for out-of-search metadata lookups (bot name resolution),
-# sharing the same caching/timeout hardening as the search path.
-METADATA_PROVIDER_CLASS: dict[str, type] = {
-    "RecreationDotGov": IdentityCachedRecreationDotGov,
-    "ReserveCalifornia": TimeoutReserveCalifornia,
-}
-
-PROVIDER_DISPLAY: dict[str, str] = {
-    "RecreationDotGov": "recreation.gov",
-    "Yellowstone": "yellowstone",
-    "GoingToCamp": "goingtocamping.com",
-    "ReserveCalifornia": "reservecalifornia",
-}
-
-WEEKDAY_NAMES = {
-    "monday": 0,
-    "tuesday": 1,
-    "wednesday": 2,
-    "thursday": 3,
-    "friday": 4,
-    "saturday": 5,
-    "sunday": 6,
-}
-
-WEEKDAY_LABELS = {value: name.capitalize() for name, value in WEEKDAY_NAMES.items()}

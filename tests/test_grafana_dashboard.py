@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from campsite_checker.server import _ScanStatus
+from campsite_checker.status import ScanStatus
 
 DASHBOARD_PATH = Path(__file__).parents[1] / "grafana" / "campground-checker.json"
 METRIC_PATTERN = re.compile(r"\bcampsite_checker_[a-zA-Z0-9_:]+\b")
@@ -34,7 +34,7 @@ def test_dashboard_references_exported_metrics():
     exported_metrics = set(
         re.findall(
             r"^# TYPE (campsite_checker_[a-zA-Z0-9_:]+) ",
-            _ScanStatus().to_prometheus(),
+            ScanStatus().to_prometheus(),
             re.MULTILINE,
         )
     )

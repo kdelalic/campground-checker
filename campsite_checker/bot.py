@@ -4,7 +4,7 @@ import threading
 
 import telebot
 
-from . import yaml_editor
+from . import yaml_comments
 from .providers import METADATA_PROVIDER_CLASS, PROVIDER_MAP
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
             bot.send_message(message.chat.id, "No campgrounds being monitored.")
             return
 
-        names = yaml_editor.parse_yaml_comments(config_path)
+        names = yaml_comments.parse_yaml_comments(config_path)
 
         # Find entries missing names and look them up from the provider API.
         missing = [
@@ -152,7 +152,7 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
         with state.lock:
             entries = list(state.entries)
             config_path = state.config_path
-        names = yaml_editor.parse_yaml_comments(config_path)
+        names = yaml_comments.parse_yaml_comments(config_path)
 
         by_provider: dict = {}
         for e in entries:

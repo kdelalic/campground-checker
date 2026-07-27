@@ -1,8 +1,8 @@
-"""Tests for campsite_checker.yaml_editor (read-only comment parsing)."""
+"""Tests for campsite_checker.yaml_comments (read-only comment parsing)."""
 
 import pytest
 
-from campsite_checker.yaml_editor import parse_yaml_comments
+from campsite_checker.yaml_comments import parse_yaml_comments
 
 SAMPLE_YAML = """\
 campsites:

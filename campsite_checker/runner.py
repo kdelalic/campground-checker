@@ -1,13 +1,12 @@
 import concurrent.futures
 import gc
-import json
 import logging
 import os
 import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
 
@@ -28,7 +27,6 @@ from .notify import (
     get_telegram_creds,
     send_telegram,
 )
-from .providers import WEEKDAY_LABELS
 from .results import (
     NotificationKey,
     ProcessedAvailability,
@@ -38,6 +36,8 @@ from .results import (
     process_filtered_results,
 )
 from .search import execute_searches
+from .state import SENT_KEYS_FILE, load_sent_keys, save_sent_keys
+from .weekdays import WEEKDAY_LABELS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -243,56 +243,6 @@ def run_once(
     return current_keys, found_entries, all_with_results
 
 
-SENT_KEYS_FILE = Path(os.environ.get("SENT_KEYS_PATH", ".campsite_sent_keys.json"))
-
-
-def _load_sent_keys(path: Path) -> set[NotificationKey]:
-    """Load previously sent keys from disk, pruning past booking dates.
-
-    Keys are kept for any future booking date so a restart cannot re-alert
-    availability that was already notified anywhere in the search window.
-    """
-    if not path.exists():
-        return set()
-    try:
-        data = json.loads(path.read_text())
-        today = date.today()
-        keys = set()
-        for provider, ident, cid, d in data:
-            dt = date.fromisoformat(d)
-            if dt >= today:
-                keys.add((provider, ident, cid, dt))
-        return keys
-    except (json.JSONDecodeError, ValueError, TypeError):
-        logger.warning(
-            "Discarding unreadable sent-key state at %s; previously alerted "
-            "availability may be re-alerted once",
-            path,
-        )
-        return set()
-
-
-def _save_sent_keys(path: Path, keys: set[NotificationKey]) -> bool:
-    """Atomically save changed sent keys to disk, pruning past booking dates."""
-    today = date.today()
-    data = [[provider, ident, cid, d.isoformat()] for provider, ident, cid, d in keys if d >= today]
-    data.sort(key=lambda row: (row[0], row[1], str(row[2]), row[3]))
-    serialized = json.dumps(data, separators=(",", ":"))
-    try:
-        if path.read_text() == serialized:
-            return False
-    except (FileNotFoundError, OSError):
-        pass
-    try:
-        tmp_path = path.with_name(path.name + ".tmp")
-        tmp_path.write_text(serialized)
-        os.replace(tmp_path, path)
-    except OSError as exc:
-        logger.warning("Could not persist sent-key state to %s: %s", path, exc)
-        return False
-    return True
-
-
 def _send_notifications(
     found_entries: list[ProcessedAvailability],
     tg_token: str | None,
@@ -400,7 +350,9 @@ def run_forever(
     dashboard_path: str | None = None,
 ) -> None:
     from .bot import ConfigState, create_bot, start_bot_polling
-    from .server import CampgroundMetric, scan_status, start_healthcheck_server
+    from .metrics import CampgroundMetric
+    from .server import start_healthcheck_server
+    from .status import scan_status
 
     scan_status.alert_interval_minutes = args.alert_interval
 
@@ -418,7 +370,7 @@ def run_forever(
 
     start_healthcheck_server()
 
-    prev_keys = _load_sent_keys(SENT_KEYS_FILE)
+    prev_keys = load_sent_keys(SENT_KEYS_FILE)
     scan_num = 0
 
     dashboard_publisher = None
@@ -496,7 +448,7 @@ def run_forever(
                 scan_status.record_notifications(sent=sent_msgs, failed=failed_msgs)
                 if failed_msgs == 0:
                     prev_keys |= alert_keys
-                    if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
+                    if save_sent_keys(SENT_KEYS_FILE, prev_keys):
                         logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
                 else:
                     logger.warning(
