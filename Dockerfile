@@ -48,5 +48,8 @@ ENV DASHBOARD_INTERVAL="10"
 ENV GC_INTERVAL="12"
 ENV THROTTLE_BASE_DELAY="30"
 ENV THROTTLE_MAX_DELAY="900"
+# Camply's UseDirect metadata cache defaults to site-packages, which is not
+# writable by the unprivileged user; keep it on the persistent state mount.
+ENV CAMPLY_CACHE_DIR="/app/state/camply-cache"
 
 CMD ["sh", "-c", "python check_campsites.py --forever --dashboard --workers $WORKERS --alert-interval $ALERT_INTERVAL --search-delay $SEARCH_DELAY --batch-size $BATCH_SIZE --dashboard-interval $DASHBOARD_INTERVAL --gc-interval $GC_INTERVAL"]

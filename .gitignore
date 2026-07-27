@@ -52,3 +52,5 @@ Thumbs.db
 dashboard.html
 # Runtime state (dedup keys)
 state/
+# Camply UseDirect offline metadata cache (local runs)
+.camply-cache/

@@ -1,4 +1,6 @@
 import logging
+import os
+import pathlib
 import threading
 import time
 from collections import OrderedDict
@@ -19,6 +21,20 @@ logger = logging.getLogger(__name__)
 # Applied to providers whose stock camply HTTP calls carry no timeout; a
 # black-holed connection would otherwise hang a scan thread forever.
 DEFAULT_HTTP_TIMEOUT_SECONDS = 30
+
+# Camply's UseDirect providers default their offline metadata cache to a
+# directory beside the installed package, which is read-only in the container
+# (the process runs as an unprivileged user). The cache must live somewhere
+# writable; the container sets CAMPLY_CACHE_DIR to the persistent state mount.
+CAMPLY_CACHE_DIR_ENV = "CAMPLY_CACHE_DIR"
+DEFAULT_CAMPLY_CACHE_DIR = pathlib.Path(".camply-cache")
+
+
+def usedirect_cache_dir(provider_slug: str) -> pathlib.Path:
+    """Writable offline-cache directory for a UseDirect provider."""
+    base = os.environ.get(CAMPLY_CACHE_DIR_ENV)
+    root = pathlib.Path(base) if base else DEFAULT_CAMPLY_CACHE_DIR
+    return root / provider_slug
 
 
 class FacilityIdentityCache:
@@ -116,7 +132,16 @@ class TimeoutReserveCalifornia(ReserveCalifornia):
     thread indefinitely and silently stalls the background dashboard worker.
     Mirrors ``BaseProvider.make_http_request``; ``make_http_request_retry``
     delegates here, so every UseDirect HTTP path gets the timeout.
+
+    The offline metadata cache is also relocated: camply defaults it to
+    ``site-packages/camply/providers/usedirect/<ClassName>``, which the
+    unprivileged container user cannot create. Every metadata refresh goes
+    through ``offline_cache_dir``, so overriding the property is sufficient.
     """
+
+    @property
+    def offline_cache_dir(self) -> pathlib.Path:
+        return usedirect_cache_dir("reserve-california")
 
     def make_http_request(
         self,
