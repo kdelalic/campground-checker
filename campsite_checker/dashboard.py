@@ -15,6 +15,11 @@ from .results import (
     process_results,
 )
 
+# How often an already-open browser tab re-fetches the page. The checker
+# republishes on its own cadence, so this only bounds how stale a left-open tab
+# can get.
+DEFAULT_REFRESH_SECONDS = 300
+
 
 @dataclass(frozen=True, slots=True)
 class DashboardPublishResult:
@@ -134,8 +139,13 @@ def build_calendar_html(all_availabilities: dict[date, int]) -> str:
                 else:
                     count = all_availabilities.get(d, 0)
                     if count > 0:
+                        label = html.escape(
+                            f"{d.strftime('%B %-d, %Y')} — {count} site(s) available"
+                        )
                         cells.append(
-                            f'<td class="calendar-available" data-date="{d.isoformat()}" title="{count} site(s) available">{d.day}</td>'
+                            f'<td class="calendar-available" data-date="{d.isoformat()}"'
+                            f' tabindex="0" role="button" aria-label="{label}"'
+                            f' title="{count} site(s) available">{d.day}</td>'
                         )
                     else:
                         cells.append(f'<td class="calendar-day">{d.day}</td>')
@@ -170,10 +180,54 @@ def build_calendar_html(all_availabilities: dict[date, int]) -> str:
     return f'<div class="calendar-container">{header_html}{"".join(months_html)}</div>\n'
 
 
+def group_sites_by_date(
+    campsites: tuple[AvailableCampsite, ...],
+) -> dict[date, list[AvailableCampsite]]:
+    """Group already-deduplicated campsites by their booking date."""
+    grouped: dict[date, list[AvailableCampsite]] = defaultdict(list)
+    for site in campsites:
+        grouped[site.booking_date.date()].append(site)
+    for sites in grouped.values():
+        sites.sort(
+            key=lambda s: (str(getattr(s, "campsite_site_name", "") or ""), str(s.campsite_id))
+        )
+    return grouped
+
+
+def build_date_detail_html(date_str: str, sites: list[AvailableCampsite]) -> str:
+    """Render one date as a <details> disclosure listing its individual sites.
+
+    Uses <details> rather than JS so the per-site breakdown still works in the
+    static page, and stays collapsed so the page remains scannable.
+    """
+    if not sites:
+        return date_str
+
+    items = []
+    for site in sites:
+        site_name = str(getattr(site, "campsite_site_name", "") or "") or f"Site {site.campsite_id}"
+        loop_name = str(getattr(site, "campsite_loop_name", "") or "")
+        label = html.escape(site_name)
+        loop_html = f'<span class="site-loop">{html.escape(loop_name)}</span>' if loop_name else ""
+        url = str(getattr(site, "booking_url", "") or "").replace("Web/Default.aspx#!", "")
+        if url:
+            safe_url = html.escape(url)
+            label = f'<a href="{safe_url}" target="_blank" rel="noopener">{label}</a>'
+        items.append(f"<li>{label}{loop_html}</li>")
+
+    return (
+        f'<details class="date-detail">'
+        f"<summary>{date_str}</summary>"
+        f'<ul class="site-list">{"".join(items)}</ul>'
+        f"</details>"
+    )
+
+
 def build_dashboard_html(
     entries_with_results: list[tuple[dict, list[AvailableCampsite]] | ProcessedAvailability],
     day_filter: set[int] | None,
     scan_timestamp: datetime | None = None,
+    refresh_seconds: int = DEFAULT_REFRESH_SECONDS,
 ) -> str:
     """Generate a complete self-contained HTML string."""
     if scan_timestamp is None:
@@ -182,6 +236,8 @@ def build_dashboard_html(
     cards_html = []
     nav_links = []
     all_availabilities = defaultdict(int)
+    failed_count = 0
+    available_count = 0
 
     availabilities = [
         item
@@ -201,8 +257,29 @@ def build_dashboard_html(
 
         safe_name = html.escape(name)
         card_id = f"site-{len(cards_html)}"
+        scan_failed = not availability.search_succeeded
+        if scan_failed:
+            failed_count += 1
 
         if not availability.available:
+            # A failed search carries no information about this campground, so
+            # it must not read as "nothing open here".
+            if scan_failed:
+                nav_links.append(
+                    f'<li data-ref="{card_id}" data-unavailable="true" data-failed="true">'
+                    f'<a href="#{card_id}">{safe_name}</a> '
+                    f'<span class="nav-count nav-failed" title="Scan failed">&#9888;</span></li>'
+                )
+                cards_html.append(
+                    f'<div class="card card-unavailable card-failed" id="{card_id}">'
+                    f'<div class="card-header">'
+                    f"<h2>{safe_name}</h2>"
+                    f'<span class="site-count site-count-failed">'
+                    f"&#9888; Scan failed &mdash; data may be stale</span>"
+                    f"</div>"
+                    f"</div>"
+                )
+                continue
             # No availability for this campground — show a muted card.
             nav_links.append(
                 f'<li data-ref="{card_id}" data-unavailable="true">'
@@ -223,18 +300,20 @@ def build_dashboard_html(
         for booking_date, campsite_ids in by_date.items():
             all_availabilities[booking_date] += len(campsite_ids)
         total = availability.total_sites
+        available_count += 1
 
         nav_links.append(
             f'<li data-ref="{card_id}"><a href="#{card_id}">{safe_name}</a> <span class="nav-count">{total}</span></li>'
         )
 
+        sites_by_date = group_sites_by_date(availability.campsites)
         rows_html = []
         for d in sorted(by_date):
             count = len(by_date[d])
             date_str = html.escape(d.strftime("%a, %b %-d"))
             rows_html.append(
                 f'<tr data-date="{d.isoformat()}" data-count="{count}">'
-                f"<td>{date_str}</td>"
+                f"<td>{build_date_detail_html(date_str, sites_by_date.get(d, []))}</td>"
                 f'<td><span class="available-badge">{count} site(s)</span></td>'
                 f"</tr>"
             )
@@ -244,11 +323,21 @@ def build_dashboard_html(
             safe_url = html.escape(availability.booking_url)
             book_link = f'<div class="book-action"><a class="book-link" href="{safe_url}" target="_blank">Book now &rarr;</a></div>'
 
+        # Partial results: some searches for this entry succeeded and some did
+        # not, so what is shown is real but incomplete.
+        stale_badge = (
+            '<span class="site-count site-count-failed">&#9888; Partial scan</span>'
+            if scan_failed
+            else ""
+        )
+        card_class = "card card-partial" if scan_failed else "card"
+
         cards_html.append(
-            f'<div class="card" id="{card_id}">'
+            f'<div class="{card_class}" id="{card_id}">'
             f'<div class="card-header">'
             f"<h2>{safe_name}</h2>"
-            f'<span class="site-count">{total} open site(s)</span>'
+            f'<span class="card-badges">{stale_badge}'
+            f'<span class="site-count">{total} open site(s)</span></span>'
             f"</div>"
             f'<div class="table-container">'
             f"<table>"
@@ -265,6 +354,20 @@ def build_dashboard_html(
         scan_timestamp = scan_timestamp.replace(tzinfo=timezone.utc).astimezone()
     timestamp_iso = scan_timestamp.isoformat()
     timestamp_str = html.escape(scan_timestamp.strftime("%b %-d, %Y at %-I:%M %p"))
+
+    stat_content = ""
+    if cards_html:
+        stat_parts = [
+            f"<strong>{available_count}</strong> of {len(cards_html)} campgrounds with availability"
+        ]
+        if all_availabilities:
+            soonest = html.escape(min(all_availabilities).strftime("%a, %b %-d"))
+            stat_parts.append(f"soonest <strong>{soonest}</strong>")
+        if failed_count:
+            stat_parts.append(
+                f'<span class="stat-failed">&#9888; {failed_count} scan(s) failed</span>'
+            )
+        stat_content = f'<p class="stat-line">{" &middot; ".join(stat_parts)}</p>'
 
     if not cards_html:
         body_content = (
@@ -306,6 +409,9 @@ body{{
 header{{margin-bottom:32px;text-align:center;}}
 h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-0.025em;}}
 .timestamp{{color:var(--text-muted);font-size:0.95rem;margin:0}}
+.stat-line{{color:var(--text-muted);font-size:0.9rem;margin:6px 0 0}}
+.stat-line strong{{color:var(--text-color);font-weight:600}}
+.stat-failed{{color:#b45309;font-weight:600}}
 
 .quick-nav {{
   background:var(--card-bg);
@@ -434,6 +540,10 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
 .calendar-available.selected-date {{
   box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 4px var(--primary);
 }}
+.calendar-available:focus-visible {{
+  outline: 2px solid var(--text-color);
+  outline-offset: 2px;
+}}
 
 .card{{
   background:var(--card-bg);
@@ -450,8 +560,24 @@ h1{{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-
 .site-count{{background:#ecfdf5;color:#047857;padding:4px 12px;border-radius:9999px;font-size:0.875rem;font-weight:600;white-space:nowrap;}}
 .site-count-none{{background:#f1f5f9;color:var(--text-muted);padding:4px 12px;border-radius:9999px;font-size:0.875rem;font-weight:600;white-space:nowrap;}}
 .card-unavailable{{opacity:0.75;}}
-.card-unavailable .card-header{{border-bottom-color:var(--border-color);}}
+/* Nothing follows the header on an empty card, so drop its separator. */
+.card-unavailable .card-header{{border-bottom:none;margin-bottom:0;padding-bottom:0;}}
 .nav-none{{background:#f1f5f9;color:var(--text-muted);}}
+
+.card-badges{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}}
+.site-count-failed{{background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:9999px;font-size:0.875rem;font-weight:600;white-space:nowrap;}}
+.card-failed{{opacity:1;border-color:var(--accent);border-left:4px solid var(--accent);background:#fffbeb;}}
+.card-partial{{border-left:4px solid var(--accent);}}
+.nav-failed{{background:#fef3c7;color:#92400e;}}
+
+details.date-detail summary{{cursor:pointer;list-style-position:outside;}}
+details.date-detail summary::marker{{color:var(--text-muted);font-size:0.8em;}}
+details.date-detail summary:focus-visible{{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px;}}
+.site-list{{margin:8px 0 0;padding:0 0 0 4px;list-style:none;}}
+.site-list li{{display:flex;align-items:baseline;gap:8px;font-size:0.9rem;padding:3px 0;}}
+.site-list a{{color:var(--primary);text-decoration:none;font-weight:600;}}
+.site-list a:hover{{color:var(--primary-hover);text-decoration:underline;}}
+.site-loop{{color:var(--text-muted);font-size:0.8rem;}}
 
 .table-container {{ overflow-x: auto; margin-bottom: 20px; }}
 table{{width:100%;border-collapse:separate;border-spacing:0;font-size:0.95rem}}
@@ -510,6 +636,11 @@ tr:last-child td {{border-bottom:none;}}
   .site-count {{ background: rgba(16, 185, 129, 0.2); color: #34d399; }}
   .site-count-none {{ background: #334155; color: #94a3b8; }}
   .nav-none {{ background: #334155; color: #94a3b8; }}
+  .site-count-failed {{ background: rgba(245, 158, 11, 0.2); color: #fbbf24; }}
+  .nav-failed {{ background: rgba(245, 158, 11, 0.2); color: #fbbf24; }}
+  .card-failed {{ background: rgba(245, 158, 11, 0.08); }}
+  .stat-failed {{ color: #fbbf24; }}
+  .site-loop {{ color: #94a3b8; }}
   th {{ border-bottom-color: #334155; }}
   td {{ border-bottom-color: #334155; color: #e2e8f0; }}
 }}
@@ -520,6 +651,7 @@ tr:last-child td {{border-bottom:none;}}
 <header>
 <h1>&#x1F3D5; Campsite Availability</h1>
 <p class="timestamp">Last updated: <span id="last-updated" data-timestamp="{timestamp_iso}">{timestamp_str}</span></p>
+{stat_content}
 </header>
 {calendar_content}
 {nav_content}
@@ -633,13 +765,36 @@ document.addEventListener("DOMContentLoaded", () => {{
     cell.addEventListener("click", () => {{
       filterByDate(cell.getAttribute("data-date"));
     }});
+    cell.addEventListener("keydown", (e) => {{
+      if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {{
+        e.preventDefault();
+        filterByDate(cell.getAttribute("data-date"));
+      }}
+    }});
   }});
-  
+
   if (clearBtn) {{
     clearBtn.addEventListener("click", () => {{
       filterByDate(null);
     }});
   }}
+
+  // The page is republished periodically; reload so an open tab does not go
+  // stale forever. Background tabs wait until they are looked at again.
+  const REFRESH_MS = {refresh_seconds} * 1000;
+  let refreshDue = false;
+  setInterval(() => {{
+    if (document.visibilityState === "visible") {{
+      window.location.reload();
+    }} else {{
+      refreshDue = true;
+    }}
+  }}, REFRESH_MS);
+  document.addEventListener("visibilitychange", () => {{
+    if (refreshDue && document.visibilityState === "visible") {{
+      window.location.reload();
+    }}
+  }});
 }});
 </script>
 </body>

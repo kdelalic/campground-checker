@@ -12,6 +12,7 @@ from campsite_checker.results import (
     get_booking_url,
     get_facility_name,
     make_notification_key,
+    process_filtered_results,
     process_results,
 )
 
@@ -224,6 +225,19 @@ class TestProcessedAvailability:
 
         assert availability_fingerprint([first]) == availability_fingerprint([same])
         assert availability_fingerprint([first]) != availability_fingerprint([changed])
+
+    def test_fingerprint_tracks_search_success(self):
+        """An empty scan and a failed scan carry the same dates but render
+        differently, so the dashboard must be rewritten when one becomes the
+        other."""
+        entry = {"provider": "RecreationDotGov", "campground_id": 100}
+        failed = process_filtered_results(entry, [], search_succeeded=False)
+        succeeded = process_filtered_results(entry, [])
+
+        assert availability_fingerprint([failed]) != availability_fingerprint([succeeded])
+        assert availability_fingerprint([failed]) == availability_fingerprint(
+            [process_filtered_results(entry, [], search_succeeded=False)]
+        )
 
 
 # ── format_processed_results ────────────────────────────────────────────────

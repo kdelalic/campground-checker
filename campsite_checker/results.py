@@ -82,6 +82,9 @@ def availability_fingerprint(
                 "facility_name": availability.facility_name,
                 "booking_url": availability.booking_url,
                 "dates": dates,
+                # A failure -> success transition renders differently even when
+                # the (empty) date set is identical, so it must rewrite the page.
+                "search_succeeded": availability.search_succeeded,
             }
         )
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
