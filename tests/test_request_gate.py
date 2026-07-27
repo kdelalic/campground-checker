@@ -124,6 +124,100 @@ def test_queued_alert_request_starts_before_older_dashboard_request():
     assert order == ["alert", "dashboard"]
 
 
+class TestReservedAlertSlot:
+    """A slot is held back so alerts never wait on in-flight dashboard work."""
+
+    def test_alert_starts_while_dashboard_requests_saturate_their_cap(self):
+        # Reproduces the production regression: ordering the queue was not
+        # enough, because every alert request still had to wait for one of the
+        # in-flight dashboard requests to finish.
+        gate = RequestGate(max_concurrent=3)
+        assert gate.deprioritized_slots == 2
+        release = threading.Event()
+        holders_started = threading.Semaphore(0)
+        alert_started = threading.Event()
+
+        def hold_dashboard():
+            with gate.slot(PRIORITY_DASHBOARD):
+                holders_started.release()
+                assert release.wait(5.0)
+
+        # Enough dashboard requests to fill every slot if none were reserved.
+        holders = [threading.Thread(target=hold_dashboard) for _ in range(3)]
+        for holder in holders:
+            holder.start()
+        for _ in range(gate.deprioritized_slots):
+            assert holders_started.acquire(timeout=5.0)
+        assert _wait_for(lambda: gate.pending_priorities == (PRIORITY_DASHBOARD,))
+
+        def run_alert():
+            with gate.slot(PRIORITY_ALERT):
+                alert_started.set()
+
+        alert = threading.Thread(target=run_alert)
+        alert.start()
+
+        # The alert runs to completion without any dashboard request finishing.
+        assert alert_started.wait(5.0)
+        assert not release.is_set()
+
+        release.set()
+        alert.join(5.0)
+        for holder in holders:
+            holder.join(5.0)
+
+    def test_dashboard_requests_cannot_take_the_reserved_slot(self):
+        gate = RequestGate(max_concurrent=2)
+        assert gate.deprioritized_slots == 1
+        release = threading.Event()
+        first_started = threading.Event()
+        second_started = threading.Event()
+
+        def dashboard(started):
+            def run():
+                with gate.slot(PRIORITY_DASHBOARD):
+                    started.set()
+                    assert release.wait(5.0)
+
+            return run
+
+        first = threading.Thread(target=dashboard(first_started))
+        first.start()
+        assert first_started.wait(5.0)
+        second = threading.Thread(target=dashboard(second_started))
+        second.start()
+        assert _wait_for(lambda: gate.pending_priorities == (PRIORITY_DASHBOARD,))
+
+        # The free slot stays reserved rather than going to dashboard work.
+        assert not second_started.is_set()
+
+        release.set()
+        assert second_started.wait(5.0)
+        first.join(5.0)
+        second.join(5.0)
+
+    def test_single_slot_gate_is_shared(self):
+        gate = RequestGate(max_concurrent=1)
+
+        # With one slot there is nothing to reserve; it is shared instead.
+        assert gate.deprioritized_slots == 1
+        with gate.slot(PRIORITY_DASHBOARD):
+            pass
+        with gate.slot(PRIORITY_ALERT):
+            pass
+
+    def test_released_dashboard_slots_are_returned_to_the_pool(self):
+        gate = RequestGate(max_concurrent=2)
+
+        for _ in range(3):
+            with gate.slot(PRIORITY_DASHBOARD):
+                pass
+
+        # A leaked counter would wedge dashboard work after the first request.
+        assert gate.pending_priorities == ()
+        assert gate._active_deprioritized == 0
+
+
 def test_concurrency_cap_is_enforced():
     gate = RequestGate(max_concurrent=2)
     peak = 0

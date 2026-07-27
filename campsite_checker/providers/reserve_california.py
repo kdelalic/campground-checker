@@ -31,7 +31,13 @@ DEFAULT_HTTP_TIMEOUT_SECONDS = 30
 # those batches at once measurably slowed concurrent alert requests, so bound
 # how many requests are in flight and let alert requests take the next start.
 # There is no observed ReserveCalifornia rate limit, so starts are not spaced.
-MAX_CONCURRENT_REQUESTS = 2
+#
+# One of these slots is reserved for alert requests, leaving dashboard scans
+# the same 2 concurrent requests they had before the gate existed. Ordering
+# alone was not enough in production: ReserveCalifornia requests take seconds,
+# so an alert that waits for an in-flight dashboard request to finish still
+# lost ~30s across a 7-request scan.
+MAX_CONCURRENT_REQUESTS = 3
 
 RESERVE_CALIFORNIA_REQUEST_GATE = RequestGate(max_concurrent=MAX_CONCURRENT_REQUESTS)
 

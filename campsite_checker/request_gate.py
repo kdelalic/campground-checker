@@ -34,13 +34,16 @@ class RequestGate:
 
     Waiters are queued by ``(priority, arrival)`` — lower priority wins — so a
     queued alert request takes the next available start even when dashboard
-    requests have been waiting longer. Aggregate start spacing and the
-    concurrency cap are preserved, and :meth:`defer` pauses every future start
-    so batches that are already executing stop issuing requests during a
-    provider cooldown.
+    requests have been waiting longer. One concurrency slot is also held back
+    for alert requests, so an alert does not have to wait for an in-flight
+    dashboard request to finish; see :attr:`deprioritized_slots`. Aggregate
+    start spacing is preserved, and :meth:`defer` pauses every future start so
+    batches that are already executing stop issuing requests during a provider
+    cooldown.
 
-    An in-flight request is never preempted: an alert may still wait for one
-    outstanding request, bounded by the client's connect/read timeouts.
+    An in-flight request is never preempted, so with ``max_concurrent == 1``
+    an alert may still wait for the one outstanding request, bounded by the
+    client's connect/read timeouts.
     """
 
     # Safety net so a missed notification degrades to a short re-check rather
@@ -56,6 +59,7 @@ class RequestGate:
         sleep: Callable[[float], None] = time.sleep,
     ):
         self._max_concurrent = max(1, int(max_concurrent))
+        self._active_deprioritized = 0
         # ``None`` bounds concurrency only: useful for providers that are not
         # known to rate limit, where the queue exists purely to order alerts
         # ahead of dashboard requests.
@@ -67,6 +71,25 @@ class RequestGate:
         self._active = 0
         self._seq = 0
         self._next_start = 0.0
+
+    @property
+    def deprioritized_slots(self) -> int:
+        """Concurrent slots usable by non-alert requests.
+
+        One slot is held back for alert requests whenever there is more than
+        one, mirroring the dispatcher's reserved worker. Ordering alone is not
+        enough: without a reserved slot an alert still waits for one of the
+        in-flight dashboard requests to finish, and on a provider whose
+        requests take seconds that wait dominates the whole alert scan.
+        """
+        return 1 if self._max_concurrent == 1 else self._max_concurrent - 1
+
+    def _can_start_locked(self, priority: int) -> bool:
+        if self._active >= self._max_concurrent:
+            return False
+        if priority > PRIORITY_ALERT_REQUEST:
+            return self._active_deprioritized < self.deprioritized_slots
+        return True
 
     @property
     def pending_priorities(self) -> tuple[int, ...]:
@@ -86,14 +109,14 @@ class RequestGate:
         try:
             yield self
         finally:
-            self._release()
+            self._release(priority)
 
     def __enter__(self):
         self._acquire(PRIORITY_ALERT_REQUEST)
         return self
 
     def __exit__(self, exc_type, exc, traceback):
-        self._release()
+        self._release(PRIORITY_ALERT_REQUEST)
         return False
 
     def _acquire(self, priority: int) -> None:
@@ -105,11 +128,13 @@ class RequestGate:
         try:
             while True:
                 with self._cond:
-                    if self._active < self._max_concurrent and self._waiting[0] == ticket:
+                    if self._waiting[0] == ticket and self._can_start_locked(priority):
                         delay = max(0.0, self._next_start - self._clock())
                         if not delay:
                             heapq.heappop(self._waiting)
                             self._active += 1
+                            if priority > PRIORITY_ALERT_REQUEST:
+                                self._active_deprioritized += 1
                             self._next_start = self._clock() + self._minimum_interval
                             self._cond.notify_all()
                             return
@@ -129,9 +154,11 @@ class RequestGate:
                     self._cond.notify_all()
             raise
 
-    def _release(self) -> None:
+    def _release(self, priority: int) -> None:
         with self._cond:
             self._active -= 1
+            if priority > PRIORITY_ALERT_REQUEST:
+                self._active_deprioritized -= 1
             self._cond.notify_all()
 
 
