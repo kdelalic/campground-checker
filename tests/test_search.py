@@ -5,13 +5,18 @@ from types import SimpleNamespace
 
 from camply.containers import SearchWindow
 
+from campsite_checker.dispatch import PRIORITY_ALERT, PRIORITY_DASHBOARD
+from campsite_checker.providers import PROVIDER_MAP
+from campsite_checker.providers.recreation_gov import NativeSearchRecreationDotGov
 from campsite_checker.search import (
     SEARCH_METADATA_CACHE,
     SearchMetadataCache,
     SearchOutcome,
     _requires_recreation_area,
     _search_payload,
+    _supports_request_priority,
     build_search_batches,
+    build_searcher,
     execute_searches,
 )
 from campsite_checker.throttle import ProviderThrottleRegistry
@@ -110,7 +115,7 @@ class TestExecuteSearches:
         ]
         calls = []
 
-        def fake_search(entry, search_window, args):
+        def fake_search(entry, search_window, args, priority=PRIORITY_ALERT):
             campground_ids = entry["campground_id"]
             if not isinstance(campground_ids, list):
                 campground_ids = [campground_ids]
@@ -136,7 +141,7 @@ class TestExecuteSearches:
             {"provider": "RecreationDotGov", "campground_id": 20},
         ]
 
-        def fake_search(entry, search_window, args):
+        def fake_search(entry, search_window, args, priority=PRIORITY_ALERT):
             return SearchOutcome([], "[WARNING] unavailable", 0.01, {}, None)
 
         monkeypatch.setattr("campsite_checker.search._search_payload", fake_search)
@@ -162,7 +167,7 @@ class TestExecuteSearches:
 
         registry = ProviderThrottleRegistry(clock=clock)
 
-        def fake_search(entry, search_window, args):
+        def fake_search(entry, search_window, args, priority=PRIORITY_ALERT):
             calls.append((entry["provider"], entry["campground_id"]))
             if entry["provider"] == "RecreationDotGov":
                 return SearchOutcome(
@@ -297,6 +302,55 @@ class TestSearchMetadataCache:
         assert len(cache) == 0
 
 
+class NativeStyleSearch:
+    """Stand-in for the native client: declares ``request_priority``."""
+
+    def __init__(self, search_window, weekends_only, nights, request_priority=0, **kwargs):
+        self.request_priority = request_priority
+        self.kwargs = kwargs
+
+
+class CamplyStyleSearch:
+    """Stand-in for a camply provider: rejects an unknown kwarg."""
+
+    def __init__(self, search_window, weekends_only, nights, campgrounds=None):
+        self.campgrounds = campgrounds
+
+
+class TestRequestPriorityForwarding:
+    """Scan priority reaches request-prioritising searchers only."""
+
+    @staticmethod
+    def _build(monkeypatch, search_class, priority):
+        monkeypatch.setitem(PROVIDER_MAP, "Fake", search_class)
+        return build_searcher(
+            {"provider": "Fake", "campground_id": 1},
+            make_window(),
+            make_args(),
+            priority,
+        )
+
+    def test_dashboard_priority_reaches_native_constructor(self, monkeypatch):
+        searcher = self._build(monkeypatch, NativeStyleSearch, PRIORITY_DASHBOARD)
+
+        assert searcher.request_priority == PRIORITY_DASHBOARD
+
+    def test_alert_priority_reaches_native_constructor(self, monkeypatch):
+        searcher = self._build(monkeypatch, NativeStyleSearch, PRIORITY_ALERT)
+
+        assert searcher.request_priority == PRIORITY_ALERT
+
+    def test_priority_is_not_passed_to_camply_style_constructor(self, monkeypatch):
+        # A TypeError here would mean the unsupported kwarg leaked through.
+        searcher = self._build(monkeypatch, CamplyStyleSearch, PRIORITY_DASHBOARD)
+
+        assert searcher.campgrounds == [1]
+
+    def test_native_recreation_client_declares_request_priority(self):
+        assert _supports_request_priority(NativeSearchRecreationDotGov) is True
+        assert _supports_request_priority(CamplyStyleSearch) is False
+
+
 def test_constructor_introspection_is_cached():
     class RequiredRecreationArea:
         def __init__(self, recreation_area):
@@ -318,7 +372,7 @@ def test_search_payload_reuses_cached_metadata(monkeypatch):
     searchers = []
     metadata_fetches = []
 
-    def fake_build_searcher(entry, search_window, args):
+    def fake_build_searcher(entry, search_window, args, priority=PRIORITY_ALERT):
         searcher = SimpleNamespace(
             campgrounds=[campground],
             campsite_metadata=None,

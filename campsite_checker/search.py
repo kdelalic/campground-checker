@@ -141,6 +141,16 @@ def _requires_recreation_area(search_class: type) -> bool:
     return param is not None and param.default is inspect.Parameter.empty
 
 
+@lru_cache(maxsize=None)
+def _supports_request_priority(search_class: type) -> bool:
+    """Whether a searcher accepts an explicit ``request_priority`` kwarg.
+
+    Camply-backed providers do not, so scan priority is only forwarded to
+    classes that declare it by name.
+    """
+    return "request_priority" in inspect.signature(search_class.__init__).parameters
+
+
 def _batch_key(entry: dict, args) -> tuple | None:
     """Return a compatibility key, or None when an entry must run alone."""
     campground_id = entry.get("campground_id")
@@ -205,7 +215,12 @@ def build_search_batches(entries: list[dict], args) -> list[SearchBatch]:
     return batches
 
 
-def build_searcher(entry: dict, search_window: SearchWindow, args):
+def build_searcher(
+    entry: dict,
+    search_window: SearchWindow,
+    args,
+    priority: int = PRIORITY_ALERT,
+):
     provider_name = entry.get("provider", "RecreationDotGov")
     search_class = PROVIDER_MAP[provider_name]
 
@@ -214,6 +229,11 @@ def build_searcher(entry: dict, search_window: SearchWindow, args):
         weekends_only=_effective_weekends_only(entry, args),
         nights=_effective_nights(entry, args),
     )
+
+    if _supports_request_priority(search_class):
+        # Alert requests outrank dashboard requests inside the provider's
+        # shared request gate, not just in the dispatcher queue.
+        kwargs["request_priority"] = priority
 
     if entry.get("campground_id"):
         kwargs["campgrounds"] = _as_list(entry["campground_id"])
@@ -279,11 +299,16 @@ def _resolved_searcher_names(searcher) -> tuple[dict[str, str], str | None]:
     return names, aggregate
 
 
-def _search_payload(entry: dict, search_window: SearchWindow, args) -> SearchOutcome:
+def _search_payload(
+    entry: dict,
+    search_window: SearchWindow,
+    args,
+    priority: int = PRIORITY_ALERT,
+) -> SearchOutcome:
     start = time.monotonic()
     label = entry.get("campground_id") or entry.get("recreation_area") or "unknown"
     try:
-        searcher = build_searcher(entry, search_window, args)
+        searcher = build_searcher(entry, search_window, args, priority)
         resolved_names, resolved_name = _resolved_searcher_names(searcher)
         metadata_cacheable = hasattr(searcher, "campsite_metadata")
         metadata_hit = SEARCH_METADATA_CACHE.hydrate(
@@ -357,14 +382,19 @@ def _entry_display_name(entry: dict, results: list[AvailableCampsite]) -> str:
     return f"campground {identifier}"
 
 
-def _run_batch(batch: SearchBatch, search_window: SearchWindow, args) -> SearchOutcome:
+def _run_batch(
+    batch: SearchBatch,
+    search_window: SearchWindow,
+    args,
+    priority: int = PRIORITY_ALERT,
+) -> SearchOutcome:
     """Execute one batch and record its throttle outcome before completion.
 
     Recording the rate limit inside the worker keeps cooldown activation
     ordered before the dispatcher's next dispatch decision, so queued work
     from any scan type observes it immediately.
     """
-    outcome = _search_payload(batch.search_entry, search_window, args)
+    outcome = _search_payload(batch.search_entry, search_window, args, priority)
     if outcome.rate_limited:
         delay = PROVIDER_THROTTLES.record_rate_limit(
             batch.provider,
@@ -394,7 +424,9 @@ def execute_searches(
 
     ``--workers`` bounds concurrently executing batches across all overlapping
     scans, per-provider ``--search-delay`` pacing is global, and provider
-    cooldowns are enforced when each batch is dispatched.
+    cooldowns are enforced when each batch is dispatched. ``priority`` orders
+    queued batches and is forwarded to searchers that prioritise individual
+    requests (currently the native Recreation.gov client).
     """
     results_by_index: dict[int, tuple[dict, list[AvailableCampsite], str | None]] = {}
     batches = build_search_batches(entries, args)
@@ -434,7 +466,7 @@ def execute_searches(
     for batch in batches:
         try:
             future = dispatcher.submit(
-                partial(_run_batch, batch, search_window, args),
+                partial(_run_batch, batch, search_window, args, priority),
                 provider=batch.provider,
                 priority=priority,
             )

@@ -7,10 +7,12 @@ client does not inherit Camply's 100-minute retry window.
 
 from __future__ import annotations
 
+import heapq
 import logging
 import threading
 import time
 from collections import OrderedDict, defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Callable
@@ -18,6 +20,8 @@ from typing import Callable
 import requests
 from camply.containers import AvailableCampsite, CampgroundFacility, SearchWindow
 from camply.providers import RecreationDotGov
+
+from ..throttle import detect_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +34,12 @@ DEFAULT_READ_TIMEOUT_SECONDS = 7
 DEFAULT_REQUEST_TIMEOUT = (DEFAULT_CONNECT_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS)
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
-REQUESTS_PER_SECOND = 3
+REQUESTS_PER_SECOND = 1
 MAX_CONCURRENT_REQUESTS = 2
+# Mirrors dispatch.PRIORITY_ALERT / PRIORITY_DASHBOARD without importing the
+# dispatcher into the provider layer.
+PRIORITY_ALERT_REQUEST = 0
+DEFAULT_RATE_LIMIT_PAUSE_SECONDS = 30.0
 
 # These are Camply's current values, copied deliberately so unknown future
 # statuses continue to surface as potentially bookable instead of silently
@@ -182,7 +190,22 @@ PROVIDER_REQUEST_METRICS = ProviderRequestMetrics()
 
 
 class RequestGate:
-    """Bound concurrent Recreation.gov calls and space aggregate request starts."""
+    """Order Recreation.gov request starts by priority under a shared rate limit.
+
+    Waiters are queued by ``(priority, arrival)`` — lower priority wins — so a
+    queued alert request takes the next available start even when dashboard
+    requests have been waiting longer. Aggregate start spacing and the
+    concurrency cap are preserved, and :meth:`defer` pauses every future start
+    so batches that are already executing stop issuing requests during a
+    provider cooldown.
+
+    An in-flight request is never preempted: an alert may still wait for one
+    outstanding request, bounded by the client's connect/read timeouts.
+    """
+
+    # Safety net so a missed notification degrades to a short re-check rather
+    # than a hang; all state changes also notify waiters.
+    _WAIT_TIMEOUT_SECONDS = 0.05
 
     def __init__(
         self,
@@ -192,25 +215,81 @@ class RequestGate:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ):
-        self._semaphore = threading.BoundedSemaphore(max_concurrent)
+        self._max_concurrent = max(1, int(max_concurrent))
         self._minimum_interval = 1 / requests_per_second
         self._clock = clock
         self._sleep = sleep
-        self._start_lock = threading.Lock()
+        self._cond = threading.Condition()
+        self._waiting: list[tuple[int, int]] = []
+        self._active = 0
+        self._seq = 0
         self._next_start = 0.0
 
+    @property
+    def pending_priorities(self) -> tuple[int, ...]:
+        """Priorities of the currently queued waiters, most favoured first."""
+        with self._cond:
+            return tuple(sorted(priority for priority, _seq in self._waiting))
+
+    def defer(self, seconds: float) -> None:
+        """Pause every future request start for at least ``seconds``."""
+        with self._cond:
+            self._next_start = max(self._next_start, self._clock() + max(0.0, seconds))
+            self._cond.notify_all()
+
+    @contextmanager
+    def slot(self, priority: int = PRIORITY_ALERT_REQUEST):
+        self._acquire(priority)
+        try:
+            yield self
+        finally:
+            self._release()
+
     def __enter__(self):
-        self._semaphore.acquire()
-        with self._start_lock:
-            delay = max(0.0, self._next_start - self._clock())
-            if delay:
-                self._sleep(delay)
-            self._next_start = self._clock() + self._minimum_interval
+        self._acquire(PRIORITY_ALERT_REQUEST)
         return self
 
     def __exit__(self, exc_type, exc, traceback):
-        self._semaphore.release()
+        self._release()
         return False
+
+    def _acquire(self, priority: int) -> None:
+        with self._cond:
+            ticket = (priority, self._seq)
+            self._seq += 1
+            heapq.heappush(self._waiting, ticket)
+            self._cond.notify_all()
+        try:
+            while True:
+                with self._cond:
+                    if self._active < self._max_concurrent and self._waiting[0] == ticket:
+                        delay = max(0.0, self._next_start - self._clock())
+                        if not delay:
+                            heapq.heappop(self._waiting)
+                            self._active += 1
+                            self._next_start = self._clock() + self._minimum_interval
+                            self._cond.notify_all()
+                            return
+                    else:
+                        delay = None
+                    if delay is None:
+                        self._cond.wait(self._WAIT_TIMEOUT_SECONDS)
+                        continue
+                # Only the favoured waiter sleeps out the start spacing, and it
+                # does so outside the lock so releases and defers stay prompt.
+                self._sleep(delay)
+        except BaseException:
+            with self._cond:
+                if ticket in self._waiting:
+                    self._waiting.remove(ticket)
+                    heapq.heapify(self._waiting)
+                    self._cond.notify_all()
+            raise
+
+    def _release(self) -> None:
+        with self._cond:
+            self._active -= 1
+            self._cond.notify_all()
 
 
 REC_GOV_REQUEST_GATE = RequestGate()
@@ -249,6 +328,7 @@ class NativeSearchRecreationDotGov:
         sleep: Callable[[float], None] = time.sleep,
         request_gate: RequestGate | None = None,
         request_metrics: ProviderRequestMetrics | None = None,
+        request_priority: int = PRIORITY_ALERT_REQUEST,
         **_kwargs,
     ):
         if not any((campgrounds, recreation_area, campsites)):
@@ -264,6 +344,7 @@ class NativeSearchRecreationDotGov:
         self._sleep = sleep
         self._request_gate = request_gate or REC_GOV_REQUEST_GATE
         self._request_metrics = request_metrics or PROVIDER_REQUEST_METRICS
+        self.request_priority = request_priority
 
         provider = self.provider_class()
         self.campgrounds = provider.find_campgrounds(
@@ -284,6 +365,21 @@ class NativeSearchRecreationDotGov:
                 day += timedelta(days=1)
         return days
 
+    def _pause_gate_if_rate_limited(self, response) -> None:
+        """Raise for error responses, deferring the shared gate on HTTP 429."""
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            detection = detect_rate_limit(exc)
+            if detection.rate_limited:
+                pause = detection.retry_after_seconds or DEFAULT_RATE_LIMIT_PAUSE_SECONDS
+                self._request_gate.defer(pause)
+                logger.warning(
+                    "Recreation.gov rate limited; pausing all requests for %.0fs",
+                    pause,
+                )
+            raise
+
     def _request_month(self, facility_id: int | str, month: date) -> dict:
         url = AVAILABILITY_URL.format(facility_id=facility_id)
         params = {"start_date": month.strftime("%Y-%m-01T00:00:00.000Z")}
@@ -292,14 +388,17 @@ class NativeSearchRecreationDotGov:
         for attempt in range(DEFAULT_MAX_ATTEMPTS):
             self._request_metrics.record_attempt(self.provider_name)
             try:
-                with self._request_gate:
+                with self._request_gate.slot(self.request_priority):
                     response = self.session.get(
                         url,
                         params=params,
                         headers=REQUEST_HEADERS,
                         timeout=DEFAULT_REQUEST_TIMEOUT,
                     )
-                response.raise_for_status()
+                    # Pause the shared gate before releasing the slot so batches
+                    # already executing stop issuing requests immediately,
+                    # rather than after their own next 429.
+                    self._pause_gate_if_rate_limited(response)
                 return response.json()
             except (requests.Timeout, requests.ConnectionError) as exc:
                 last_error = exc

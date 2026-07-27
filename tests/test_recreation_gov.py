@@ -1,7 +1,9 @@
 """Contract and retry tests for the native Recreation.gov search."""
 
 import json
-from contextlib import nullcontext
+import threading
+import time
+from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -23,6 +25,8 @@ from campsite_checker.results import process_results
 from campsite_checker.throttle import detect_rate_limit
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "recreation_gov_availability.json"
+PRIORITY_ALERT = 0
+PRIORITY_DASHBOARD = 1
 
 
 def make_facility(
@@ -83,12 +87,37 @@ class FakeIdentityProvider:
         return [make_facility()]
 
 
+class ImmediateGate:
+    """Records slot priorities and deferrals without any real waiting."""
+
+    def __init__(self):
+        self.priorities = []
+        self.deferrals = []
+
+    @contextmanager
+    def slot(self, priority=PRIORITY_ALERT):
+        self.priorities.append(priority)
+        yield self
+
+    def defer(self, seconds):
+        self.deferrals.append(seconds)
+
+
 @pytest.fixture
 def availability_payload():
     return json.loads(FIXTURE_PATH.read_text())
 
 
-def make_search(monkeypatch, *, session, nights=1, metrics=None, campsites=None):
+def make_search(
+    monkeypatch,
+    *,
+    session,
+    nights=1,
+    metrics=None,
+    campsites=None,
+    request_gate=None,
+    request_priority=PRIORITY_ALERT,
+):
     monkeypatch.setattr(
         NativeSearchRecreationDotGov,
         "provider_class",
@@ -104,8 +133,9 @@ def make_search(monkeypatch, *, session, nights=1, metrics=None, campsites=None)
         nights=nights,
         session=session,
         sleep=lambda _seconds: None,
-        request_gate=nullcontext(),
+        request_gate=request_gate or ImmediateGate(),
         request_metrics=metrics or ProviderRequestMetrics(),
+        request_priority=request_priority,
     )
 
 
@@ -181,13 +211,16 @@ def test_retryable_server_errors_use_short_bounded_retry(monkeypatch):
     assert all(call[1]["timeout"] == DEFAULT_REQUEST_TIMEOUT for call in session.calls)
 
 
-def test_429_fails_immediately_for_existing_provider_cooldown(monkeypatch):
+def test_429_fails_immediately_and_defers_gate_by_retry_after(monkeypatch):
     metrics = ProviderRequestMetrics()
+    gate = ImmediateGate()
     response = FakeResponse(status_code=429, headers={"Retry-After": "75"})
     search = make_search(
         monkeypatch,
         session=QueueSession(response),
         metrics=metrics,
+        request_gate=gate,
+        request_priority=PRIORITY_DASHBOARD,
     )
 
     with pytest.raises(requests.HTTPError) as exc_info:
@@ -196,8 +229,42 @@ def test_429_fails_immediately_for_existing_provider_cooldown(monkeypatch):
     detection = detect_rate_limit(exc_info.value)
     assert detection.rate_limited is True
     assert detection.retry_after_seconds == 75
+    # The pause is applied while the slot is still held, so batches already
+    # executing stop issuing requests too.
+    assert gate.deferrals == [75]
+    assert gate.priorities == [PRIORITY_DASHBOARD]
     snapshot = metrics.snapshot()[0]
     assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (1, 0, 1)
+
+
+def test_429_without_retry_after_defers_gate_by_default_pause(monkeypatch):
+    gate = ImmediateGate()
+    search = make_search(
+        monkeypatch,
+        session=QueueSession(FakeResponse(status_code=429)),
+        request_gate=gate,
+    )
+
+    with pytest.raises(requests.HTTPError):
+        search._request_month(232447, date(2099, 8, 1))
+
+    assert gate.deferrals == [30]
+
+
+def test_server_errors_do_not_defer_the_shared_gate(monkeypatch):
+    gate = ImmediateGate()
+    search = make_search(
+        monkeypatch,
+        session=QueueSession(
+            FakeResponse(status_code=500),
+            FakeResponse(payload={"campsites": {}}),
+        ),
+        request_gate=gate,
+    )
+    search._sleep = lambda _seconds: None
+
+    assert search._request_month(232447, date(2099, 8, 1)) == {"campsites": {}}
+    assert gate.deferrals == []
 
 
 def test_timeouts_stop_after_three_attempts(monkeypatch):
@@ -250,6 +317,68 @@ def test_request_gate_spaces_provider_request_starts():
         pass
 
     assert sleeps == [0.5]
+
+
+def test_request_gate_defer_pauses_all_future_starts():
+    now = [10.0]
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    gate = RequestGate(
+        max_concurrent=2,
+        requests_per_second=1,
+        clock=lambda: now[0],
+        sleep=sleep,
+    )
+
+    gate.defer(75)
+    with gate.slot(PRIORITY_DASHBOARD):
+        pass
+    with gate.slot(PRIORITY_ALERT):
+        pass
+
+    # The deferral holds every start back, then normal spacing resumes.
+    assert sleeps == [75, 1.0]
+
+
+def _wait_for(predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.005)
+    return False
+
+
+def test_queued_alert_request_starts_before_older_dashboard_request():
+    gate = RequestGate(max_concurrent=1, requests_per_second=1000)
+    order = []
+    lock = threading.Lock()
+
+    def waiter(name, priority):
+        def run():
+            with gate.slot(priority):
+                with lock:
+                    order.append(name)
+
+        return run
+
+    with gate.slot(PRIORITY_DASHBOARD):
+        # The dashboard request queues first, the alert request arrives later.
+        dashboard = threading.Thread(target=waiter("dashboard", PRIORITY_DASHBOARD))
+        dashboard.start()
+        assert _wait_for(lambda: gate.pending_priorities == (PRIORITY_DASHBOARD,))
+        alert = threading.Thread(target=waiter("alert", PRIORITY_ALERT))
+        alert.start()
+        assert _wait_for(lambda: gate.pending_priorities == (PRIORITY_ALERT, PRIORITY_DASHBOARD))
+
+    alert.join(5.0)
+    dashboard.join(5.0)
+
+    assert order == ["alert", "dashboard"]
 
 
 class TestFacilityIdentityCache:

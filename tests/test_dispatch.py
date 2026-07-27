@@ -177,14 +177,9 @@ class TestPriority:
         dash2.release.set()
         assert dash2_future.result(timeout=TIMEOUT) == "dash2"
 
-    def test_dashboard_work_promoted_under_sustained_alert_load(self, dispatchers, registry):
+    def test_aged_dashboard_work_never_overtakes_newer_alert_work(self, dispatchers, registry):
         clock = FakeClock()
-        dispatcher = dispatchers(
-            workers=2,
-            throttles=registry,
-            clock=clock,
-            dashboard_promotion_seconds=50,
-        )
+        dispatcher = dispatchers(workers=2, throttles=registry, clock=clock)
         order = []
         lock = threading.Lock()
         blockers = [Task("b1", order, lock), Task("b2", order, lock)]
@@ -198,13 +193,13 @@ class TestPriority:
         dash_future = dispatcher.submit(dash, provider="X", priority=PRIORITY_DASHBOARD)
         alert_future = dispatcher.submit(alert, provider="X", priority=PRIORITY_ALERT)
 
-        # The dashboard batch ages past the promotion threshold, so it is
-        # selected ahead of newer alert work when a slot frees up.
-        clock.advance(60)
+        # However long the dashboard batch has waited, alert work still wins
+        # the freed slot: alerts are never queued behind dashboard scans.
+        clock.advance(3600)
         blockers[0].release.set()
-        assert dash_future.result(timeout=TIMEOUT) == "dash"
         assert alert_future.result(timeout=TIMEOUT) == "alert"
-        assert order.index("dash") < order.index("alert")
+        assert dash_future.result(timeout=TIMEOUT) == "dash"
+        assert order.index("alert") < order.index("dash")
         blockers[1].release.set()
 
 
@@ -350,7 +345,7 @@ class TestExecuteSearchesCoordination:
         dashboard_started = threading.Event()
         release_dashboard = threading.Event()
 
-        def fake_payload(entry, search_window, args):
+        def fake_payload(entry, search_window, args, priority=PRIORITY_ALERT):
             if entry["provider"] == "ReserveCalifornia":
                 dashboard_started.set()
                 assert release_dashboard.wait(TIMEOUT)
@@ -396,7 +391,7 @@ class TestExecuteSearchesCoordination:
     def test_single_run_default_priority_reuses_global_dispatcher(self, monkeypatch, registry):
         monkeypatch.setattr("campsite_checker.search.PROVIDER_THROTTLES", registry)
 
-        def fake_payload(entry, search_window, args):
+        def fake_payload(entry, search_window, args, priority=PRIORITY_ALERT):
             return SearchOutcome([], None, 0.01, {}, None)
 
         monkeypatch.setattr("campsite_checker.search._search_payload", fake_payload)
@@ -416,7 +411,7 @@ class TestExecuteSearchesCoordination:
         started = threading.Event()
         release = threading.Event()
 
-        def fake_payload(entry, search_window, args):
+        def fake_payload(entry, search_window, args, priority=PRIORITY_ALERT):
             started.set()
             assert release.wait(TIMEOUT)
             return SearchOutcome([], None, 0.01, {}, None)

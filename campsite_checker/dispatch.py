@@ -6,14 +6,13 @@ search batches across the whole process rather than per scan.
 
 Scheduling semantics:
 
-- Queued alert work is always selected ahead of queued dashboard work.
+- Queued alert work is always selected ahead of queued dashboard work, however
+  long that dashboard work has waited. Alerts are the latency-sensitive path,
+  so they never queue behind dashboard scans.
 - Dashboard work may occupy at most ``workers - 1`` slots when ``workers > 1``,
   so one slot always drains toward alert work. With ``workers == 1`` the single
   slot is shared: a dashboard batch may occupy it, and alert work runs next as
   soon as the in-flight batch finishes (strict priority in the queue).
-- A dashboard batch that has waited longer than ``dashboard_promotion_seconds``
-  is ordered like alert work (still subject to the dashboard slot cap), so
-  sustained alert load cannot starve dashboard scans indefinitely.
 - ``--search-delay`` pacing is tracked per provider inside the dispatcher, so
   overlapping scans share one submission schedule per provider.
 - Provider cooldowns are checked when work is dispatched: once a cooldown
@@ -35,8 +34,6 @@ logger = logging.getLogger(__name__)
 PRIORITY_ALERT = 0
 PRIORITY_DASHBOARD = 1
 
-DASHBOARD_PROMOTION_SECONDS = 60.0
-
 
 class ProviderCooldownActive(Exception):
     """Raised on a queued search's future when its provider cooldown is active."""
@@ -54,7 +51,6 @@ class _PendingWork:
     priority: int
     future: concurrent.futures.Future = field(default_factory=concurrent.futures.Future)
     seq: int = 0
-    enqueued_at: float = 0.0
 
 
 class SearchDispatcher:
@@ -67,11 +63,9 @@ class SearchDispatcher:
         *,
         throttles: ProviderThrottleRegistry | None = None,
         clock: Callable[[], float] = time.monotonic,
-        dashboard_promotion_seconds: float = DASHBOARD_PROMOTION_SECONDS,
     ):
         self.workers = max(1, int(workers))
         self.search_delay = max(0.0, float(search_delay))
-        self.dashboard_promotion_seconds = max(0.0, float(dashboard_promotion_seconds))
         self.throttles = throttles if throttles is not None else PROVIDER_THROTTLES
         self._clock = clock
         self._cond = threading.Condition()
@@ -128,7 +122,6 @@ class SearchDispatcher:
             if self._shutdown:
                 raise RuntimeError("SearchDispatcher is shut down")
             work.seq = self._seq
-            work.enqueued_at = self._clock()
             self._seq += 1
             self._pending.append(work)
             self._cond.notify_all()
@@ -197,10 +190,7 @@ class SearchDispatcher:
                     pacing_wait if wait_seconds is None else min(wait_seconds, pacing_wait)
                 )
                 continue
-            promoted = work.priority == PRIORITY_ALERT or (
-                now - work.enqueued_at >= self.dashboard_promotion_seconds
-            )
-            key = (PRIORITY_ALERT if promoted else PRIORITY_DASHBOARD, work.seq)
+            key = (work.priority, work.seq)
             if best_key is None or key < best_key:
                 best_index, best_key = index, key
         return best_index, wait_seconds
