@@ -63,7 +63,13 @@ python check_campsites.py --forever --interval 10
 
 Compatible campgrounds are searched in bounded batches, and batches run
 concurrently. The defaults are four workers, four campgrounds per batch, and no
-extra submission delay:
+extra submission delay. In `--forever` mode the worker limit and per-provider
+submission delay are enforced process-wide across overlapping alert and
+dashboard scans: alert batches are dispatched ahead of queued dashboard
+batches, dashboard scans may use at most `workers - 1` slots so alert work
+never waits behind a full dashboard queue (with `--workers 1` the single slot
+is shared and alert work runs as soon as the in-flight batch finishes), and a
+dashboard batch queued for more than a minute is promoted so it cannot starve:
 
 ```bash
 # More concurrency for a host with sufficient memory and provider headroom

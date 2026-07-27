@@ -20,6 +20,7 @@ from .config import (
     parse_args,
     resolve_day_filter,
 )
+from .dispatch import PRIORITY_ALERT, PRIORITY_DASHBOARD, shutdown_dispatcher
 from .notify import (
     build_processed_telegram_message,
     filter_new_availability,
@@ -179,7 +180,8 @@ def run_once(
     search_tasks = expand_search_tasks(entries, day_filter)
     task_entries = [entry for _, entry, _ in search_tasks]
 
-    results_by_task = execute_searches(task_entries, search_window, args)
+    priority = PRIORITY_DASHBOARD if scan_type == "dashboard" else PRIORITY_ALERT
+    results_by_task = execute_searches(task_entries, search_window, args, priority=priority)
 
     # Collect, filter per-task, and merge results back per original entry
     errors: set[str] = set()
@@ -598,6 +600,7 @@ def run_forever(
         logger.info("\U0001f3d5  Stopped.")
     finally:
         dashboard_executor.shutdown(wait=False, cancel_futures=True)
+        shutdown_dispatcher(wait=False)
 
 
 def main() -> None:
@@ -631,14 +634,17 @@ def main() -> None:
             dashboard_path=dashboard_path,
         )
     else:
-        current_keys, found_entries, _ = run_once(
-            entries,
-            args,
-            day_filter,
-            tg_token,
-            tg_chat_id,
-            dashboard_path=dashboard_path,
-        )
+        try:
+            current_keys, found_entries, _ = run_once(
+                entries,
+                args,
+                day_filter,
+                tg_token,
+                tg_chat_id,
+                dashboard_path=dashboard_path,
+            )
+        finally:
+            shutdown_dispatcher(wait=False)
         _send_notifications(found_entries, tg_token, tg_chat_id)
 
         if dashboard_path:
