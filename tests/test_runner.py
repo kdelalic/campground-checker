@@ -1,6 +1,7 @@
 """Tests for polling, persistence, and garbage-collection helpers."""
 
 import threading
+import time
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -112,6 +113,9 @@ def _forever_entries():
 def test_alerts_continue_while_dashboard_scan_runs(monkeypatch, tmp_path):
     from campsite_checker.server import scan_status
 
+    # GitHub runners can have less uptime than the dashboard interval. Keep the
+    # monotonic clock near zero to verify the initial scan is still immediate.
+    monotonic_origin = time.monotonic()
     events = []
     sent_keys_path = tmp_path / "sent.json"
     alert_key = _key()
@@ -150,6 +154,10 @@ def test_alerts_continue_while_dashboard_scan_runs(monkeypatch, tmp_path):
         raise KeyboardInterrupt
 
     monkeypatch.setattr("campsite_checker.runner.run_once", fake_run_once)
+    monkeypatch.setattr(
+        "campsite_checker.runner.monotonic",
+        lambda: time.monotonic() - monotonic_origin,
+    )
     monkeypatch.setattr(
         "campsite_checker.runner._send_notifications",
         fake_send_notifications,

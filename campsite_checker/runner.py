@@ -433,7 +433,10 @@ def run_forever(
         dashboard_publisher = DashboardPublisher(dashboard_path, r2_uploader)
 
     dashboard_interval = _resolve_dashboard_interval(args, raw_config)
-    last_dashboard_started: float = 0.0  # monotonic; 0 forces first-iteration scan
+    # Schedule the first dashboard scan immediately, regardless of host uptime.
+    # A zero sentinel does not work on freshly booted hosts whose monotonic clock
+    # is still below the configured interval.
+    last_dashboard_started = monotonic() - dashboard_interval * 60
     cached_dashboard_results: list[ProcessedAvailability] = []
     dashboard_snapshot_ready = False
     dashboard_executor = concurrent.futures.ThreadPoolExecutor(
