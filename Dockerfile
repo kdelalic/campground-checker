@@ -40,10 +40,10 @@ COPY check_campsites.py campsites.yaml ./
 RUN useradd --system --uid 10001 --user-group app && chown app:app /app
 USER app
 
-ENV WORKERS="2"
+ENV WORKERS="4"
 ENV ALERT_INTERVAL="1"
 ENV SEARCH_DELAY="1"
-ENV BATCH_SIZE="8"
+ENV BATCH_SIZE="4"
 ENV DASHBOARD_INTERVAL="10"
 ENV GC_INTERVAL="12"
 ENV THROTTLE_BASE_DELAY="30"
