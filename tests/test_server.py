@@ -4,6 +4,7 @@ import io
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
+from campsite_checker.recreation_gov import ProviderRequestMetrics
 from campsite_checker.server import CampgroundMetric, HealthCheckHandler, _ScanStatus
 from campsite_checker.throttle import ProviderThrottleRegistry
 
@@ -298,3 +299,24 @@ class TestPrometheusMetrics:
         assert (
             'campsite_checker_provider_rate_limit_events_total{provider="ReserveCalifornia"} 0'
         ) in metrics
+
+    def test_native_provider_request_metrics(self):
+        request_metrics = ProviderRequestMetrics()
+        request_metrics.record_attempt("RecreationDotGov")
+        request_metrics.record_attempt("RecreationDotGov")
+        request_metrics.record_retry("RecreationDotGov")
+        request_metrics.record_failure("RecreationDotGov")
+        status = _ScanStatus(request_metrics=request_metrics)
+
+        metrics = status.to_prometheus()
+
+        assert (
+            'campsite_checker_provider_request_attempts_total{provider="RecreationDotGov"} 2'
+        ) in metrics
+        assert (
+            'campsite_checker_provider_request_retries_total{provider="RecreationDotGov"} 1'
+        ) in metrics
+        assert (
+            'campsite_checker_provider_request_failures_total{provider="RecreationDotGov"} 1'
+        ) in metrics
+        assert status.to_dict()["provider_requests"][0]["retries"] == 1

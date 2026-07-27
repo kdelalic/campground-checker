@@ -133,6 +133,9 @@ def test_dashboard_visualizes_adaptive_provider_throttling():
     assert event_panel["type"] == "timeseries"
     assert cooldown_panel["type"] == "timeseries"
     assert "campsite_checker_provider_rate_limit_events_total" in event_panel["targets"][0]["expr"]
+    event_exprs = {target["expr"] for target in event_panel["targets"]}
+    assert any("campsite_checker_provider_request_retries_total" in expr for expr in event_exprs)
+    assert any("campsite_checker_provider_request_failures_total" in expr for expr in event_exprs)
     assert (
         "campsite_checker_provider_throttle_cooldown_seconds"
         in cooldown_panel["targets"][0]["expr"]

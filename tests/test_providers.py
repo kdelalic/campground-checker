@@ -7,14 +7,16 @@ from camply.containers import CampgroundFacility, SearchWindow
 from camply.providers import RecreationDotGov
 
 from campsite_checker.providers import (
-    FACILITY_IDENTITY_CACHE,
     PROVIDER_DISPLAY,
     PROVIDER_MAP,
     WEEKDAY_LABELS,
     WEEKDAY_NAMES,
+)
+from campsite_checker.recreation_gov import (
+    FACILITY_IDENTITY_CACHE,
     FacilityIdentityCache,
     IdentityCachedRecreationDotGov,
-    IdentityCachedSearchRecreationDotGov,
+    NativeSearchRecreationDotGov,
 )
 
 
@@ -191,24 +193,20 @@ class TestIdentityCachedRecreationDotGov:
         calls, facilities = parent_lookup
         start = date.today() + timedelta(days=30)
         window = SearchWindow(start_date=start, end_date=start + timedelta(days=2))
-        first = IdentityCachedSearchRecreationDotGov(
-            search_window=window, campgrounds=[232491], nights=1
-        )
-        second = IdentityCachedSearchRecreationDotGov(
-            search_window=window, campgrounds=[232491], nights=1
-        )
+        first = NativeSearchRecreationDotGov(search_window=window, campgrounds=[232491], nights=1)
+        second = NativeSearchRecreationDotGov(search_window=window, campgrounds=[232491], nights=1)
         assert calls == [[232491]]
         assert first.campgrounds == [facilities["232491"]]
         assert second.campgrounds == first.campgrounds
 
 
 class TestProviderMapWiring:
-    def test_recreation_dot_gov_uses_identity_cached_search_class(self):
+    def test_recreation_dot_gov_uses_native_search_class(self):
         from camply.search import SearchRecreationDotGov
 
-        assert PROVIDER_MAP["RecreationDotGov"] is IdentityCachedSearchRecreationDotGov
-        assert issubclass(IdentityCachedSearchRecreationDotGov, SearchRecreationDotGov)
-        assert IdentityCachedSearchRecreationDotGov.provider_class is IdentityCachedRecreationDotGov
+        assert PROVIDER_MAP["RecreationDotGov"] is NativeSearchRecreationDotGov
+        assert not issubclass(NativeSearchRecreationDotGov, SearchRecreationDotGov)
+        assert NativeSearchRecreationDotGov.provider_class is IdentityCachedRecreationDotGov
 
 
 class TestTimeoutReserveCalifornia:

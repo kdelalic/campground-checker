@@ -1,0 +1,33 @@
+{
+  "count": 2,
+  "campsites": {
+    "100": {
+      "availabilities": {
+        "2099-08-05T00:00:00Z": "Available",
+        "2099-08-06T00:00:00Z": "Available",
+        "2099-08-07T00:00:00Z": "Reserved",
+        "2099-08-08T00:00:00Z": "Available"
+      },
+      "campsite_id": "100",
+      "campsite_type": "STANDARD NONELECTRIC",
+      "loop": "Bay View",
+      "max_num_people": 8,
+      "min_num_people": 1,
+      "site": "A100",
+      "type_of_use": "Overnight"
+    },
+    "200": {
+      "availabilities": {
+        "2099-08-05T00:00:00Z": "Open",
+        "2099-08-06T00:00:00Z": "Available"
+      },
+      "campsite_id": "200",
+      "campsite_type": "TENT ONLY NONELECTRIC",
+      "loop": "Ridge",
+      "max_num_people": 6,
+      "min_num_people": 1,
+      "site": "B200",
+      "type_of_use": "Overnight"
+    }
+  }
+}

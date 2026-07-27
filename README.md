@@ -1,6 +1,7 @@
 # campsite-checker
 
-Check campsite availability across Recreation.gov, Yellowstone, California State Parks, and GoingToCamp using the [camply](https://github.com/juftin/camply) library.
+Check campsite availability across Recreation.gov with a native API client, plus
+Yellowstone, California State Parks, and GoingToCamp through [camply](https://github.com/juftin/camply).
 
 ## Setup
 
@@ -49,7 +50,7 @@ python check_campsites.py --all-days
 # Require at least 2 consecutive nights (overrides config)
 python check_campsites.py --nights 2
 
-# Show camply's internal search logs
+# Show provider search logs
 python check_campsites.py --verbose
 
 # Poll continuously every 5 minutes (Ctrl+C to stop)
@@ -93,19 +94,26 @@ The container searches alert-enabled campgrounds every minute, refreshes
 dashboard-only campgrounds every 10 minutes, and applies a one-second
 per-provider batch submission delay. These remain configurable with the
 `ALERT_INTERVAL`, `DASHBOARD_INTERVAL`, and `SEARCH_DELAY` environment variables.
-If a provider still returns HTTP 429 after Camply's retries, the checker skips
-that provider's queued work and applies an adaptive cooldown. The cooldown
-starts at 30 seconds, doubles on consecutive rate limits, honors a longer
-`Retry-After` response, and caps the computed exponential backoff at 15 minutes.
-A successful request begun after the most recent rate limit resets the backoff
-streak. Configure the bounds with `THROTTLE_BASE_DELAY` and
-`THROTTLE_MAX_DELAY` (seconds).
+Recreation.gov availability is fetched by the native client rather than
+Camply. Each request has a 3-second connect timeout and 7-second read timeout and
+retries only connection failures, timeouts, and HTTP 5xx responses. It stops
+after three attempts with 1- and
+2-second delays. HTTP 429 and other 4xx responses are not retried in the request
+path. Recreation.gov starts are limited process-wide to three per second with
+at most two requests in flight, so overlapping alert and dashboard scans cannot
+multiply provider load without bound.
 
-In continuous mode, stable Recreation.gov campsite metadata is cached for up to
-24 hours. Resolved Recreation.gov facility identities (campground name and
-recreation area) are also cached for 24 hours, which removes one RIDB API round
-trip per campground from every scan's searcher construction; transient lookup
-failures are never cached and are retried on the next scan. Dashboard files and
+When any provider returns HTTP 429, the checker skips that provider's queued
+work and applies an adaptive cooldown. The cooldown starts at 30 seconds,
+doubles on consecutive rate limits, honors a longer `Retry-After` response, and
+caps the computed exponential backoff at 15 minutes. A successful request begun
+after the most recent rate limit resets the backoff streak. Configure the bounds
+with `THROTTLE_BASE_DELAY` and `THROTTLE_MAX_DELAY` (seconds).
+
+Resolved Recreation.gov facility identities (campground name and recreation
+area) are cached for 24 hours, which removes one RIDB API round trip per
+campground from every scan's searcher construction; transient lookup failures
+are never cached and are retried on the next scan. Dashboard files and
 R2 objects are only updated when semantic availability changes, plus a
 once-per-hour freshness republish so the page's "Last updated" timestamp stays
 distinguishable from a stopped checker; failed uploads are retried without
@@ -165,10 +173,13 @@ These metrics are emitted once per provider, using the `provider` label:
 
 | Metric | Type | Description |
 | --- | --- | --- |
-| `campsite_checker_provider_rate_limit_events_total` | Counter | Rate-limit responses observed after Camply's request retries were exhausted. |
+| `campsite_checker_provider_rate_limit_events_total` | Counter | Rate-limit responses handed to the adaptive provider cooldown. |
 | `campsite_checker_provider_throttle_cooldown_seconds` | Gauge | Seconds remaining in the provider's adaptive cooldown. |
 | `campsite_checker_provider_throttle_last_backoff_seconds` | Gauge | Most recent cooldown applied to the provider. |
 | `campsite_checker_provider_consecutive_rate_limits` | Gauge | Consecutive rate limits without a subsequent successful request. |
+| `campsite_checker_provider_request_attempts_total` | Counter | Native provider HTTP request attempts, including retries. |
+| `campsite_checker_provider_request_retries_total` | Counter | Native provider HTTP retries after connection failures, timeouts, or 5xx responses. |
+| `campsite_checker_provider_request_failures_total` | Counter | Native provider HTTP requests that failed without a retry or exhausted all attempts. |
 
 These metrics are emitted once per configured campground:
 

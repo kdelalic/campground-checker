@@ -1922,7 +1922,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Provider rate-limit responses per hour that remained after Camply exhausted its request retries, averaged over at least an hour.",
+      "description": "Provider rate limits, native request retries, and native request failures per hour, averaged over at least an hour.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2008,6 +2008,32 @@
           "legendFormat": "{{provider}}",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (provider) (rate(campsite_checker_provider_request_retries_total{provider=~\"$provider\"}[$__rate_interval])) * 3600",
+          "instant": false,
+          "interval": "1h",
+          "legendFormat": "{{provider}} retries",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (provider) (rate(campsite_checker_provider_request_failures_total{provider=~\"$provider\"}[$__rate_interval])) * 3600",
+          "instant": false,
+          "interval": "1h",
+          "legendFormat": "{{provider}} failures",
+          "range": true,
+          "refId": "C"
         }
       ],
       "title": "Provider Rate-limit Events",

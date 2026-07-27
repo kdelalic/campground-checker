@@ -47,6 +47,7 @@ Thumbs.db
 *.json
 !grafana/
 !grafana/*.json
+!tests/fixtures/*.json
 *.log
 
 dashboard.html

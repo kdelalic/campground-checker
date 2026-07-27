@@ -6,6 +6,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from .recreation_gov import PROVIDER_REQUEST_METRICS, ProviderRequestMetrics
 from .throttle import PROVIDER_THROTTLES, ProviderThrottleRegistry
 
 logger = logging.getLogger(__name__)
@@ -83,9 +84,14 @@ class CampgroundMetric:
 class _ScanStatus:
     """Tracks scan metrics for the health check endpoint."""
 
-    def __init__(self, throttle_registry: ProviderThrottleRegistry | None = None):
+    def __init__(
+        self,
+        throttle_registry: ProviderThrottleRegistry | None = None,
+        request_metrics: ProviderRequestMetrics | None = None,
+    ):
         self._lock = threading.RLock()
         self.throttle_registry = throttle_registry or PROVIDER_THROTTLES
+        self.request_metrics = request_metrics or PROVIDER_REQUEST_METRICS
         self.start_time = datetime.now(timezone.utc)
         self.last_scan_time: datetime | None = None
         self.last_alert_scan: datetime | None = None
@@ -188,6 +194,7 @@ class _ScanStatus:
         with self._lock:
             uptime = (datetime.now(timezone.utc) - self.start_time).total_seconds()
             provider_throttles = self.throttle_registry.snapshot()
+            provider_requests = self.request_metrics.snapshot()
             return {
                 "status": "ok" if self.is_healthy() else "unhealthy",
                 "uptime_seconds": int(uptime),
@@ -225,6 +232,15 @@ class _ScanStatus:
                         "last_backoff_seconds": throttle.last_backoff_seconds,
                     }
                     for throttle in provider_throttles
+                ],
+                "provider_requests": [
+                    {
+                        "provider": request.provider,
+                        "attempts": request.attempts,
+                        "retries": request.retries,
+                        "failures": request.failures,
+                    }
+                    for request in provider_requests
                 ],
             }
 
@@ -357,6 +373,7 @@ class _ScanStatus:
             )
             campgrounds = self.campgrounds
             provider_throttles = self.throttle_registry.snapshot()
+            provider_requests = self.request_metrics.snapshot()
 
         lines = []
         for name, help_text, metric_type, value in metrics:
@@ -421,6 +438,29 @@ class _ScanStatus:
                 f'{name}{{provider="{_escape_label_value(throttle.provider)}"}} '
                 f"{get_value(throttle)}"
                 for throttle in provider_throttles
+            )
+        provider_request_metrics = (
+            (
+                "campsite_checker_provider_request_attempts_total",
+                "HTTP request attempts made by the native provider client.",
+                lambda request: request.attempts,
+            ),
+            (
+                "campsite_checker_provider_request_retries_total",
+                "HTTP request retries made by the native provider client.",
+                lambda request: request.retries,
+            ),
+            (
+                "campsite_checker_provider_request_failures_total",
+                "HTTP requests that exhausted or bypassed native provider retries.",
+                lambda request: request.failures,
+            ),
+        )
+        for name, help_text, get_value in provider_request_metrics:
+            lines.extend((f"# HELP {name} {help_text}", f"# TYPE {name} counter"))
+            lines.extend(
+                f'{name}{{provider="{_escape_label_value(request.provider)}"}} {get_value(request)}'
+                for request in provider_requests
             )
         return "\n".join(lines) + "\n"
 
