@@ -8,6 +8,10 @@ from . import yaml_editor
 from .providers import PROVIDER_MAP, WEEKDAY_NAMES
 
 
+class DateWindowExhausted(Exception):
+    """Raised when the computed search window is empty (e.g. a fixed --end has passed)."""
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Check campsite availability using camply.",
@@ -192,7 +196,11 @@ def load_config(path: str) -> tuple[list[dict], dict]:
             cid = entry.get("campground_id")
             prov = entry.get("provider", "RecreationDotGov")
             if cid is not None:
-                parsed_name = names.get((prov, int(cid)))
+                try:
+                    parsed_name = names.get((prov, int(cid)))
+                except (TypeError, ValueError):
+                    # List or non-numeric campground_id: no comment lookup.
+                    parsed_name = None
                 if parsed_name:
                     entry["name"] = parsed_name
 
@@ -209,6 +217,8 @@ def load_config(path: str) -> tuple[list[dict], dict]:
         default_day_filter = parse_day_names(default_days)
 
     for i, entry in enumerate(entries):
+        # Stable identity for Prometheus series across alert-flag changes.
+        entry["_config_index"] = i
         label = f"entry #{i + 1}"
         if not entry.get("campground_id") and not entry.get("recreation_area"):
             sys.exit(f"Error in '{label}': must specify 'campground_id' or 'recreation_area'")
@@ -289,7 +299,9 @@ def compute_date_range(args: argparse.Namespace) -> tuple[datetime, datetime]:
         end_dt = datetime(future.year, future.month, future.day)
 
     if end_dt <= start_dt:
-        sys.exit("Error: --end must be after --start")
+        # Raised (not sys.exit) so --forever mode can stop the polling loop
+        # cleanly once a fixed --end date has passed.
+        raise DateWindowExhausted(f"end date {end_dt.date()} is not after start {start_dt.date()}")
 
     return start_dt, end_dt
 

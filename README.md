@@ -5,7 +5,7 @@ Check campsite availability across Recreation.gov, Yellowstone, California State
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+uv sync --all-extras
 ```
 
 ## Configuration
@@ -31,7 +31,7 @@ See [campsites.example.yaml](campsites.example.yaml) for all options and provide
 ## Usage
 
 ```bash
-# Check all campsites — next 3 months, Saturdays only (default)
+# Check all campsites — next ~6 months, Sundays only (default)
 python check_campsites.py
 
 # Use a different config file
@@ -106,18 +106,25 @@ In continuous mode, stable Recreation.gov campsite metadata is cached for up to
 recreation area) are also cached for 24 hours, which removes one RIDB API round
 trip per campground from every scan's searcher construction; transient lookup
 failures are never cached and are retried on the next scan. Dashboard files and
-R2 objects are only updated when semantic
-availability changes; failed uploads are retried without rebuilding unchanged
-HTML. Full garbage collection runs every 12 scans by default and logs its
+R2 objects are only updated when semantic availability changes, plus a
+once-per-hour freshness republish so the page's "Last updated" timestamp stays
+distinguishable from a stopped checker; failed uploads are retried without
+rebuilding unchanged HTML. Full garbage collection runs every 12 scans by
+default and logs its
 duration, object count, and resident-memory measurement.
 
 ## Monitoring
 
 Continuous mode starts an HTTP server on `PORT` (default `8000`):
 
-- `/` returns JSON health and scan status, with HTTP 503 when scans are stale.
+- `/` returns JSON health and scan status (including Telegram delivery counts
+  and bot-thread liveness), with HTTP 503 when scans are stale.
 - `/metrics` returns Prometheus text-format counters and gauges for scan health,
-  errors, duration, monitored campgrounds, current availability, and scan timestamps.
+  errors, duration, monitored campgrounds, current availability, notification
+  delivery, and scan timestamps.
+
+The provided `docker-compose.yml` wires this endpoint into a container
+healthcheck, so a stale checker shows up as an unhealthy container.
 
 Each configured campground also gets labeled
 `campsite_checker_campground_available` and
@@ -151,6 +158,8 @@ Process-wide metrics have no application-defined labels:
 | `campsite_checker_dashboard_scan_errors_total` | Counter | Background dashboard scans that ended with an error. |
 | `campsite_checker_dashboard_scan_in_progress` | Gauge | `1` while the background dashboard worker is scanning; otherwise `0`. |
 | `campsite_checker_last_dashboard_scan_duration_seconds` | Gauge | Duration of the latest completed background dashboard scan. |
+| `campsite_checker_notifications_sent_total` | Counter | Telegram alert messages delivered successfully. |
+| `campsite_checker_notifications_failed_total` | Counter | Telegram alert messages that failed to send. Failed sends defer the dedup checkpoint, so the availability is retried on the next scan instead of being lost. |
 
 These metrics are emitted once per provider, using the `provider` label:
 
@@ -173,7 +182,7 @@ All three per-campground metrics use the same labels:
 
 | Label | Description |
 | --- | --- |
-| `config_index` | Runtime index that keeps otherwise duplicate configured entries as distinct Prometheus series. |
+| `config_index` | Position of the entry in `campsites.yaml` (stable across alert-flag changes), keeping otherwise duplicate configured entries as distinct Prometheus series. |
 | `provider` | Camply provider, such as `RecreationDotGov` or `ReserveCalifornia`. |
 | `campground_id` | Configured campground ID, or an empty string when unused. Lists are comma-separated. |
 | `recreation_area` | Configured recreation-area ID, or an empty string when unused. Lists are comma-separated. |
@@ -235,6 +244,9 @@ campsite_checker_provider_throttle_cooldown_seconds > 0
 
 # Provider rate-limit responses observed in the last hour
 increase(campsite_checker_provider_rate_limit_events_total[1h]) > 0
+
+# Telegram alert deliveries that failed in the last hour
+increase(campsite_checker_notifications_failed_total[1h]) > 0
 ```
 
 ## Telegram Notifications
@@ -275,8 +287,11 @@ campsites:
 python check_campsites.py --forever --interval 5
 ```
 
-In `--forever` mode, Telegram messages are only sent for *newly appeared* availability
-(i.e. sites that weren't found in the previous scan), so you won't get spammed.
+In `--forever` mode, Telegram messages are only sent for availability you have
+not already been alerted about (deduplicated per provider, campground, site,
+and date — persisted across restarts), so you won't get spammed. If a send
+fails, the dedup checkpoint is deferred and the alert is retried on the next
+scan.
 
 ## Finding Campground IDs
 

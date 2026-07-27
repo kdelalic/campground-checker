@@ -75,6 +75,54 @@ class TestScanStatusUpdate:
         assert status.available_sites_count == 11
         assert status.last_scan_duration_seconds == 3.5
 
+    def test_error_update_preserves_last_known_gauges(self):
+        """A failed cycle must not zero the monitored/availability gauges."""
+        status = _ScanStatus()
+        status.update(
+            entries_count=7,
+            available_entries_count=2,
+            available_sites_count=11,
+            campgrounds=[
+                CampgroundMetric.from_entry(
+                    {"campground_id": 1},
+                    config_index=0,
+                    available=True,
+                    available_sites=11,
+                )
+            ],
+        )
+        status.update(duration_seconds=1.0, error=True)
+
+        assert status.error_count == 1
+        assert status.entries_count == 7
+        assert status.available_entries_count == 2
+        assert status.available_sites_count == 11
+        assert len(status.campgrounds) == 1
+
+    def test_notification_counters_accumulate(self):
+        status = _ScanStatus()
+        status.record_notifications(sent=2)
+        status.record_notifications(sent=1, failed=3)
+        assert status.notifications_sent == 3
+        assert status.notifications_failed == 3
+        metrics = status.to_prometheus()
+        assert "campsite_checker_notifications_sent_total 3" in metrics
+        assert "campsite_checker_notifications_failed_total 3" in metrics
+        d = status.to_dict()
+        assert d["notifications_sent"] == 3
+        assert d["notifications_failed"] == 3
+
+    def test_bot_liveness_reported_in_health_payload(self):
+        status = _ScanStatus()
+        assert status.to_dict()["bot_polling_alive"] is None
+
+        class FakeThread:
+            def is_alive(self):
+                return True
+
+        status.bot_thread = FakeThread()
+        assert status.to_dict()["bot_polling_alive"] is True
+
 
 class TestScanStatusToDict:
     def test_initial_state(self):

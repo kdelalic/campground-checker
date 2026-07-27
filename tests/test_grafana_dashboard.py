@@ -111,6 +111,17 @@ def test_dashboard_visualizes_adaptive_provider_throttling():
     assert "$provider" in cooldown_panel["targets"][0]["expr"]
 
 
+def test_dashboard_visualizes_notification_delivery():
+    dashboard = json.loads(DASHBOARD_PATH.read_text())
+    panels = {panel["title"]: panel for panel in dashboard["panels"]}
+
+    panel = panels["Telegram Notifications"]
+    assert panel["type"] == "timeseries"
+    queries = {target["expr"] for target in panel["targets"]}
+    assert any("campsite_checker_notifications_sent_total" in query for query in queries)
+    assert any("campsite_checker_notifications_failed_total" in query for query in queries)
+
+
 def test_dashboard_uses_dedicated_alert_scan_timestamp():
     dashboard = json.loads(DASHBOARD_PATH.read_text())
     panels = {panel["title"]: panel for panel in dashboard["panels"]}

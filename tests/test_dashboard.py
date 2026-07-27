@@ -85,3 +85,29 @@ def test_publisher_rewrites_when_availability_changes(tmp_path):
 
     assert publisher.publish([first]).written is True
     assert publisher.publish([changed]).written is True
+
+
+def test_publisher_republishes_unchanged_content_once_stale(tmp_path):
+    """The page's "Last updated" is its only liveness signal, so unchanged
+    availability is still republished after the freshness interval."""
+    output_path = tmp_path / "dashboard.html"
+    clock_now = [0.0]
+    uploader = FakeUploader([True, True])
+    publisher = DashboardPublisher(
+        str(output_path),
+        uploader,
+        freshness_interval_seconds=3600,
+        clock=lambda: clock_now[0],
+    )
+    processed = process_results({}, [make_campsite(campsite_id=1)], None)
+
+    assert publisher.publish([processed]).written is True
+    clock_now[0] = 1800.0
+    mid = publisher.publish([processed])
+    assert mid.written is False
+    assert mid.uploaded is False
+    clock_now[0] = 3700.0
+    stale = publisher.publish([processed])
+    assert stale.written is True
+    assert stale.uploaded is True
+    assert uploader.calls == 2

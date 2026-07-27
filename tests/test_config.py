@@ -6,6 +6,7 @@ from datetime import date, timedelta
 import pytest
 
 from campsite_checker.config import (
+    DateWindowExhausted,
     compute_date_range,
     expand_search_tasks,
     load_config,
@@ -217,7 +218,15 @@ class TestComputeDateRange:
 
     def test_end_before_start(self):
         args = _args(start="2026-08-31", end="2026-06-01")
-        with pytest.raises(SystemExit):
+        with pytest.raises(DateWindowExhausted):
+            compute_date_range(args)
+
+    def test_fixed_end_in_the_past_raises_window_exhausted(self):
+        """A fixed --end that today has passed must raise, not sys.exit, so
+        --forever mode can stop its loop cleanly."""
+        past = (date.today() - timedelta(days=1)).isoformat()
+        args = _args(start=None, end=past)
+        with pytest.raises(DateWindowExhausted):
             compute_date_range(args)
 
     def test_default_end_is_about_6_months(self):
@@ -345,6 +354,31 @@ campsites:
         assert len(entries[0]["_criteria"]) == 2
         assert entries[0]["_criteria"][0]["_day_filter"] == {5}
         assert entries[0]["_criteria"][0]["nights"] == 2
+
+    def test_list_campground_id_loads_without_crash(self, tmp_path):
+        """List-valued campground_id is legal downstream; name lookup must skip it."""
+        config_text = """
+campsites:
+  RecreationDotGov:
+    - campground_id: [12345, 67890]
+"""
+        path = tmp_path / "campsites.yaml"
+        path.write_text(config_text)
+        entries, _ = load_config(str(path))
+        assert entries[0]["campground_id"] == [12345, 67890]
+
+    def test_entries_get_stable_config_index(self, tmp_path):
+        config_text = """
+campsites:
+  RecreationDotGov:
+    - campground_id: 111
+    - campground_id: 222
+      alert: true
+"""
+        path = tmp_path / "campsites.yaml"
+        path.write_text(config_text)
+        entries, _ = load_config(str(path))
+        assert [e["_config_index"] for e in entries] == [0, 1]
 
     def test_criteria_and_days_mutually_exclusive(self, tmp_path):
         config_text = """

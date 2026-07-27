@@ -96,13 +96,3 @@ def get_r2_config(args, config: dict) -> dict | None:
         "object_key": object_key,
         "custom_domain": custom_domain,
     }
-
-
-def upload_to_r2(file_path: str, r2_config: dict) -> str | None:
-    """Upload a file to Cloudflare R2.
-
-    Returns the public URL if custom_domain is configured, otherwise None.
-    Returns None on failure (logged as warning).
-    """
-    result = R2Uploader(r2_config).upload(file_path)
-    return result.public_url if result.success else None

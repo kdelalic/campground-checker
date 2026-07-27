@@ -7,13 +7,14 @@ import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from time import monotonic
 
 from camply.containers import SearchWindow
 
 from .config import (
+    DateWindowExhausted,
     compute_date_range,
     expand_search_tasks,
     load_config,
@@ -245,40 +246,50 @@ def run_once(
 SENT_KEYS_FILE = Path(os.environ.get("SENT_KEYS_PATH", ".campsite_sent_keys.json"))
 
 
-_SENT_KEYS_MAX_AGE_DAYS = 14  # Only keep keys for dates within this window
-
-
 def _load_sent_keys(path: Path) -> set[NotificationKey]:
-    """Load previously sent keys from disk, pruning stale entries."""
+    """Load previously sent keys from disk, pruning past booking dates.
+
+    Keys are kept for any future booking date so a restart cannot re-alert
+    availability that was already notified anywhere in the search window.
+    """
     if not path.exists():
         return set()
     try:
         data = json.loads(path.read_text())
         today = date.today()
-        cutoff = today + timedelta(days=_SENT_KEYS_MAX_AGE_DAYS)
         keys = set()
-        for name, cid, d in data:
+        for provider, ident, cid, d in data:
             dt = date.fromisoformat(d)
-            if today <= dt <= cutoff:
-                keys.add((name, cid, dt))
+            if dt >= today:
+                keys.add((provider, ident, cid, dt))
         return keys
     except (json.JSONDecodeError, ValueError, TypeError):
+        logger.warning(
+            "Discarding unreadable sent-key state at %s; previously alerted "
+            "availability may be re-alerted once",
+            path,
+        )
         return set()
 
 
 def _save_sent_keys(path: Path, keys: set[NotificationKey]) -> bool:
-    """Save changed sent keys to disk, pruning stale entries."""
+    """Atomically save changed sent keys to disk, pruning past booking dates."""
     today = date.today()
-    cutoff = today + timedelta(days=_SENT_KEYS_MAX_AGE_DAYS)
-    data = [[name, cid, d.isoformat()] for name, cid, d in keys if today <= d <= cutoff]
-    data.sort(key=lambda row: (row[0], str(row[1]), row[2]))
+    data = [[provider, ident, cid, d.isoformat()] for provider, ident, cid, d in keys if d >= today]
+    data.sort(key=lambda row: (row[0], row[1], str(row[2]), row[3]))
     serialized = json.dumps(data, separators=(",", ":"))
     try:
         if path.read_text() == serialized:
             return False
-    except FileNotFoundError:
+    except (FileNotFoundError, OSError):
         pass
-    path.write_text(serialized)
+    try:
+        tmp_path = path.with_name(path.name + ".tmp")
+        tmp_path.write_text(serialized)
+        os.replace(tmp_path, path)
+    except OSError as exc:
+        logger.warning("Could not persist sent-key state to %s: %s", path, exc)
+        return False
     return True
 
 
@@ -287,14 +298,14 @@ def _send_notifications(
     tg_token: str | None,
     tg_chat_id: str | None,
     prev_keys: set[NotificationKey] | None = None,
-) -> int:
-    """Filter and send Telegram notifications. Returns count of campgrounds notified.
+) -> tuple[int, int]:
+    """Filter and send Telegram notifications. Returns (sent, failed) message counts.
 
     When *prev_keys* is provided (forever mode), only new results are sent.
     When *prev_keys* is None (single-run mode), all entries with alert=True are sent.
     """
     if not tg_token or not tg_chat_id or not found_entries:
-        return 0
+        return 0, 0
 
     if prev_keys is not None:
         alert_entries = [
@@ -309,19 +320,31 @@ def _send_notifications(
         ]
 
     if not alert_entries:
-        return 0
+        return 0, 0
 
     msgs = build_processed_telegram_message(alert_entries)
+    sent = 0
+    failed = 0
     for msg in msgs:
-        send_telegram(tg_token, tg_chat_id, msg)
+        if send_telegram(tg_token, tg_chat_id, msg):
+            sent += 1
+        else:
+            failed += 1
 
-    logger.info("\u2709 Telegram notification sent (%d campground(s))", len(alert_entries))
-    return len(alert_entries)
+    if failed:
+        logger.warning(
+            "\u2709 %d of %d Telegram message(s) failed to send (%d campground(s))",
+            failed,
+            sent + failed,
+            len(alert_entries),
+        )
+    else:
+        logger.info("\u2709 Telegram notification sent (%d campground(s))", len(alert_entries))
+    return sent, failed
 
 
 @dataclass(slots=True)
 class DashboardScanOutcome:
-    keys: set[NotificationKey]
     results: list[ProcessedAvailability]
     duration_seconds: float
     completed_at: datetime
@@ -336,10 +359,16 @@ def _run_dashboard_scan(
     tg_chat_id: str | None,
     scan_num: int,
 ) -> DashboardScanOutcome:
-    """Run dashboard-only work in the background and retain its completion time."""
+    """Run dashboard-only work in the background and retain its completion time.
+
+    Dashboard-only entries never alert, so their notification keys are
+    deliberately not merged into the sent-key state: pre-marking them as sent
+    would suppress the first alerts if an entry is later switched to
+    ``alert: true``.
+    """
     started = monotonic()
     try:
-        keys, _found, all_results = run_once(
+        _keys, _found, all_results = run_once(
             entries,
             args,
             day_filter,
@@ -351,9 +380,8 @@ def _run_dashboard_scan(
         )
         error = None
     except Exception as exc:
-        keys, all_results, error = set(), [], exc
+        all_results, error = [], exc
     return DashboardScanOutcome(
-        keys=keys,
         results=all_results,
         duration_seconds=monotonic() - started,
         completed_at=datetime.now(timezone.utc),
@@ -379,9 +407,14 @@ def run_forever(
     state = ConfigState(entries, raw_config, config_path, tg_chat_id or "")
 
     if tg_token and tg_chat_id:
-        bot = create_bot(tg_token, state)
-        start_bot_polling(bot)
-        logger.info("Telegram bot commands active (/help for commands)")
+        # Never let Telegram unavailability at boot stop scanning: the bot is
+        # a convenience, alert scans are the point.
+        try:
+            bot = create_bot(tg_token, state)
+            scan_status.bot_thread = start_bot_polling(bot)
+            logger.info("Telegram bot commands active (/help for commands)")
+        except Exception as exc:
+            logger.warning("Telegram bot setup failed; continuing without bot commands: %s", exc)
 
     start_healthcheck_server()
 
@@ -451,11 +484,23 @@ def run_forever(
 
                 scan_status.mark_alert_scan()
 
-                # Notify and checkpoint alert keys before lower-priority dashboard work.
-                _send_notifications(alert_found, tg_token, tg_chat_id, prev_keys)
-                prev_keys |= alert_keys
-                if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
-                    logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
+                # Notify and checkpoint alert keys before lower-priority dashboard
+                # work. The checkpoint is skipped when any message failed so an
+                # undelivered alert is retried next scan instead of being lost.
+                sent_msgs, failed_msgs = _send_notifications(
+                    alert_found, tg_token, tg_chat_id, prev_keys
+                )
+                scan_status.record_notifications(sent=sent_msgs, failed=failed_msgs)
+                if failed_msgs == 0:
+                    prev_keys |= alert_keys
+                    if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
+                        logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
+                else:
+                    logger.warning(
+                        "Deferring sent-key checkpoint: %d Telegram message(s) "
+                        "failed; new availability will be retried next scan",
+                        failed_msgs,
+                    )
 
                 # Collect completed dashboard work after the priority alert path.
                 if dashboard_future is not None and dashboard_future.done():
@@ -482,9 +527,6 @@ def run_forever(
                                 duration_seconds=dashboard_outcome.duration_seconds,
                                 when=dashboard_outcome.completed_at,
                             )
-                            prev_keys |= dashboard_outcome.keys
-                            if _save_sent_keys(SENT_KEYS_FILE, prev_keys):
-                                logger.debug("Updated sent-key state at %s", SENT_KEYS_FILE)
                     dashboard_future = None
 
                 # Start due dashboard-only work without blocking the alert scheduler.
@@ -538,7 +580,10 @@ def run_forever(
                 campground_metrics = [
                     CampgroundMetric.from_entry(
                         availability.entry,
-                        config_index=index,
+                        # Stable config-file index so Prometheus series survive
+                        # alert-flag changes; positional fallback for entries
+                        # built outside load_config (tests, ad-hoc callers).
+                        config_index=availability.entry.get("_config_index", index),
                         available=availability.available,
                         available_sites=availability.total_sites,
                         scan_success=availability.search_succeeded,
@@ -567,10 +612,14 @@ def run_forever(
                     latest_results,
                 )
 
+            except DateWindowExhausted as exc:
+                logger.error("Search window exhausted (%s); stopping the polling loop.", exc)
+                break
             except Exception as exc:
                 logger.error("Scan #%d failed: %s", scan_num, exc, exc_info=True)
+                # Record the error without zeroing the last known gauges so a
+                # transient failure doesn't report 0 monitored campgrounds.
                 scan_status.update(
-                    entries_count=0,
                     duration_seconds=monotonic() - scan_started,
                     error=True,
                 )
@@ -612,6 +661,11 @@ def main() -> None:
     entries, config = load_config(args.config)
     day_filter = resolve_day_filter(args, config)
     tg_token, tg_chat_id = get_telegram_creds(args, config)
+
+    try:
+        compute_date_range(args)
+    except DateWindowExhausted as exc:
+        sys.exit(f"Error: {exc}")
 
     if (tg_token is None) != (tg_chat_id is None):
         sys.exit(

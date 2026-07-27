@@ -209,3 +209,55 @@ class TestProviderMapWiring:
         assert PROVIDER_MAP["RecreationDotGov"] is IdentityCachedSearchRecreationDotGov
         assert issubclass(IdentityCachedSearchRecreationDotGov, SearchRecreationDotGov)
         assert IdentityCachedSearchRecreationDotGov.provider_class is IdentityCachedRecreationDotGov
+
+
+class TestTimeoutReserveCalifornia:
+    def test_provider_map_uses_timeout_search_class(self):
+        from camply.search import SearchReserveCalifornia
+
+        from campsite_checker.providers import (
+            TimeoutReserveCalifornia,
+            TimeoutSearchReserveCalifornia,
+        )
+
+        assert PROVIDER_MAP["ReserveCalifornia"] is TimeoutSearchReserveCalifornia
+        assert issubclass(TimeoutSearchReserveCalifornia, SearchReserveCalifornia)
+        assert TimeoutSearchReserveCalifornia.provider_class is TimeoutReserveCalifornia
+
+    def test_make_http_request_passes_timeout(self):
+        """Stock camply UseDirect requests hang forever without a timeout."""
+        from types import SimpleNamespace
+
+        from campsite_checker.providers import (
+            DEFAULT_HTTP_TIMEOUT_SECONDS,
+            TimeoutReserveCalifornia,
+        )
+
+        captured = {}
+
+        def fake_request(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                status_code=200,
+                raise_for_status=lambda: None,
+                url=kwargs["url"],
+                text="",
+            )
+
+        fake_self = SimpleNamespace(
+            session=SimpleNamespace(request=fake_request),
+            FIVE_HUNDRED_STATUS_CODES=[500, 502, 503],
+        )
+        response = TimeoutReserveCalifornia.make_http_request(fake_self, "https://example.com/api")
+
+        assert response.status_code == 200
+        assert captured["timeout"] == DEFAULT_HTTP_TIMEOUT_SECONDS
+
+    def test_metadata_provider_classes_share_hardening(self):
+        from campsite_checker.providers import (
+            METADATA_PROVIDER_CLASS,
+            TimeoutReserveCalifornia,
+        )
+
+        assert METADATA_PROVIDER_CLASS["RecreationDotGov"] is IdentityCachedRecreationDotGov
+        assert METADATA_PROVIDER_CLASS["ReserveCalifornia"] is TimeoutReserveCalifornia

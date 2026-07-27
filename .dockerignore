@@ -1,10 +1,19 @@
 .venv/
+venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
 .git/
+.github/
 .gitignore
 .env
 firebase-debug.log
 .campsite_sent_keys.json
 dashboard.html
-venv/
+# Runtime state volume — must never be baked into image layers.
+state/
+# Not needed at runtime.
+tests/
+grafana/
+*.md

@@ -6,13 +6,11 @@ import time
 import urllib.error
 import urllib.request
 
-from camply.containers import AvailableCampsite
-
 from .results import (
     NotificationKey,
     ProcessedAvailability,
+    make_notification_key,
     process_filtered_results,
-    process_results,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,10 +32,12 @@ def get_telegram_creds(args, config: dict) -> tuple[str | None, str | None]:
     return token, str(chat_id) if chat_id is not None else None
 
 
-def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> None:
+def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> bool:
     """Send a message via the Telegram Bot API (HTML parse mode).
 
     Retries on rate-limiting (HTTP 429) and transient network errors.
+    Returns True when the message was delivered, False otherwise, so callers
+    can avoid marking undelivered availability as already alerted.
     """
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps(
@@ -55,7 +55,7 @@ def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> 
         )
         try:
             urllib.request.urlopen(req, timeout=10)
-            return
+            return True
         except urllib.error.HTTPError as exc:
             if exc.code == 429 and attempt < max_retries - 1:
                 delay = 2**attempt
@@ -65,7 +65,7 @@ def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> 
             body = exc.read().decode("utf-8", errors="replace")
             logger.warning("Telegram notification failed: %s", exc)
             logger.debug("Response body: %s", body)
-            return  # Non-retryable HTTP error
+            return False  # Non-retryable HTTP error
         except Exception as exc:
             if attempt < max_retries - 1:
                 delay = 2**attempt
@@ -73,31 +73,21 @@ def send_telegram(token: str, chat_id: str, text: str, max_retries: int = 3) -> 
                 time.sleep(delay)
                 continue
             logger.warning("Telegram notification failed after %d attempts: %s", max_retries, exc)
+    return False
 
 
 _MAX_TG_LEN = 4096
 
 
-def build_telegram_message(
-    entries_with_results: list[tuple[dict, list[AvailableCampsite]]],
-    day_filter: set[int] | None,
+def build_processed_telegram_message(
+    availabilities: list[ProcessedAvailability],
 ) -> list[str]:
-    """Format Telegram HTML messages for found availability.
+    """Format normalized availability as Telegram HTML messages.
 
     Returns a list of messages, each within Telegram's 4096-character limit.
     Campground sections are kept intact; a new message is started whenever
     adding the next section would exceed the limit.
     """
-    processed = [
-        process_results(entry, results, day_filter) for entry, results in entries_with_results
-    ]
-    return build_processed_telegram_message(processed)
-
-
-def build_processed_telegram_message(
-    availabilities: list[ProcessedAvailability],
-) -> list[str]:
-    """Format normalized availability as Telegram HTML messages."""
     header = "\U0001f3d5 <b>Campsite Availability Found!</b>"
     sections: list[str] = []
     for availability in availabilities:
@@ -136,13 +126,6 @@ def build_processed_telegram_message(
     return messages
 
 
-def result_keys(
-    entry: dict, results: list[AvailableCampsite], day_filter: set[int] | None
-) -> frozenset[NotificationKey]:
-    """Return a frozenset of (name, campsite_id, booking_date) for deduplication."""
-    return process_results(entry, results, day_filter).notification_keys
-
-
 def filter_new_availability(
     availability: ProcessedAvailability,
     prev_keys: set[NotificationKey],
@@ -153,25 +136,7 @@ def filter_new_availability(
     new_results = [
         result
         for result in availability.campsites
-        if (
-            availability.facility_name,
-            result.campsite_id,
-            result.booking_date.date(),
-        )
+        if make_notification_key(availability.entry, availability.facility_name, result)
         not in prev_keys
     ]
     return process_filtered_results(availability.entry, new_results)
-
-
-def filter_new_results(
-    entry: dict,
-    results: list[AvailableCampsite],
-    day_filter: set[int] | None,
-    prev_keys: set[NotificationKey],
-) -> list[AvailableCampsite]:
-    """Return only results whose keys are not in *prev_keys*.
-
-    Returns an empty list if the entry has alert disabled (``alert: false``).
-    """
-    availability = process_results(entry, results, day_filter)
-    return list(filter_new_availability(availability, prev_keys).campsites)

@@ -1,15 +1,24 @@
+import logging
 import threading
 import time
 from collections import OrderedDict
 
 from camply.containers import CampgroundFacility
 from camply.providers import RecreationDotGov
+from camply.providers.base_provider import ProviderError
+from camply.providers.usedirect.variations import ReserveCalifornia
 from camply.search import (
     SearchGoingToCamp,
     SearchRecreationDotGov,
     SearchReserveCalifornia,
     SearchYellowstone,
 )
+
+logger = logging.getLogger(__name__)
+
+# Applied to providers whose stock camply HTTP calls carry no timeout; a
+# black-holed connection would otherwise hang a scan thread forever.
+DEFAULT_HTTP_TIMEOUT_SECONDS = 30
 
 
 class FacilityIdentityCache:
@@ -98,11 +107,64 @@ class IdentityCachedSearchRecreationDotGov(SearchRecreationDotGov):
     provider_class = IdentityCachedRecreationDotGov
 
 
+class TimeoutReserveCalifornia(ReserveCalifornia):
+    """ReserveCalifornia provider whose HTTP requests always carry a timeout.
+
+    Camply's UseDirect providers call ``session.request`` without a timeout
+    (unlike its Recreation.gov, GoingToCamp, and Yellowstone providers, which
+    pass ``timeout=30``). Without one, a dropped connection blocks the search
+    thread indefinitely and silently stalls the background dashboard worker.
+    Mirrors ``BaseProvider.make_http_request``; ``make_http_request_retry``
+    delegates here, so every UseDirect HTTP path gets the timeout.
+    """
+
+    def make_http_request(
+        self,
+        url,
+        method="GET",
+        data=None,
+        headers=None,
+        retry_response_codes=None,
+    ):
+        if retry_response_codes is None:
+            retry_response_codes = self.FIVE_HUNDRED_STATUS_CODES
+        response = self.session.request(
+            method=method,
+            url=url,
+            data=data,
+            headers=headers,
+            timeout=DEFAULT_HTTP_TIMEOUT_SECONDS,
+        )
+        if response.status_code not in retry_response_codes:
+            response.raise_for_status()
+        else:
+            error_message = (
+                f"HTTP Error - {self.__class__.__name__} - {response.url} - {response.status_code}"
+            )
+            logger.warning(error_message)
+            error_message += f": {response.text}"
+            raise ProviderError(error_message)
+        return response
+
+
+class TimeoutSearchReserveCalifornia(SearchReserveCalifornia):
+    """SearchReserveCalifornia wired to the timeout-enforcing provider."""
+
+    provider_class = TimeoutReserveCalifornia
+
+
 PROVIDER_MAP: dict[str, type] = {
     "RecreationDotGov": IdentityCachedSearchRecreationDotGov,
     "Yellowstone": SearchYellowstone,
     "GoingToCamp": SearchGoingToCamp,
-    "ReserveCalifornia": SearchReserveCalifornia,
+    "ReserveCalifornia": TimeoutSearchReserveCalifornia,
+}
+
+# Provider classes used for out-of-search metadata lookups (bot name resolution),
+# sharing the same caching/timeout hardening as the search path.
+METADATA_PROVIDER_CLASS: dict[str, type] = {
+    "RecreationDotGov": IdentityCachedRecreationDotGov,
+    "ReserveCalifornia": TimeoutReserveCalifornia,
 }
 
 PROVIDER_DISPLAY: dict[str, str] = {

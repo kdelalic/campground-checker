@@ -7,8 +7,24 @@ services:
       # read-only. Change monitored campgrounds by editing this file and pushing.
       - ./campsites.yaml:/app/campsites.yaml:ro
       # Telegram dedup keys, persisted so a redeploy doesn't re-alert on
-      # availability you have already been told about.
+      # availability you have already been told about. The container runs as
+      # uid 10001, so this directory must be writable by it on the host
+      # (one-time: chown -R 10001:10001 state).
       - ./state:/app/state
+    healthcheck:
+      # server.py returns 503 once alert scans go stale; surface that as an
+      # unhealthy container so monitoring (or autoheal) can act on it.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=5)",
+        ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     environment:
       - SENT_KEYS_PATH=/app/state/sent_keys.json
       - TELEGRAM_BOT_TOKEN

@@ -6,11 +6,12 @@ from types import SimpleNamespace
 from campsite_checker.results import (
     availability_fingerprint,
     count_matching_dates,
+    entry_identity,
     filter_results,
-    format_results,
+    format_processed_results,
     get_booking_url,
     get_facility_name,
-    group_results,
+    make_notification_key,
     process_results,
 )
 
@@ -137,29 +138,42 @@ class TestFilterResults:
         assert len(filter_results(results, None)) == 2
 
 
-# ── group_results ───────────────────────────────────────────────────────────
+# ── notification keys ───────────────────────────────────────────────────────
 
 
-class TestGroupResults:
-    def test_groups_by_date(self):
-        results = [
-            make_campsite(campsite_id=1, booking_date=datetime(2026, 7, 4)),
-            make_campsite(campsite_id=2, booking_date=datetime(2026, 7, 4)),
-            make_campsite(campsite_id=3, booking_date=datetime(2026, 7, 11)),
-        ]
-        grouped = group_results(results, None)
-        assert grouped is not None
-        name, by_date, total, url = grouped
-        assert total == 3
-        assert len(by_date[date(2026, 7, 4)]) == 2
-        assert len(by_date[date(2026, 7, 11)]) == 1
+class TestNotificationKeys:
+    def test_key_uses_config_identity_not_facility_name(self):
+        entry = {"provider": "RecreationDotGov", "campground_id": 232447}
+        result = make_campsite(campsite_id=7, booking_date=datetime(2026, 7, 4))
+        key = make_notification_key(entry, "Yosemite — Upper Pines", result)
+        assert key == ("RecreationDotGov", "232447", 7, date(2026, 7, 4))
 
-    def test_none_for_no_results(self):
-        assert group_results([], None) is None
+    def test_key_stable_across_facility_rename(self):
+        entry = {"provider": "RecreationDotGov", "campground_id": 232447}
+        result = make_campsite(campsite_id=7)
+        assert make_notification_key(entry, "Old Name", result) == make_notification_key(
+            entry, "New Name", result
+        )
 
-    def test_filtered_out_returns_none(self):
-        results = [make_campsite(campsite_type="BOAT-IN")]
-        assert group_results(results, None) is None
+    def test_entry_identity_prefers_campground_id(self):
+        assert entry_identity({"campground_id": 123}) == "123"
+
+    def test_entry_identity_handles_list_ids(self):
+        assert entry_identity({"campground_id": [2, 1]}) == "1,2"
+
+    def test_entry_identity_falls_back_to_recreation_area(self):
+        assert entry_identity({"recreation_area": 55}) == "ra:55"
+
+    def test_entry_identity_falls_back_to_facility_name(self):
+        assert entry_identity({}, "Somewhere") == "Somewhere"
+
+    def test_grouped_search_batches_share_distinct_entry_keys(self):
+        # Two entries whose results come back from one batched search must
+        # still produce distinct keys.
+        result = make_campsite(campsite_id=7)
+        key_a = make_notification_key({"campground_id": 1}, "", result)
+        key_b = make_notification_key({"campground_id": 2}, "", result)
+        assert key_a != key_b
 
 
 class TestProcessedAvailability:
@@ -212,21 +226,21 @@ class TestProcessedAvailability:
         assert availability_fingerprint([first]) != availability_fingerprint([changed])
 
 
-# ── format_results ──────────────────────────────────────────────────────────
+# ── format_processed_results ────────────────────────────────────────────────
 
 
-class TestFormatResults:
+class TestFormatProcessedResults:
     def test_formatted_output(self):
         results = [make_campsite(booking_date=datetime(2026, 7, 4))]
-        formatted = format_results({}, results, None)
+        formatted = format_processed_results(process_results({}, results, None))
         assert formatted is not None
         assert "Test Area — Test Campground" in formatted
         assert "1 open site(s)" in formatted
 
     def test_none_for_no_results(self):
-        assert format_results({}, [], None) is None
+        assert format_processed_results(process_results({}, [], None)) is None
 
     def test_includes_booking_url(self):
         results = [make_campsite(booking_url="https://example.com/book")]
-        formatted = format_results({}, results, None)
+        formatted = format_processed_results(process_results({}, results, None))
         assert "https://example.com/book" in formatted

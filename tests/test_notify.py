@@ -1,52 +1,63 @@
 """Tests for campsite_checker.notify."""
 
+import io
+import urllib.error
 from datetime import datetime
+
+import pytest
 
 from campsite_checker.notify import (
     _MAX_TG_LEN,
     build_processed_telegram_message,
-    build_telegram_message,
-    filter_new_results,
-    result_keys,
+    filter_new_availability,
+    send_telegram,
 )
-from campsite_checker.results import process_results
+from campsite_checker.results import make_notification_key, process_results
 
 from .conftest import make_campsite
 
-# ── build_telegram_message ──────────────────────────────────────────────────
+# ── build_processed_telegram_message ────────────────────────────────────────
 
 
 class TestBuildTelegramMessage:
     def test_empty_input_returns_empty(self):
-        assert build_telegram_message([], None) == []
+        assert build_processed_telegram_message([]) == []
 
     def test_no_results_returns_empty(self):
-        # All entries have results filtered out by day filter
+        # All entries have results filtered out (boat-in)
         results = [make_campsite(campsite_type="BOAT-IN")]
-        entries_with_results = [({"name": "Test"}, results)]
-        assert build_telegram_message(entries_with_results, None) == []
+        processed = process_results({"name": "Test"}, results, None)
+        assert build_processed_telegram_message([processed]) == []
 
     def test_single_campground(self):
         results = [make_campsite(booking_date=datetime(2026, 7, 4))]
-        entries_with_results = [({"name": "Test Camp"}, results)]
-        msgs = build_telegram_message(entries_with_results, None)
+        processed = process_results({"name": "Test Camp"}, results, None)
+        msgs = build_processed_telegram_message([processed])
         assert len(msgs) == 1
         assert "<b>Campsite Availability Found!</b>" in msgs[0]
         assert "Test Area — Test Campground" in msgs[0]
         assert "1 open site(s)" in msgs[0]
 
     def test_multiple_campgrounds_in_one_message(self):
-        results1 = [make_campsite(campsite_id=1, booking_date=datetime(2026, 7, 4))]
-        results2 = [make_campsite(campsite_id=2, booking_date=datetime(2026, 7, 11))]
-        entries = [({"name": "Camp A"}, results1), ({"name": "Camp B"}, results2)]
-        msgs = build_telegram_message(entries, None)
+        processed = [
+            process_results(
+                {"name": "Camp A"},
+                [make_campsite(campsite_id=1, booking_date=datetime(2026, 7, 4))],
+                None,
+            ),
+            process_results(
+                {"name": "Camp B"},
+                [make_campsite(campsite_id=2, booking_date=datetime(2026, 7, 11))],
+                None,
+            ),
+        ]
+        msgs = build_processed_telegram_message(processed)
         assert len(msgs) == 1
         assert "Test Area — Test Campground" in msgs[0]
 
     def test_message_splitting_at_4096(self):
         """When content exceeds 4096 chars, it should split into multiple messages."""
-        # Create many campgrounds with many results to exceed 4096 chars
-        entries = []
+        processed = []
         for i in range(50):
             results = [
                 make_campsite(
@@ -56,8 +67,8 @@ class TestBuildTelegramMessage:
                 )
                 for j in range(5)
             ]
-            entries.append(({"name": f"Camp {i}"}, results))
-        msgs = build_telegram_message(entries, None)
+            processed.append(process_results({"name": f"Camp {i}"}, results, None))
+        msgs = build_processed_telegram_message(processed)
         assert len(msgs) >= 2
         for msg in msgs:
             assert len(msg) <= _MAX_TG_LEN
@@ -70,87 +81,116 @@ class TestBuildTelegramMessage:
                 booking_url="javascript:void(0)",
             )
         ]
-        entries = [({"name": "Test"}, results)]
-        msgs = build_telegram_message(entries, None)
+        processed = process_results({"name": "Test"}, results, None)
+        msgs = build_processed_telegram_message([processed])
         assert "<script>" not in msgs[0]
         assert "&lt;script&gt;" in msgs[0]
 
-    def test_formats_preprocessed_availability(self):
-        processed = process_results(
-            {"name": "Test"},
-            [make_campsite(booking_date=datetime(2026, 7, 4))],
-            None,
-        )
 
-        msgs = build_processed_telegram_message([processed])
-
-        assert len(msgs) == 1
-        assert "Test Area — Test Campground" in msgs[0]
-        assert "1 open site(s)" in msgs[0]
+# ── filter_new_availability ─────────────────────────────────────────────────
 
 
-# ── result_keys ─────────────────────────────────────────────────────────────
-
-
-class TestResultKeys:
-    def test_keys_generated(self):
-        results = [
-            make_campsite(campsite_id=1, booking_date=datetime(2026, 7, 4)),
-            make_campsite(campsite_id=2, booking_date=datetime(2026, 7, 4)),
-        ]
-        keys = result_keys({}, results, None)
-        assert len(keys) == 2
-        for k in keys:
-            assert isinstance(k, tuple)
-            assert len(k) == 3  # (name, campsite_id, date)
-
-    def test_empty_results(self):
-        keys = result_keys({}, [], None)
-        assert len(keys) == 0
-
-    def test_filtered_results_excluded(self):
-        results = [make_campsite(campsite_type="BOAT-IN")]
-        keys = result_keys({}, results, None)
-        assert len(keys) == 0
-
-
-# ── filter_new_results ──────────────────────────────────────────────────────
-
-
-class TestFilterNewResults:
+class TestFilterNewAvailability:
     def test_alert_disabled_returns_empty(self):
-        entry = {"alert": False}
-        results = [make_campsite()]
-        assert filter_new_results(entry, results, None, set()) == []
+        processed = process_results({"alert": False}, [make_campsite()], None)
+        assert not filter_new_availability(processed, set()).available
 
     def test_all_new_results(self):
-        entry = {"alert": True}
+        entry = {"alert": True, "campground_id": 100}
         results = [make_campsite(campsite_id=1, booking_date=datetime(2026, 7, 4))]
-        new = filter_new_results(entry, results, None, set())
-        assert len(new) == 1
+        processed = process_results(entry, results, None)
+        new = filter_new_availability(processed, set())
+        assert new.total_sites == 1
 
     def test_previously_sent_filtered(self):
-        entry = {"alert": True}
+        entry = {"alert": True, "campground_id": 100}
         results = [make_campsite(campsite_id=1, booking_date=datetime(2026, 7, 4))]
-        # Build a prev_keys set matching the result
-        from campsite_checker.results import get_facility_name
-
-        filtered = [r for r in results if r.campsite_type != "BOAT-IN"]
-        name = get_facility_name(filtered)
-        prev = {(name, 1, datetime(2026, 7, 4).date())}
-        new = filter_new_results(entry, results, None, prev)
-        assert len(new) == 0
+        processed = process_results(entry, results, None)
+        prev = set(processed.notification_keys)
+        new = filter_new_availability(processed, prev)
+        assert not new.available
 
     def test_mixed_new_and_old(self):
-        entry = {"alert": True}
+        entry = {"alert": True, "campground_id": 100}
         results = [
             make_campsite(campsite_id=1, booking_date=datetime(2026, 7, 4)),
             make_campsite(campsite_id=2, booking_date=datetime(2026, 7, 4)),
         ]
-        from campsite_checker.results import get_facility_name
+        processed = process_results(entry, results, None)
+        prev = {make_notification_key(entry, processed.facility_name, results[0])}
+        new = filter_new_availability(processed, prev)
+        assert new.total_sites == 1
+        assert new.campsites[0].campsite_id == 2
 
-        name = get_facility_name(results)
-        prev = {(name, 1, datetime(2026, 7, 4).date())}
-        new = filter_new_results(entry, results, None, prev)
-        assert len(new) == 1
-        assert new[0].campsite_id == 2
+    def test_facility_rename_does_not_reset_dedup(self):
+        """Keys are based on config identity, so a renamed facility stays deduped."""
+        entry = {"alert": True, "campground_id": 100}
+        original = process_results(
+            entry, [make_campsite(campsite_id=1, facility_name="Old Name")], None
+        )
+        prev = set(original.notification_keys)
+        renamed = process_results(
+            entry, [make_campsite(campsite_id=1, facility_name="New Name")], None
+        )
+        assert not filter_new_availability(renamed, prev).available
+
+
+# ── send_telegram ───────────────────────────────────────────────────────────
+
+
+def _http_error(code: int) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError(
+        url="https://api.telegram.org/botTOKEN/sendMessage",
+        code=code,
+        msg="err",
+        hdrs=None,
+        fp=io.BytesIO(b"{}"),
+    )
+
+
+class TestSendTelegram:
+    @pytest.fixture(autouse=True)
+    def no_sleep(self, monkeypatch):
+        monkeypatch.setattr("campsite_checker.notify.time.sleep", lambda _s: None)
+
+    def test_success_returns_true(self, monkeypatch):
+        monkeypatch.setattr(
+            "campsite_checker.notify.urllib.request.urlopen",
+            lambda req, timeout: io.BytesIO(b"{}"),
+        )
+        assert send_telegram("tok", "chat", "hello") is True
+
+    def test_non_retryable_http_error_returns_false(self, monkeypatch):
+        calls = []
+
+        def fake_urlopen(req, timeout):
+            calls.append(req)
+            raise _http_error(400)
+
+        monkeypatch.setattr("campsite_checker.notify.urllib.request.urlopen", fake_urlopen)
+        assert send_telegram("tok", "chat", "hello") is False
+        assert len(calls) == 1  # 400 is not retried
+
+    def test_rate_limit_retries_then_succeeds(self, monkeypatch):
+        calls = []
+
+        def fake_urlopen(req, timeout):
+            calls.append(req)
+            if len(calls) < 3:
+                raise _http_error(429)
+            return io.BytesIO(b"{}")
+
+        monkeypatch.setattr("campsite_checker.notify.urllib.request.urlopen", fake_urlopen)
+        assert send_telegram("tok", "chat", "hello") is True
+        assert len(calls) == 3
+
+    def test_network_errors_exhaust_retries_and_return_false(self, monkeypatch):
+        calls = []
+
+        def fake_urlopen(req, timeout):
+            calls.append(req)
+            raise urllib.error.URLError("connection refused")
+
+        monkeypatch.setattr("campsite_checker.notify.urllib.request.urlopen", fake_urlopen)
+        assert send_telegram("tok", "chat", "hello") is False
+        assert len(calls) == 3

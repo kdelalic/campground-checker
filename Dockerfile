@@ -31,9 +31,14 @@ COPY --from=builder /install /install
 ENV PATH="/install/bin:$PATH"
 ENV PYTHONPATH="/install/lib/python3.14/site-packages"
 
-COPY . .
+# Only runtime files; nothing else from the build context belongs in the image.
+COPY campsite_checker/ ./campsite_checker/
+COPY check_campsites.py campsites.yaml ./
 
-RUN chmod +x check_campsites.py
+# The unprivileged user needs to own /app so the dashboard HTML can be written
+# there. The mounted state/ volume must be writable by uid 10001 on the host.
+RUN useradd --system --uid 10001 --user-group app && chown app:app /app
+USER app
 
 ENV WORKERS="4"
 ENV ALERT_INTERVAL="1"

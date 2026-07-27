@@ -1,19 +1,32 @@
 name: Deploy to homelab
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 jobs:
   deploy:
+    # Only deploy commits on main whose CI run succeeded.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: [self-hosted, homelab]
+    concurrency:
+      group: deploy-homelab
+      cancel-in-progress: false
     steps:
       # No actions/checkout: the deployment lives in /srv/docker/campground-checker
       # alongside its .env (which holds the Telegram and R2 credentials), and the
       # runner just drives it. `docker compose up -d` by hand behaves identically.
+      #
+      # The build runs before `up` so a broken image never replaces a working
+      # container, and the exact CI-validated commit is deployed even if main
+      # has moved on since.
       - name: Deploy
         run: |
           cd /srv/docker/campground-checker
           git fetch --prune origin
-          git reset --hard origin/main
-          docker compose up -d --build --remove-orphans
+          git reset --hard ${{ github.event.workflow_run.head_sha }}
+          docker compose build
           install -m 0644 grafana/campground-checker.json \
             /srv/docker/monitoring/grafana/dashboards/campground-checker.json
+          docker compose up -d --remove-orphans

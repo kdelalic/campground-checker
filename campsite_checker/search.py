@@ -318,16 +318,6 @@ def _search_payload(entry: dict, search_window: SearchWindow, args) -> SearchOut
     )
 
 
-def search_entry(
-    entry: dict, search_window: SearchWindow, args
-) -> tuple[dict, list[AvailableCampsite], str | None, float]:
-    """Build and run one campsite search. Retained for direct callers and tests."""
-    outcome = _search_payload(entry, search_window, args)
-    if "name" not in entry and "_resolved_name" not in entry and outcome.resolved_name:
-        entry["_resolved_name"] = outcome.resolved_name
-    return entry, outcome.results, outcome.error, outcome.elapsed
-
-
 def _partition_results(
     batch: SearchBatch,
     results: list[AvailableCampsite],

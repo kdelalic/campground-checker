@@ -1,5 +1,6 @@
 import calendar
 import html
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -23,13 +24,31 @@ class DashboardPublishResult:
 
 
 class DashboardPublisher:
-    """Write and upload a dashboard only when semantic availability changes."""
+    """Write and upload a dashboard when availability changes or freshness lapses.
 
-    def __init__(self, output_path: str, uploader: Any = None):
+    Skipping unchanged rewrites keeps R2 operations cheap, but the page's
+    "Last updated" timestamp is its only liveness signal, so a periodic
+    freshness republish keeps a quiet week distinguishable from a dead checker.
+    """
+
+    def __init__(
+        self,
+        output_path: str,
+        uploader: Any = None,
+        freshness_interval_seconds: float = 60 * 60,
+        clock=time.monotonic,
+    ):
         self.output_path = output_path
         self.uploader = uploader
+        self.freshness_interval_seconds = freshness_interval_seconds
+        self._clock = clock
         self.last_written_fingerprint: str | None = None
         self.last_uploaded_fingerprint: str | None = None
+        self._last_written_at: float | None = None
+        self._last_uploaded_at: float | None = None
+
+    def _is_stale(self, last_at: float | None, now: float) -> bool:
+        return last_at is None or (now - last_at) >= self.freshness_interval_seconds
 
     def publish(
         self,
@@ -37,21 +56,29 @@ class DashboardPublisher:
         day_filter: set[int] | None = None,
     ) -> DashboardPublishResult:
         fingerprint = availability_fingerprint(availabilities)
+        now = self._clock()
         written = (
-            fingerprint != self.last_written_fingerprint or not Path(self.output_path).exists()
+            fingerprint != self.last_written_fingerprint
+            or not Path(self.output_path).exists()
+            or self._is_stale(self._last_written_at, now)
         )
         if written:
             generate_dashboard(availabilities, day_filter, self.output_path)
             self.last_written_fingerprint = fingerprint
+            self._last_written_at = now
 
         uploaded = False
         public_url = None
-        if self.uploader is not None and fingerprint != self.last_uploaded_fingerprint:
+        if self.uploader is not None and (
+            fingerprint != self.last_uploaded_fingerprint
+            or self._is_stale(self._last_uploaded_at, now)
+        ):
             upload_result = self.uploader.upload(self.output_path)
             if upload_result.success:
                 uploaded = True
                 public_url = upload_result.public_url
                 self.last_uploaded_fingerprint = fingerprint
+                self._last_uploaded_at = now
 
         return DashboardPublishResult(
             written=written,

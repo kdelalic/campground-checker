@@ -6,7 +6,35 @@ from datetime import date, datetime
 
 from camply.containers import AvailableCampsite
 
-NotificationKey = tuple[str, int | str, date]
+# (provider, entry identity, campsite_id, booking_date). Keyed on stable config
+# identity rather than the provider-supplied facility name, so a facility rename
+# cannot re-trigger or suppress alerts.
+NotificationKey = tuple[str, str, int | str, date]
+
+
+def entry_identity(entry: dict, facility_name: str = "") -> str:
+    """Stable identity string for an entry, preferring configured IDs."""
+    cid = entry.get("campground_id")
+    if cid is not None:
+        if isinstance(cid, (list, tuple, set)):
+            return ",".join(str(c) for c in sorted(cid, key=str))
+        return str(cid)
+    rec_area = entry.get("recreation_area")
+    if rec_area is not None:
+        if isinstance(rec_area, (list, tuple, set)):
+            return "ra:" + ",".join(str(r) for r in sorted(rec_area, key=str))
+        return f"ra:{rec_area}"
+    return facility_name
+
+
+def make_notification_key(entry: dict, facility_name: str, result) -> NotificationKey:
+    """Build the dedup key for one available campsite result."""
+    return (
+        entry.get("provider", "RecreationDotGov"),
+        entry_identity(entry, facility_name),
+        result.campsite_id,
+        result.booking_date.date(),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,24 +170,19 @@ def process_filtered_results(
     seen: set[tuple[int | str, date]] = set()
     unique: list[AvailableCampsite] = []
     by_date: dict[date, set[int | str]] = defaultdict(set)
-    unique_dates: list[date] = []
     for result in results:
         booking_date = result.booking_date.date()
         key = (result.campsite_id, booking_date)
         if key not in seen:
             seen.add(key)
             unique.append(result)
-            unique_dates.append(booking_date)
             by_date[booking_date].add(result.campsite_id)
 
     name = get_facility_name(unique)
     url = get_booking_url(unique)
 
     frozen_by_date = {booking_date: frozenset(ids) for booking_date, ids in by_date.items()}
-    notification_keys = frozenset(
-        (name, result.campsite_id, booking_date)
-        for result, booking_date in zip(unique, unique_dates, strict=True)
-    )
+    notification_keys = frozenset(make_notification_key(entry, name, result) for result in unique)
     return ProcessedAvailability(
         entry=entry,
         campsites=tuple(unique),
@@ -181,29 +204,6 @@ def process_results(
     return process_filtered_results(entry, filter_results(results, day_filter))
 
 
-def group_results(
-    results: list[AvailableCampsite],
-    day_filter: set[int] | None,
-) -> tuple[str, dict[date, set], int, str] | None:
-    """Filter results and group by date.
-
-    Returns None if no results remain after filtering, otherwise returns
-    (facility_name, by_date, total_sites, booking_url).
-    """
-    processed = process_results({}, results, day_filter)
-    if not processed.available:
-        return None
-    by_date = {
-        booking_date: set(ids) for booking_date, ids in processed.campsite_ids_by_date.items()
-    }
-    return (
-        processed.facility_name,
-        by_date,
-        processed.total_sites,
-        processed.booking_url,
-    )
-
-
 def format_processed_results(processed: ProcessedAvailability) -> str | None:
     """Format normalized availability for terminal output."""
     if not processed.available:
@@ -216,12 +216,3 @@ def format_processed_results(processed: ProcessedAvailability) -> str | None:
     if processed.booking_url:
         lines.append(f"  \U0001f517 {processed.booking_url}")
     return "\n".join(lines)
-
-
-def format_results(
-    entry: dict,
-    results: list[AvailableCampsite],
-    day_filter: set[int] | None,
-) -> str | None:
-    """Filter and format raw results for backward-compatible callers."""
-    return format_processed_results(process_results(entry, results, day_filter))

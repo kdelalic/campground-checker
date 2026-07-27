@@ -2,7 +2,6 @@ import http.server
 import json
 import logging
 import os
-import socketserver
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -104,6 +103,10 @@ class _ScanStatus:
         self.dashboard_scan_error_count: int = 0
         self.dashboard_scan_in_progress: bool = False
         self.last_dashboard_scan_duration_seconds: float = 0
+        self.notifications_sent: int = 0
+        self.notifications_failed: int = 0
+        # Set by the runner when Telegram bot polling starts; None = no bot.
+        self.bot_thread: threading.Thread | None = None
 
     @property
     def dashboard_alert_interval_minutes(self) -> int:
@@ -117,23 +120,37 @@ class _ScanStatus:
     def update(
         self,
         *,
-        entries_count: int,
-        available_entries_count: int = 0,
-        available_sites_count: int = 0,
-        campgrounds: list[CampgroundMetric] | tuple[CampgroundMetric, ...] = (),
+        entries_count: int | None = None,
+        available_entries_count: int | None = None,
+        available_sites_count: int | None = None,
+        campgrounds: list[CampgroundMetric] | tuple[CampgroundMetric, ...] | None = None,
         duration_seconds: float = 0,
         error: bool = False,
     ) -> None:
+        """Record a completed scan cycle.
+
+        Fields left as None keep their previous values, so an error-only
+        update does not zero the last known availability gauges.
+        """
         with self._lock:
             self.last_scan_time = datetime.now(timezone.utc)
             self.scan_count += 1
-            self.entries_count = entries_count
-            self.available_entries_count = available_entries_count
-            self.available_sites_count = available_sites_count
-            self.campgrounds = tuple(campgrounds)
+            if entries_count is not None:
+                self.entries_count = entries_count
+            if available_entries_count is not None:
+                self.available_entries_count = available_entries_count
+            if available_sites_count is not None:
+                self.available_sites_count = available_sites_count
+            if campgrounds is not None:
+                self.campgrounds = tuple(campgrounds)
             self.last_scan_duration_seconds = duration_seconds
             if error:
                 self.error_count += 1
+
+    def record_notifications(self, *, sent: int = 0, failed: int = 0) -> None:
+        with self._lock:
+            self.notifications_sent += sent
+            self.notifications_failed += failed
 
     def mark_alert_scan(self, when: datetime | None = None) -> None:
         with self._lock:
@@ -193,6 +210,11 @@ class _ScanStatus:
                 "dashboard_scan_count": self.dashboard_scan_count,
                 "dashboard_scan_error_count": self.dashboard_scan_error_count,
                 "dashboard_scan_in_progress": self.dashboard_scan_in_progress,
+                "notifications_sent": self.notifications_sent,
+                "notifications_failed": self.notifications_failed,
+                "bot_polling_alive": (
+                    self.bot_thread.is_alive() if self.bot_thread is not None else None
+                ),
                 "last_dashboard_scan_duration_seconds": (self.last_dashboard_scan_duration_seconds),
                 "provider_throttles": [
                     {
@@ -320,6 +342,18 @@ class _ScanStatus:
                     "gauge",
                     self.last_dashboard_scan_duration_seconds,
                 ),
+                (
+                    "campsite_checker_notifications_sent_total",
+                    "Total number of Telegram alert messages delivered successfully.",
+                    "counter",
+                    self.notifications_sent,
+                ),
+                (
+                    "campsite_checker_notifications_failed_total",
+                    "Total number of Telegram alert messages that failed to send.",
+                    "counter",
+                    self.notifications_failed,
+                ),
             )
             campgrounds = self.campgrounds
             provider_throttles = self.throttle_registry.snapshot()
@@ -394,7 +428,9 @@ class _ScanStatus:
 scan_status = _ScanStatus()
 
 
-class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
+class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
+    """Serves health JSON and Prometheus metrics only — no filesystem access."""
+
     def do_GET(self):
         if self.path.partition("?")[0] == "/metrics":
             body = scan_status.to_prometheus().encode()
@@ -420,11 +456,10 @@ class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def start_healthcheck_server() -> None:
-    """Start a simple HTTP server to pass health checks (e.g. Railway, Koyeb)."""
+    """Start a threaded HTTP server so one slow client cannot block probes."""
     port = int(os.environ.get("PORT", "8000"))
-    socketserver.TCPServer.allow_reuse_address = True
     try:
-        httpd = socketserver.TCPServer(("", port), HealthCheckHandler)
+        httpd = http.server.ThreadingHTTPServer(("", port), HealthCheckHandler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         logger.info("Healthcheck HTTP server running on port %d", port)

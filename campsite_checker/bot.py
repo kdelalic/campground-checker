@@ -1,29 +1,11 @@
+import html
 import logging
 import threading
 
 import telebot
 
 from . import yaml_editor
-from .providers import PROVIDER_MAP
-
-# Maps provider name to the camply provider class used for metadata lookups.
-_CAMPLY_PROVIDER_CLASS = {}
-try:
-    from camply.providers.recreation_dot_gov.recdotgov_camps import (
-        RecreationDotGov as _RecDotGovProvider,
-    )
-
-    _CAMPLY_PROVIDER_CLASS["RecreationDotGov"] = _RecDotGovProvider
-except ImportError:
-    pass
-try:
-    from camply.providers.usedirect.variations import (
-        ReserveCalifornia as _ReserveCAProvider,
-    )
-
-    _CAMPLY_PROVIDER_CLASS["ReserveCalifornia"] = _ReserveCAProvider
-except ImportError:
-    pass
+from .providers import METADATA_PROVIDER_CLASS, PROVIDER_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +50,7 @@ def _lookup_campground_names(
         by_provider.setdefault(prov, []).append(cid)
 
     for prov, ids in by_provider.items():
-        provider_cls = _CAMPLY_PROVIDER_CLASS.get(prov)
+        provider_cls = METADATA_PROVIDER_CLASS.get(prov)
         if not provider_cls:
             continue
         try:
@@ -135,18 +117,21 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
 
         lines = [f"🏕️ <b>Monitored Campgrounds ({len(entries)})</b>"]
         for prov, items in by_provider.items():
-            lines.append(f"\n🌲 <b>{prov} ({len(items)})</b>")
+            lines.append(f"\n🌲 <b>{html.escape(str(prov))} ({len(items)})</b>")
             for item in items:
                 cid = item.get("campground_id")
                 if cid:
+                    # Names come from YAML comments or the live provider API;
+                    # escape them so markup can't break the Telegram message.
                     name = names.get((prov, cid))
+                    safe_cid = html.escape(str(cid))
                     if name:
-                        lines.append(f"  • <b>{name}</b> <code>{cid}</code>")
+                        lines.append(f"  • <b>{html.escape(name)}</b> <code>{safe_cid}</code>")
                     else:
-                        lines.append(f"  • <code>{cid}</code>")
+                        lines.append(f"  • <code>{safe_cid}</code>")
                 else:
                     ra = item.get("recreation_area", "?")
-                    lines.append(f"  • rec area <code>{ra}</code>")
+                    lines.append(f"  • rec area <code>{html.escape(str(ra))}</code>")
         bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
 
     @bot.message_handler(commands=["status"])
@@ -176,13 +161,18 @@ def _register_commands(bot: telebot.TeleBot, state: ConfigState) -> None:
 
         lines = ["🔔 <b>Alert Status</b>"]
         for prov, items in by_provider.items():
-            lines.append(f"\n🌲 <b>{prov}</b>")
+            lines.append(f"\n🌲 <b>{html.escape(str(prov))}</b>")
             for e in items:
                 cid = e.get("campground_id", "?")
                 enabled = e.get("alert", False)
                 status = "🟢 ON" if enabled else "🔴 OFF"
                 name = names.get((prov, cid))
-                label = f"<b>{name}</b> <code>{cid}</code>" if name else f"<code>{cid}</code>"
+                safe_cid = html.escape(str(cid))
+                label = (
+                    f"<b>{html.escape(name)}</b> <code>{safe_cid}</code>"
+                    if name
+                    else f"<code>{safe_cid}</code>"
+                )
                 lines.append(f"  • {label} — {status}")
         lines.append("\n<i>Set alert: true in campsites.yaml and push to change these.</i>")
         bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
@@ -192,14 +182,19 @@ def create_bot(token: str, state: ConfigState) -> telebot.TeleBot:
     """Create and configure the Telegram bot."""
     bot = telebot.TeleBot(token, threaded=True)
     _register_commands(bot, state)
-    bot.set_my_commands(
-        [
-            telebot.types.BotCommand("list", "Show monitored campgrounds"),
-            telebot.types.BotCommand("alert", "Show which campgrounds have alerts on"),
-            telebot.types.BotCommand("status", "Show checker status"),
-            telebot.types.BotCommand("help", "Show help message"),
-        ]
-    )
+    try:
+        # Network call; must not prevent the checker (or polling) from starting
+        # when Telegram is briefly unreachable at boot.
+        bot.set_my_commands(
+            [
+                telebot.types.BotCommand("list", "Show monitored campgrounds"),
+                telebot.types.BotCommand("alert", "Show which campgrounds have alerts on"),
+                telebot.types.BotCommand("status", "Show checker status"),
+                telebot.types.BotCommand("help", "Show help message"),
+            ]
+        )
+    except Exception as exc:
+        logger.warning("Could not register Telegram command menu: %s", exc)
     return bot
 
 
