@@ -36,5 +36,12 @@ services:
       - R2_CUSTOM_DOMAIN
       - THROTTLE_BASE_DELAY=${THROTTLE_BASE_DELAY:-30}
       - THROTTLE_MAX_DELAY=${THROTTLE_MAX_DELAY:-900}
+      # Dashboard scan tuning: camply issues one request per campground per
+      # month sequentially within a batch, so smaller batches + more workers
+      # cut wall-clock (~3.5 min -> ~1.5 min for the current config). If the
+      # throttle cooldown metrics start firing, dial these back toward the
+      # image defaults (WORKERS=4, BATCH_SIZE=4).
+      - WORKERS=${WORKERS:-8}
+      - BATCH_SIZE=${BATCH_SIZE:-2}
     ports:
       - "8000:8000"
