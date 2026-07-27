@@ -1,8 +1,6 @@
 """Contract and retry tests for the native Recreation.gov search."""
 
 import json
-import threading
-import time
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
@@ -19,7 +17,6 @@ from campsite_checker.providers.recreation_gov import (
     IdentityCachedRecreationDotGov,
     NativeSearchRecreationDotGov,
     ProviderRequestMetrics,
-    RequestGate,
 )
 from campsite_checker.results import process_results
 from campsite_checker.throttle import detect_rate_limit
@@ -294,91 +291,6 @@ def test_weekends_only_matches_friday_and_saturday(monkeypatch):
     search.weekends_only = True
 
     assert {day.weekday() for day in search._search_days()} == {4, 5}
-
-
-def test_request_gate_spaces_provider_request_starts():
-    now = [10.0]
-    sleeps = []
-
-    def sleep(seconds):
-        sleeps.append(seconds)
-        now[0] += seconds
-
-    gate = RequestGate(
-        max_concurrent=1,
-        requests_per_second=2,
-        clock=lambda: now[0],
-        sleep=sleep,
-    )
-
-    with gate:
-        pass
-    with gate:
-        pass
-
-    assert sleeps == [0.5]
-
-
-def test_request_gate_defer_pauses_all_future_starts():
-    now = [10.0]
-    sleeps = []
-
-    def sleep(seconds):
-        sleeps.append(seconds)
-        now[0] += seconds
-
-    gate = RequestGate(
-        max_concurrent=2,
-        requests_per_second=1,
-        clock=lambda: now[0],
-        sleep=sleep,
-    )
-
-    gate.defer(75)
-    with gate.slot(PRIORITY_DASHBOARD):
-        pass
-    with gate.slot(PRIORITY_ALERT):
-        pass
-
-    # The deferral holds every start back, then normal spacing resumes.
-    assert sleeps == [75, 1.0]
-
-
-def _wait_for(predicate, timeout=5.0):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(0.005)
-    return False
-
-
-def test_queued_alert_request_starts_before_older_dashboard_request():
-    gate = RequestGate(max_concurrent=1, requests_per_second=1000)
-    order = []
-    lock = threading.Lock()
-
-    def waiter(name, priority):
-        def run():
-            with gate.slot(priority):
-                with lock:
-                    order.append(name)
-
-        return run
-
-    with gate.slot(PRIORITY_DASHBOARD):
-        # The dashboard request queues first, the alert request arrives later.
-        dashboard = threading.Thread(target=waiter("dashboard", PRIORITY_DASHBOARD))
-        dashboard.start()
-        assert _wait_for(lambda: gate.pending_priorities == (PRIORITY_DASHBOARD,))
-        alert = threading.Thread(target=waiter("alert", PRIORITY_ALERT))
-        alert.start()
-        assert _wait_for(lambda: gate.pending_priorities == (PRIORITY_ALERT, PRIORITY_DASHBOARD))
-
-    alert.join(5.0)
-    dashboard.join(5.0)
-
-    assert order == ["alert", "dashboard"]
 
 
 class TestFacilityIdentityCache:

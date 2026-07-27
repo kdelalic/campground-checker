@@ -350,6 +350,30 @@ class TestRequestPriorityForwarding:
         assert _supports_request_priority(NativeSearchRecreationDotGov) is True
         assert _supports_request_priority(CamplyStyleSearch) is False
 
+    def test_real_providers_are_introspected_as_expected(self):
+        """Guards the two constructor contracts ``build_searcher`` depends on.
+
+        ``TimeoutSearchReserveCalifornia`` overrides ``__init__`` to accept a
+        priority; dropping ``recreation_area`` from that signature would stop
+        campground-only entries from getting ``recreation_area=[]`` and break
+        every ReserveCalifornia search.
+        """
+        expected = {
+            "RecreationDotGov": (False, True),
+            "Yellowstone": (False, False),
+            "GoingToCamp": (True, False),
+            "ReserveCalifornia": (True, True),
+        }
+        actual = {
+            name: (
+                _requires_recreation_area(search_class),
+                _supports_request_priority(search_class),
+            )
+            for name, search_class in PROVIDER_MAP.items()
+        }
+
+        assert actual == expected
+
 
 def test_constructor_introspection_is_cached():
     class RequiredRecreationArea:

@@ -7,12 +7,10 @@ client does not inherit Camply's 100-minute retry window.
 
 from __future__ import annotations
 
-import heapq
 import logging
 import threading
 import time
 from collections import OrderedDict, defaultdict
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Callable
@@ -21,7 +19,11 @@ import requests
 from camply.containers import AvailableCampsite, CampgroundFacility, SearchWindow
 from camply.providers import RecreationDotGov
 
-from ..throttle import detect_rate_limit
+from ..request_gate import (
+    PRIORITY_ALERT_REQUEST,
+    RequestGate,
+    pause_gate_on_rate_limit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +38,6 @@ DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
 REQUESTS_PER_SECOND = 1
 MAX_CONCURRENT_REQUESTS = 2
-# Mirrors dispatch.PRIORITY_ALERT / PRIORITY_DASHBOARD without importing the
-# dispatcher into the provider layer.
-PRIORITY_ALERT_REQUEST = 0
-DEFAULT_RATE_LIMIT_PAUSE_SECONDS = 30.0
 
 # These are Camply's current values, copied deliberately so unknown future
 # statuses continue to surface as potentially bookable instead of silently
@@ -189,110 +187,10 @@ class ProviderRequestMetrics:
 PROVIDER_REQUEST_METRICS = ProviderRequestMetrics()
 
 
-class RequestGate:
-    """Order Recreation.gov request starts by priority under a shared rate limit.
-
-    Waiters are queued by ``(priority, arrival)`` — lower priority wins — so a
-    queued alert request takes the next available start even when dashboard
-    requests have been waiting longer. Aggregate start spacing and the
-    concurrency cap are preserved, and :meth:`defer` pauses every future start
-    so batches that are already executing stop issuing requests during a
-    provider cooldown.
-
-    An in-flight request is never preempted: an alert may still wait for one
-    outstanding request, bounded by the client's connect/read timeouts.
-    """
-
-    # Safety net so a missed notification degrades to a short re-check rather
-    # than a hang; all state changes also notify waiters.
-    _WAIT_TIMEOUT_SECONDS = 0.05
-
-    def __init__(
-        self,
-        *,
-        max_concurrent: int = MAX_CONCURRENT_REQUESTS,
-        requests_per_second: float = REQUESTS_PER_SECOND,
-        clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
-    ):
-        self._max_concurrent = max(1, int(max_concurrent))
-        self._minimum_interval = 1 / requests_per_second
-        self._clock = clock
-        self._sleep = sleep
-        self._cond = threading.Condition()
-        self._waiting: list[tuple[int, int]] = []
-        self._active = 0
-        self._seq = 0
-        self._next_start = 0.0
-
-    @property
-    def pending_priorities(self) -> tuple[int, ...]:
-        """Priorities of the currently queued waiters, most favoured first."""
-        with self._cond:
-            return tuple(sorted(priority for priority, _seq in self._waiting))
-
-    def defer(self, seconds: float) -> None:
-        """Pause every future request start for at least ``seconds``."""
-        with self._cond:
-            self._next_start = max(self._next_start, self._clock() + max(0.0, seconds))
-            self._cond.notify_all()
-
-    @contextmanager
-    def slot(self, priority: int = PRIORITY_ALERT_REQUEST):
-        self._acquire(priority)
-        try:
-            yield self
-        finally:
-            self._release()
-
-    def __enter__(self):
-        self._acquire(PRIORITY_ALERT_REQUEST)
-        return self
-
-    def __exit__(self, exc_type, exc, traceback):
-        self._release()
-        return False
-
-    def _acquire(self, priority: int) -> None:
-        with self._cond:
-            ticket = (priority, self._seq)
-            self._seq += 1
-            heapq.heappush(self._waiting, ticket)
-            self._cond.notify_all()
-        try:
-            while True:
-                with self._cond:
-                    if self._active < self._max_concurrent and self._waiting[0] == ticket:
-                        delay = max(0.0, self._next_start - self._clock())
-                        if not delay:
-                            heapq.heappop(self._waiting)
-                            self._active += 1
-                            self._next_start = self._clock() + self._minimum_interval
-                            self._cond.notify_all()
-                            return
-                    else:
-                        delay = None
-                    if delay is None:
-                        self._cond.wait(self._WAIT_TIMEOUT_SECONDS)
-                        continue
-                # Only the favoured waiter sleeps out the start spacing, and it
-                # does so outside the lock so releases and defers stay prompt.
-                self._sleep(delay)
-        except BaseException:
-            with self._cond:
-                if ticket in self._waiting:
-                    self._waiting.remove(ticket)
-                    heapq.heapify(self._waiting)
-                    self._cond.notify_all()
-            raise
-
-    def _release(self) -> None:
-        with self._cond:
-            self._active -= 1
-            self._cond.notify_all()
-
-
-REC_GOV_REQUEST_GATE = RequestGate()
+REC_GOV_REQUEST_GATE = RequestGate(
+    max_concurrent=MAX_CONCURRENT_REQUESTS,
+    requests_per_second=REQUESTS_PER_SECOND,
+)
 
 
 def _as_list(value) -> list:
@@ -370,14 +268,7 @@ class NativeSearchRecreationDotGov:
         try:
             response.raise_for_status()
         except requests.HTTPError as exc:
-            detection = detect_rate_limit(exc)
-            if detection.rate_limited:
-                pause = detection.retry_after_seconds or DEFAULT_RATE_LIMIT_PAUSE_SECONDS
-                self._request_gate.defer(pause)
-                logger.warning(
-                    "Recreation.gov rate limited; pausing all requests for %.0fs",
-                    pause,
-                )
+            pause_gate_on_rate_limit(self._request_gate, exc, provider="Recreation.gov")
             raise
 
     def _request_month(self, facility_id: int | str, month: date) -> dict:
