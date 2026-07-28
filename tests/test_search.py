@@ -9,11 +9,8 @@ from campsite_checker.dispatch import PRIORITY_ALERT, PRIORITY_DASHBOARD
 from campsite_checker.providers import PROVIDER_MAP
 from campsite_checker.providers.recreation_gov import NativeSearchRecreationDotGov
 from campsite_checker.search import (
-    SEARCH_METADATA_CACHE,
-    SearchMetadataCache,
     SearchOutcome,
     _requires_recreation_area,
-    _search_payload,
     _supports_request_priority,
     build_search_batches,
     build_searcher,
@@ -220,88 +217,6 @@ class TestExecuteSearches:
         assert "cooldown is active" in next_results[1][2]
 
 
-class TestSearchMetadataCache:
-    def test_hydrates_matching_searcher(self):
-        cache = SearchMetadataCache()
-        metadata = object()
-        campground = SimpleNamespace(facility_id=123)
-        source = SimpleNamespace(
-            campgrounds=[campground],
-            campsite_metadata=metadata,
-        )
-        target = SimpleNamespace(
-            campgrounds=[campground],
-            campsite_metadata=None,
-        )
-
-        assert cache.store("RecreationDotGov", source) is True
-        assert cache.hydrate("RecreationDotGov", target) is True
-        assert target.campsite_metadata is metadata
-
-    def test_is_bounded_and_evicts_oldest_entry(self):
-        cache = SearchMetadataCache(max_entries=1)
-        first = SimpleNamespace(
-            campgrounds=[SimpleNamespace(facility_id=1)],
-            campsite_metadata=object(),
-        )
-        second = SimpleNamespace(
-            campgrounds=[SimpleNamespace(facility_id=2)],
-            campsite_metadata=object(),
-        )
-
-        cache.store("RecreationDotGov", first)
-        cache.store("RecreationDotGov", second)
-
-        assert len(cache) == 1
-        assert (
-            cache.hydrate(
-                "RecreationDotGov",
-                SimpleNamespace(
-                    campgrounds=first.campgrounds,
-                    campsite_metadata=None,
-                ),
-            )
-            is False
-        )
-
-    def test_ignores_searchers_without_metadata_support(self):
-        cache = SearchMetadataCache()
-        searcher = SimpleNamespace(
-            campgrounds=[SimpleNamespace(facility_id=1)],
-        )
-
-        assert cache.store("Yellowstone", searcher) is False
-        assert cache.hydrate("Yellowstone", searcher) is False
-
-    def test_expired_metadata_is_not_reused(self):
-        now = [100.0]
-        cache = SearchMetadataCache(
-            ttl_seconds=60,
-            clock=lambda: now[0],
-        )
-        campground = SimpleNamespace(facility_id=1)
-        cache.store(
-            "RecreationDotGov",
-            SimpleNamespace(
-                campgrounds=[campground],
-                campsite_metadata=object(),
-            ),
-        )
-        now[0] = 161.0
-
-        assert (
-            cache.hydrate(
-                "RecreationDotGov",
-                SimpleNamespace(
-                    campgrounds=[campground],
-                    campsite_metadata=None,
-                ),
-            )
-            is False
-        )
-        assert len(cache) == 0
-
-
 class NativeStyleSearch:
     """Stand-in for the native client: declares ``request_priority``."""
 
@@ -386,44 +301,3 @@ def test_constructor_introspection_is_cached():
     assert _requires_recreation_area(RequiredRecreationArea) is True
     assert _requires_recreation_area(RequiredRecreationArea) is True
     assert _requires_recreation_area.cache_info().hits == 1
-
-
-def test_search_payload_reuses_cached_metadata(monkeypatch):
-    campground = SimpleNamespace(
-        facility_id=123,
-        facility_name="Test Campground",
-        recreation_area="Test Area",
-    )
-    searchers = []
-    metadata_fetches = []
-
-    def fake_build_searcher(entry, search_window, args, priority=PRIORITY_ALERT):
-        searcher = SimpleNamespace(
-            campgrounds=[campground],
-            campsite_metadata=None,
-        )
-        searchers.append(searcher)
-        return searcher
-
-    def fake_run_search(entry, searcher, verbose):
-        if searcher.campsite_metadata is None:
-            metadata_fetches.append(1)
-            searcher.campsite_metadata = object()
-        from campsite_checker.throttle import RateLimitDetection
-
-        return [], None, RateLimitDetection(rate_limited=False)
-
-    SEARCH_METADATA_CACHE.clear()
-    monkeypatch.setattr("campsite_checker.search.build_searcher", fake_build_searcher)
-    monkeypatch.setattr("campsite_checker.search.run_search", fake_run_search)
-    entry = {"provider": "RecreationDotGov", "campground_id": 123}
-
-    first = _search_payload(entry, make_window(), make_args())
-    second = _search_payload(entry, make_window(), make_args())
-
-    assert len(searchers) == 2
-    assert len(metadata_fetches) == 1
-    assert searchers[1].campsite_metadata is searchers[0].campsite_metadata
-    assert first.metadata_reused is False
-    assert second.metadata_reused is True
-    SEARCH_METADATA_CACHE.clear()

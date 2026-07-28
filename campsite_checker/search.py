@@ -2,12 +2,10 @@ import concurrent.futures
 import inspect
 import logging
 import statistics
-import threading
 import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from functools import lru_cache, partial
-from typing import Any
 
 from camply.containers import AvailableCampsite, SearchWindow
 
@@ -22,75 +20,6 @@ from .results import get_facility_name
 from .throttle import PROVIDER_THROTTLES, RateLimitDetection, detect_rate_limit
 
 logger = logging.getLogger(__name__)
-
-
-class SearchMetadataCache:
-    """Thread-safe bounded cache for stable Camply campsite metadata."""
-
-    def __init__(
-        self,
-        max_entries: int = 32,
-        ttl_seconds: float = 24 * 60 * 60,
-        clock=time.monotonic,
-    ):
-        self.max_entries = max_entries
-        self.ttl_seconds = ttl_seconds
-        self._clock = clock
-        self._entries: OrderedDict[
-            tuple[str, tuple[str, ...]],
-            tuple[float, Any],
-        ] = OrderedDict()
-        self._lock = threading.Lock()
-
-    @staticmethod
-    def _key(provider: str, searcher) -> tuple[str, tuple[str, ...]] | None:
-        if not hasattr(searcher, "campsite_metadata"):
-            return None
-        facility_ids = tuple(
-            sorted(
-                str(campground.facility_id) for campground in getattr(searcher, "campgrounds", [])
-            )
-        )
-        return (provider, facility_ids) if facility_ids else None
-
-    def hydrate(self, provider: str, searcher) -> bool:
-        key = self._key(provider, searcher)
-        if key is None:
-            return False
-        with self._lock:
-            cached = self._entries.get(key)
-            if cached is None:
-                return False
-            expires_at, metadata = cached
-            if expires_at <= self._clock():
-                del self._entries[key]
-                return False
-            self._entries.move_to_end(key)
-        searcher.campsite_metadata = metadata
-        return True
-
-    def store(self, provider: str, searcher) -> bool:
-        key = self._key(provider, searcher)
-        metadata = getattr(searcher, "campsite_metadata", None)
-        if key is None or metadata is None:
-            return False
-        with self._lock:
-            self._entries[key] = (self._clock() + self.ttl_seconds, metadata)
-            self._entries.move_to_end(key)
-            while len(self._entries) > self.max_entries:
-                self._entries.popitem(last=False)
-        return True
-
-    def clear(self) -> None:
-        with self._lock:
-            self._entries.clear()
-
-    def __len__(self) -> int:
-        with self._lock:
-            return len(self._entries)
-
-
-SEARCH_METADATA_CACHE = SearchMetadataCache()
 
 
 @dataclass(slots=True)
@@ -110,7 +39,6 @@ class SearchOutcome:
     elapsed: float
     resolved_names: dict[str, str]
     resolved_name: str | None
-    metadata_reused: bool | None = None
     rate_limited: bool = False
     retry_after_seconds: float | None = None
     started_at: float = 0
@@ -312,12 +240,6 @@ def _search_payload(
     try:
         searcher = build_searcher(entry, search_window, args, priority)
         resolved_names, resolved_name = _resolved_searcher_names(searcher)
-        metadata_cacheable = hasattr(searcher, "campsite_metadata")
-        metadata_hit = SEARCH_METADATA_CACHE.hydrate(
-            entry.get("provider", "RecreationDotGov"), searcher
-        )
-        if metadata_hit:
-            logger.debug("Reused cached campsite metadata for %s", label)
     except Exception as exc:
         rate_limit = detect_rate_limit(exc)
         return SearchOutcome(
@@ -331,14 +253,12 @@ def _search_payload(
             started_at=start,
         )
     results, error, rate_limit = run_search(entry, searcher, verbose=args.verbose)
-    SEARCH_METADATA_CACHE.store(entry.get("provider", "RecreationDotGov"), searcher)
     return SearchOutcome(
         results=results,
         error=error,
         elapsed=time.monotonic() - start,
         resolved_names=resolved_names,
         resolved_name=resolved_name,
-        metadata_reused=metadata_hit if metadata_cacheable else None,
         rate_limited=rate_limit.rate_limited,
         retry_after_seconds=rate_limit.retry_after_seconds,
         started_at=start,
@@ -455,7 +375,6 @@ def execute_searches(
     total_start = time.monotonic()
     durations_by_provider: dict[str, list[float]] = defaultdict(list)
     entries_by_provider: dict[str, int] = defaultdict(int)
-    metadata_reuse_by_provider: dict[str, list[bool]] = defaultdict(list)
     skipped_by_provider: dict[str, tuple[int, float]] = {}
 
     def fail_batch(batch: SearchBatch, error: str) -> None:
@@ -509,8 +428,6 @@ def execute_searches(
         batch_size = len(batch.entries)
         durations_by_provider[batch.provider].append(outcome.elapsed)
         entries_by_provider[batch.provider] += batch_size
-        if outcome.metadata_reused is not None:
-            metadata_reuse_by_provider[batch.provider].append(outcome.metadata_reused)
         if outcome.error:
             fail_count += batch_size
             suffix = " [ERROR]"
@@ -568,20 +485,13 @@ def execute_searches(
     total_elapsed = time.monotonic() - total_start
     for provider, durations in durations_by_provider.items():
         provider_label = PROVIDER_DISPLAY.get(provider, provider.lower())
-        metadata_observations = metadata_reuse_by_provider[provider]
-        metadata_label = (
-            f", metadata reused {sum(metadata_observations)}/{len(metadata_observations)}"
-            if metadata_observations
-            else ""
-        )
         logger.info(
-            "   %s: %d campground(s), %d batch(es), median %.1fs, slowest %.1fs%s",
+            "   %s: %d campground(s), %d batch(es), median %.1fs, slowest %.1fs",
             provider_label,
             entries_by_provider[provider],
             len(durations),
             statistics.median(durations),
             max(durations),
-            metadata_label,
         )
     logger.info(
         "Searches complete: %d ok, %d failed in %d batch(es) (%.1fs total)",

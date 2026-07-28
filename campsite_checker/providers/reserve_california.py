@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import pathlib
+import threading
 import time
 from datetime import date, datetime, timedelta
 from functools import lru_cache
@@ -91,6 +92,14 @@ RESERVE_CALIFORNIA_REQUEST_GATE = RequestGate(
 CAMPLY_CACHE_DIR_ENV = "CAMPLY_CACHE_DIR"
 DEFAULT_CAMPLY_CACHE_DIR = pathlib.Path(".camply-cache")
 
+# Matches camply's own expiry for this cache, which never fires on the paths
+# this project uses; see `TimeoutReserveCalifornia.refresh_stale_metadata`.
+METADATA_MAX_AGE_SECONDS = 24 * 60 * 60
+
+# Serialises the re-fetch so concurrent searches that all notice the same stale
+# cache do not each re-download it.
+_METADATA_REFRESH_LOCK = threading.Lock()
+
 GRID_URL = (
     f"{ReserveCalifornia.base_url}/"
     f"{ReserveCalifornia.rdr_path}{UseDirectConfig.AVAILABILITY_ENDPOINT}"
@@ -141,6 +150,38 @@ class TimeoutReserveCalifornia(ReserveCalifornia):
     @property
     def offline_cache_dir(self) -> pathlib.Path:
         return usedirect_cache_dir("reserve-california")
+
+    def _metadata_is_stale(self) -> bool:
+        ages = [
+            time.time() - cached.stat().st_mtime for cached in self.offline_cache_dir.glob("*.json")
+        ]
+        return any(age > METADATA_MAX_AGE_SECONDS for age in ages)
+
+    def refresh_stale_metadata(self) -> None:
+        """Re-fetch the offline metadata once it ages out.
+
+        Camply expires this cache after a day, but only when ``active_search``
+        is False — and ``find_campgrounds`` sets it True *before* refreshing,
+        so on every path this project uses the expiry never fires. Because
+        `CAMPLY_CACHE_DIR` is a persistent volume in the container, that froze
+        the cache at whatever the first run downloaded: campgrounds added by
+        ReserveCalifornia stayed unfindable and renamed parks kept their old
+        names indefinitely.
+        """
+        if not self._metadata_is_stale():
+            return
+        with _METADATA_REFRESH_LOCK:
+            # Another thread may have refreshed it while this one waited.
+            if not self._metadata_is_stale():
+                return
+            logger.info("ReserveCalifornia metadata is stale; refreshing offline cache")
+            self.metadata_refreshed = False
+            self.active_search = False
+            self.refresh_metadata()
+
+    def find_campgrounds(self, *args, **kwargs):
+        self.refresh_stale_metadata()
+        return super().find_campgrounds(*args, **kwargs)
 
     def make_http_request(
         self,

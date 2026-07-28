@@ -2,7 +2,9 @@
 
 import inspect
 import json
+import os
 import pathlib
+import time
 from contextlib import contextmanager
 from datetime import date, timedelta
 from types import SimpleNamespace
@@ -19,6 +21,7 @@ from campsite_checker.providers.reserve_california import (
     DEFAULT_REQUEST_TIMEOUT,
     GRID_URL,
     MAX_GRID_WINDOW_DAYS,
+    METADATA_MAX_AGE_SECONDS,
     RESERVE_CALIFORNIA_REQUEST_GATE,
     NativeSearchReserveCalifornia,
     TimeoutReserveCalifornia,
@@ -141,6 +144,91 @@ class TestTimeoutReserveCalifornia:
         monkeypatch.setenv(CAMPLY_CACHE_DIR_ENV, str(tmp_path / "camply-cache"))
         cache_dir = TimeoutReserveCalifornia().offline_cache_dir
         assert cache_dir == tmp_path / "camply-cache" / "reserve-california"
+
+
+class TestMetadataStaleness:
+    """Camply's own 1-day expiry never fires on the paths this project uses.
+
+    `find_campgrounds` sets ``active_search = True`` before refreshing, and
+    ``_fetch_metadata_from_disk`` skips the expiry check whenever that flag is
+    set — so on a persistent cache volume the metadata was frozen at whatever
+    the first run downloaded.
+    """
+
+    @pytest.fixture
+    def cached_provider(self, monkeypatch, tmp_path):
+        def build(age_seconds):
+            monkeypatch.setenv(CAMPLY_CACHE_DIR_ENV, str(tmp_path))
+            provider = TimeoutReserveCalifornia()
+            provider.offline_cache_dir.mkdir(parents=True, exist_ok=True)
+            for name in ("filters", "cityparks", "places", "facilities"):
+                cached = provider.offline_cache_dir / f"{name}.json"
+                cached.write_text("[]")
+                mtime = time.time() - age_seconds
+                os.utime(cached, (mtime, mtime))
+            return provider
+
+        return build
+
+    def test_fresh_metadata_is_not_refetched(self, cached_provider, monkeypatch):
+        provider = cached_provider(age_seconds=60)
+        calls = []
+        monkeypatch.setattr(
+            TimeoutReserveCalifornia, "refresh_metadata", lambda self: calls.append(1)
+        )
+
+        provider.refresh_stale_metadata()
+
+        assert calls == []
+
+    def test_expired_metadata_is_refetched_with_the_search_flag_clear(
+        self, cached_provider, monkeypatch
+    ):
+        provider = cached_provider(age_seconds=METADATA_MAX_AGE_SECONDS + 60)
+        observed = {}
+
+        def fake_refresh(self):
+            observed["active_search"] = self.active_search
+            observed["metadata_refreshed"] = self.metadata_refreshed
+
+        monkeypatch.setattr(TimeoutReserveCalifornia, "refresh_metadata", fake_refresh)
+        # A previous lookup on this instance would otherwise suppress the refetch.
+        provider.metadata_refreshed = True
+        provider.active_search = True
+
+        provider.refresh_stale_metadata()
+
+        assert observed == {"active_search": False, "metadata_refreshed": False}
+
+    def test_find_campgrounds_checks_staleness_first(self, cached_provider, monkeypatch):
+        provider = cached_provider(age_seconds=METADATA_MAX_AGE_SECONDS + 60)
+        order = []
+        monkeypatch.setattr(
+            TimeoutReserveCalifornia,
+            "refresh_stale_metadata",
+            lambda self: order.append("refresh"),
+        )
+        monkeypatch.setattr(
+            TimeoutReserveCalifornia.__mro__[1],
+            "find_campgrounds",
+            lambda self, **kwargs: order.append("find") or [],
+        )
+
+        provider.find_campgrounds(campground_id=[786])
+
+        assert order == ["refresh", "find"]
+
+    def test_a_missing_cache_is_not_treated_as_stale(self, monkeypatch, tmp_path):
+        """An absent cache is camply's own cold-start path, not an expiry."""
+        monkeypatch.setenv(CAMPLY_CACHE_DIR_ENV, str(tmp_path / "empty"))
+        calls = []
+        monkeypatch.setattr(
+            TimeoutReserveCalifornia, "refresh_metadata", lambda self: calls.append(1)
+        )
+
+        TimeoutReserveCalifornia().refresh_stale_metadata()
+
+        assert calls == []
 
 
 class TestProviderClassForPriority:
