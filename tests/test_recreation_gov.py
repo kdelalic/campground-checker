@@ -16,8 +16,8 @@ from campsite_checker.providers.recreation_gov import (
     FacilityIdentityCache,
     IdentityCachedRecreationDotGov,
     NativeSearchRecreationDotGov,
-    ProviderRequestMetrics,
 )
+from campsite_checker.request_gate import ProviderRequestMetrics
 from campsite_checker.results import process_results
 from campsite_checker.throttle import detect_rate_limit
 

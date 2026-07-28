@@ -8,7 +8,7 @@ import threading
 from datetime import datetime, timezone
 
 from .metrics import CampgroundMetric, MetricsSnapshot, _timestamp, render_prometheus
-from .providers.recreation_gov import PROVIDER_REQUEST_METRICS, ProviderRequestMetrics
+from .request_gate import PROVIDER_REQUEST_METRICS, ProviderRequestMetrics
 from .throttle import PROVIDER_THROTTLES, ProviderThrottleRegistry
 
 

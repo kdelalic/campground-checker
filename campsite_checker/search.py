@@ -242,9 +242,10 @@ def build_searcher(
     if entry.get("recreation_area"):
         kwargs["recreation_area"] = _as_list(entry["recreation_area"])
     else:
-        # Some providers (e.g. SearchReserveCalifornia) declare recreation_area
-        # as a required positional arg with no default; pass [] when only
-        # campground_id is given so the constructor doesn't raise TypeError.
+        # Some providers (e.g. camply's SearchGoingToCamp) declare
+        # recreation_area as a required positional arg with no default; pass []
+        # when only campground_id is given so the constructor doesn't raise
+        # TypeError.
         if _requires_recreation_area(search_class):
             kwargs["recreation_area"] = []
 
@@ -427,7 +428,7 @@ def execute_searches(
     scans, per-provider ``--search-delay`` pacing is global, and provider
     cooldowns are enforced when each batch is dispatched. ``priority`` orders
     queued batches and is forwarded to searchers that prioritise individual
-    requests (currently the native Recreation.gov client).
+    requests (the native Recreation.gov and ReserveCalifornia clients).
     """
     results_by_index: dict[int, tuple[dict, list[AvailableCampsite], str | None]] = {}
     batches = build_search_batches(entries, args)

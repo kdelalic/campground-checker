@@ -14,8 +14,8 @@ from campsite_checker.providers.recreation_gov import (
     NativeSearchRecreationDotGov,
 )
 from campsite_checker.providers.reserve_california import (
+    NativeSearchReserveCalifornia,
     TimeoutReserveCalifornia,
-    TimeoutSearchReserveCalifornia,
 )
 
 
@@ -43,12 +43,12 @@ class TestProviderMapWiring:
         assert not issubclass(NativeSearchRecreationDotGov, SearchRecreationDotGov)
         assert NativeSearchRecreationDotGov.provider_class is IdentityCachedRecreationDotGov
 
-    def test_reserve_california_uses_timeout_search_class(self):
+    def test_reserve_california_uses_native_search_class(self):
         from camply.search import SearchReserveCalifornia
 
-        assert PROVIDER_MAP["ReserveCalifornia"] is TimeoutSearchReserveCalifornia
-        assert issubclass(TimeoutSearchReserveCalifornia, SearchReserveCalifornia)
-        assert TimeoutSearchReserveCalifornia.provider_class is TimeoutReserveCalifornia
+        assert PROVIDER_MAP["ReserveCalifornia"] is NativeSearchReserveCalifornia
+        assert not issubclass(NativeSearchReserveCalifornia, SearchReserveCalifornia)
+        assert NativeSearchReserveCalifornia.provider_class is TimeoutReserveCalifornia
 
     def test_metadata_provider_classes_share_hardening(self):
         assert METADATA_PROVIDER_CLASS["RecreationDotGov"] is IdentityCachedRecreationDotGov

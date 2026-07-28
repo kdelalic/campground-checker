@@ -11,7 +11,6 @@ import logging
 import threading
 import time
 from collections import OrderedDict, defaultdict
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Callable
 
@@ -21,6 +20,8 @@ from camply.providers import RecreationDotGov
 
 from ..request_gate import (
     PRIORITY_ALERT_REQUEST,
+    PROVIDER_REQUEST_METRICS,
+    ProviderRequestMetrics,
     RequestGate,
     pause_gate_on_rate_limit,
 )
@@ -149,55 +150,6 @@ class IdentityCachedRecreationDotGov(RecreationDotGov):
         return [
             resolved[str(identifier)] for identifier in requested if str(identifier) in resolved
         ]
-
-
-@dataclass(frozen=True, slots=True)
-class ProviderRequestSnapshot:
-    provider: str
-    attempts: int
-    retries: int
-    failures: int
-
-
-class ProviderRequestMetrics:
-    """Small in-process counter registry rendered by the existing metrics endpoint."""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._values: dict[str, list[int]] = {}
-
-    def _increment(self, provider: str, index: int) -> None:
-        with self._lock:
-            values = self._values.setdefault(provider, [0, 0, 0])
-            values[index] += 1
-
-    def record_attempt(self, provider: str) -> None:
-        self._increment(provider, 0)
-
-    def record_retry(self, provider: str) -> None:
-        self._increment(provider, 1)
-
-    def record_failure(self, provider: str) -> None:
-        self._increment(provider, 2)
-
-    def snapshot(self) -> list[ProviderRequestSnapshot]:
-        with self._lock:
-            return [
-                ProviderRequestSnapshot(
-                    provider=provider,
-                    attempts=values[0],
-                    retries=values[1],
-                    failures=values[2],
-                )
-                for provider, values in sorted(self._values.items())
-            ]
-
-    def clear(self) -> None:
-        with self._lock:
-            self._values.clear()
-
-
-PROVIDER_REQUEST_METRICS = ProviderRequestMetrics()
 
 
 REC_GOV_REQUEST_GATE = RequestGate(

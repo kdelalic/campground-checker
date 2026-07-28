@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from .providers.recreation_gov import ProviderRequestSnapshot
+from .request_gate import ProviderRequestSnapshot
 from .throttle import ProviderThrottleSnapshot
 
 

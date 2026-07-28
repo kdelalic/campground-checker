@@ -17,6 +17,7 @@ import logging
 import threading
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Callable
 
 from .throttle import detect_rate_limit
@@ -27,6 +28,59 @@ logger = logging.getLogger(__name__)
 # dispatcher into the provider layer.
 PRIORITY_ALERT_REQUEST = 0
 DEFAULT_RATE_LIMIT_PAUSE_SECONDS = 30.0
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderRequestSnapshot:
+    provider: str
+    attempts: int
+    retries: int
+    failures: int
+
+
+class ProviderRequestMetrics:
+    """Small in-process counter registry rendered by the existing metrics endpoint.
+
+    Shared by every native provider client, so it lives beside the gate rather
+    than inside one provider's module.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._values: dict[str, list[int]] = {}
+
+    def _increment(self, provider: str, index: int) -> None:
+        with self._lock:
+            values = self._values.setdefault(provider, [0, 0, 0])
+            values[index] += 1
+
+    def record_attempt(self, provider: str) -> None:
+        self._increment(provider, 0)
+
+    def record_retry(self, provider: str) -> None:
+        self._increment(provider, 1)
+
+    def record_failure(self, provider: str) -> None:
+        self._increment(provider, 2)
+
+    def snapshot(self) -> list[ProviderRequestSnapshot]:
+        with self._lock:
+            return [
+                ProviderRequestSnapshot(
+                    provider=provider,
+                    attempts=values[0],
+                    retries=values[1],
+                    failures=values[2],
+                )
+                for provider, values in sorted(self._values.items())
+            ]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._values.clear()
+
+
+PROVIDER_REQUEST_METRICS = ProviderRequestMetrics()
 
 
 class RequestGate:

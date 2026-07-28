@@ -7,7 +7,7 @@ from campsite_checker.metrics import (
     CampgroundMetric,
     CampgroundScanFailures,
 )
-from campsite_checker.providers.recreation_gov import ProviderRequestMetrics
+from campsite_checker.request_gate import ProviderRequestMetrics
 from campsite_checker.status import ScanStatus
 from campsite_checker.throttle import ProviderThrottleRegistry
 

@@ -353,16 +353,17 @@ class TestRequestPriorityForwarding:
     def test_real_providers_are_introspected_as_expected(self):
         """Guards the two constructor contracts ``build_searcher`` depends on.
 
-        ``TimeoutSearchReserveCalifornia`` overrides ``__init__`` to accept a
-        priority; dropping ``recreation_area`` from that signature would stop
-        campground-only entries from getting ``recreation_area=[]`` and break
-        every ReserveCalifornia search.
+        ``GoingToCamp`` is camply's, and declares ``recreation_area`` without a
+        default; dropping the introspection would stop campground-only entries
+        from getting ``recreation_area=[]``. The native clients declare
+        ``request_priority``, which is how alert scans outrank dashboard scans
+        inside a provider's request gate.
         """
         expected = {
             "RecreationDotGov": (False, True),
             "Yellowstone": (False, False),
             "GoingToCamp": (True, False),
-            "ReserveCalifornia": (True, True),
+            "ReserveCalifornia": (False, True),
         }
         actual = {
             name: (

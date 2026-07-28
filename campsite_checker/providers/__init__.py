@@ -15,8 +15,8 @@ from .recreation_gov import (
     NativeSearchRecreationDotGov,
 )
 from .reserve_california import (
+    NativeSearchReserveCalifornia,
     TimeoutReserveCalifornia,
-    TimeoutSearchReserveCalifornia,
 )
 
 __all__ = [
@@ -29,7 +29,7 @@ PROVIDER_MAP: dict[str, type] = {
     "RecreationDotGov": NativeSearchRecreationDotGov,
     "Yellowstone": SearchYellowstone,
     "GoingToCamp": SearchGoingToCamp,
-    "ReserveCalifornia": TimeoutSearchReserveCalifornia,
+    "ReserveCalifornia": NativeSearchReserveCalifornia,
 }
 
 # Provider classes used for out-of-search metadata lookups (bot name resolution),
