@@ -5,11 +5,48 @@ names, help strings, and wire format. Keep any change here in sync with the
 metric reference in `docs/observability.md` and `grafana/campground-checker.json`.
 """
 
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from .providers.recreation_gov import ProviderRequestSnapshot
 from .throttle import ProviderThrottleSnapshot
+
+
+class CampgroundScanFailures:
+    """Cumulative failed searches per campground, keyed by stable config index.
+
+    `campsite_checker_campground_last_scan_success` is a gauge, so a campground
+    that fails intermittently is indistinguishable from a healthy one unless
+    you happen to scrape mid-failure. This counter makes that history
+    rate-able, and it is the only signal that moves for a per-campground
+    failure: `scan_errors_total` counts whole-scan aborts, so a scan in which
+    some campgrounds failed and others succeeded leaves it at zero.
+
+    Incremented once per real search attempt from `search.execute_searches`
+    rather than from `ScanStatus.update`, because every alert scan re-publishes
+    the cached dashboard results and would otherwise re-count one dashboard
+    failure on each alert cycle.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._counts: dict[int, int] = {}
+
+    def record_failure(self, config_index: int) -> None:
+        with self._lock:
+            self._counts[config_index] = self._counts.get(config_index, 0) + 1
+
+    def get(self, config_index: int) -> int:
+        with self._lock:
+            return self._counts.get(config_index, 0)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._counts.clear()
+
+
+CAMPGROUND_SCAN_FAILURES = CampgroundScanFailures()
 
 
 def _stringify_label(value) -> str:
@@ -36,6 +73,7 @@ class CampgroundMetric:
     available: bool
     available_sites: int
     scan_success: bool
+    scan_failures: int = 0
 
     @classmethod
     def from_entry(
@@ -46,6 +84,7 @@ class CampgroundMetric:
         available: bool,
         available_sites: int,
         scan_success: bool = True,
+        scan_failures: int | None = None,
     ) -> "CampgroundMetric":
         provider = _stringify_label(entry.get("provider", "RecreationDotGov"))
         campground_id = _stringify_label(entry.get("campground_id"))
@@ -65,6 +104,11 @@ class CampgroundMetric:
             available=available,
             available_sites=available_sites,
             scan_success=scan_success,
+            scan_failures=(
+                CAMPGROUND_SCAN_FAILURES.get(config_index)
+                if scan_failures is None
+                else scan_failures
+            ),
         )
 
     def labels(self) -> str:
@@ -270,6 +314,18 @@ def render_prometheus(snapshot: MetricsSnapshot) -> str:
             f"{name}{campground.labels()} {get_value(campground)}"
             for campground in snapshot.campgrounds
         )
+
+    failures_metric = "campsite_checker_campground_scan_failures_total"
+    lines.extend(
+        (
+            f"# HELP {failures_metric} Failed searches for the configured campground.",
+            f"# TYPE {failures_metric} counter",
+        )
+    )
+    lines.extend(
+        f"{failures_metric}{campground.labels()} {campground.scan_failures}"
+        for campground in snapshot.campgrounds
+    )
 
     throttle_metrics = (
         (

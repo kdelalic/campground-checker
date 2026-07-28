@@ -208,16 +208,47 @@ def test_retryable_server_errors_use_short_bounded_retry(monkeypatch):
     assert all(call[1]["timeout"] == DEFAULT_REQUEST_TIMEOUT for call in session.calls)
 
 
-def test_429_fails_immediately_and_defers_gate_by_retry_after(monkeypatch):
+def test_429_defers_gate_by_retry_after_then_retries_successfully(monkeypatch):
     metrics = ProviderRequestMetrics()
     gate = ImmediateGate()
-    response = FakeResponse(status_code=429, headers={"Retry-After": "75"})
+    sleeps = []
     search = make_search(
         monkeypatch,
-        session=QueueSession(response),
+        session=QueueSession(
+            FakeResponse(status_code=429, headers={"Retry-After": "75"}),
+            FakeResponse(payload={"campsites": {}}),
+        ),
         metrics=metrics,
         request_gate=gate,
         request_priority=PRIORITY_DASHBOARD,
+    )
+    search._sleep = sleeps.append
+
+    assert search._request_month(232447, date(2099, 8, 1)) == {"campsites": {}}
+
+    # The pause is applied while the slot is still held, so batches already
+    # executing stop issuing requests too. Re-acquiring the slot is what waits
+    # it out, so no local backoff is slept on top of it.
+    assert gate.deferrals == [75]
+    assert gate.priorities == [PRIORITY_DASHBOARD, PRIORITY_DASHBOARD]
+    assert sleeps == []
+    snapshot = metrics.snapshot()[0]
+    assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (2, 1, 0)
+
+
+def test_alert_requests_give_up_after_a_single_rate_limit_retry(monkeypatch):
+    """An alert scan re-runs within its interval, so it must not stack pauses."""
+    metrics = ProviderRequestMetrics()
+    gate = ImmediateGate()
+    search = make_search(
+        monkeypatch,
+        session=QueueSession(
+            FakeResponse(status_code=429),
+            FakeResponse(status_code=429),
+        ),
+        metrics=metrics,
+        request_gate=gate,
+        request_priority=PRIORITY_ALERT,
     )
 
     with pytest.raises(requests.HTTPError) as exc_info:
@@ -225,27 +256,32 @@ def test_429_fails_immediately_and_defers_gate_by_retry_after(monkeypatch):
 
     detection = detect_rate_limit(exc_info.value)
     assert detection.rate_limited is True
-    assert detection.retry_after_seconds == 75
-    # The pause is applied while the slot is still held, so batches already
-    # executing stop issuing requests too.
-    assert gate.deferrals == [75]
-    assert gate.priorities == [PRIORITY_DASHBOARD]
+    assert gate.deferrals == [30, 30]
     snapshot = metrics.snapshot()[0]
-    assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (1, 0, 1)
+    assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (2, 1, 1)
 
 
-def test_429_without_retry_after_defers_gate_by_default_pause(monkeypatch):
+def test_dashboard_requests_retry_rate_limits_twice_before_failing(monkeypatch):
+    metrics = ProviderRequestMetrics()
     gate = ImmediateGate()
     search = make_search(
         monkeypatch,
-        session=QueueSession(FakeResponse(status_code=429)),
+        session=QueueSession(
+            FakeResponse(status_code=429),
+            FakeResponse(status_code=429),
+            FakeResponse(status_code=429),
+        ),
+        metrics=metrics,
         request_gate=gate,
+        request_priority=PRIORITY_DASHBOARD,
     )
 
     with pytest.raises(requests.HTTPError):
         search._request_month(232447, date(2099, 8, 1))
 
-    assert gate.deferrals == [30]
+    assert gate.deferrals == [30, 30, 30]
+    snapshot = metrics.snapshot()[0]
+    assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (3, 2, 1)
 
 
 def test_server_errors_do_not_defer_the_shared_gate(monkeypatch):

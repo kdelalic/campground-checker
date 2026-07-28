@@ -15,9 +15,15 @@ Scheduling semantics:
   soon as the in-flight batch finishes (strict priority in the queue).
 - ``--search-delay`` pacing is tracked per provider inside the dispatcher, so
   overlapping scans share one submission schedule per provider.
-- Provider cooldowns are checked when work is dispatched: once a cooldown
-  activates, queued work for that provider from either scan type fails fast
-  with :class:`ProviderCooldownActive` instead of hitting the provider.
+- Provider cooldowns are checked when work is dispatched. Queued alert work
+  fails fast with :class:`ProviderCooldownActive`: the alert scan re-runs
+  within its interval, so returning promptly and retrying beats holding the
+  scan open. Queued dashboard work instead waits out a cooldown up to
+  ``max_cooldown_wait``, because failing it strands every campground in the
+  batch until the next dashboard interval — far longer than the pause itself.
+  A cooldown above that budget fails dashboard work too, so a genuine provider
+  outage (whose adaptive cooldown grows exponentially) does not stall scans
+  behind it.
 """
 
 import concurrent.futures
@@ -33,6 +39,13 @@ logger = logging.getLogger(__name__)
 
 PRIORITY_ALERT = 0
 PRIORITY_DASHBOARD = 1
+
+# Longest provider cooldown a queued *dashboard* batch will wait out before
+# being failed. The adaptive cooldown starts at 30s and doubles per consecutive
+# rate limit, so this waits out the first couple of levels — the common
+# transient case — and gives up once the provider looks genuinely unhappy.
+# Alert work is never held for a cooldown; see the module docstring.
+DEFAULT_MAX_COOLDOWN_WAIT_SECONDS = 60.0
 
 
 class ProviderCooldownActive(Exception):
@@ -63,10 +76,12 @@ class SearchDispatcher:
         *,
         throttles: ProviderThrottleRegistry | None = None,
         clock: Callable[[], float] = time.monotonic,
+        max_cooldown_wait: float = DEFAULT_MAX_COOLDOWN_WAIT_SECONDS,
     ):
         self.workers = max(1, int(workers))
         self.search_delay = max(0.0, float(search_delay))
         self.throttles = throttles if throttles is not None else PROVIDER_THROTTLES
+        self.max_cooldown_wait = max(0.0, float(max_cooldown_wait))
         self._clock = clock
         self._cond = threading.Condition()
         self._pending: list[_PendingWork] = []
@@ -159,11 +174,26 @@ class SearchDispatcher:
                     continue
                 self._cond.wait(wait_seconds)
 
+    def _cooldown_wait_budget(self, priority: int) -> float:
+        """How long queued work of ``priority`` may wait out a provider cooldown.
+
+        Alert work gets no budget: its scan re-runs within the alert interval,
+        so failing fast and retrying beats holding the scan open. Dashboard
+        work waits, because failing it strands the whole batch until the next
+        dashboard interval.
+        """
+        return 0.0 if priority == PRIORITY_ALERT else self.max_cooldown_wait
+
     def _fail_cooldown_blocked_locked(self) -> None:
+        """Fail queued work whose provider cooldown outlasts its wait budget.
+
+        Shorter cooldowns stay pending and are waited out by
+        :meth:`_select_locked`.
+        """
         still_pending: list[_PendingWork] = []
         for work in self._pending:
             cooldown = self.throttles.cooldown_seconds(work.provider)
-            if cooldown > 0:
+            if cooldown > self._cooldown_wait_budget(work.priority):
                 if work.future.set_running_or_notify_cancel():
                     work.future.set_exception(ProviderCooldownActive(work.provider, cooldown))
             else:
@@ -183,7 +213,12 @@ class SearchDispatcher:
                 and self._active_by_priority[PRIORITY_DASHBOARD] >= self.dashboard_slots
             ):
                 continue
-            ready_at = self._next_submission.get(work.provider, 0.0)
+            # A cooldown short enough to survive _fail_cooldown_blocked_locked
+            # is waited out here, exactly like --search-delay pacing. Alert work
+            # has a zero budget, so it is never pending at this point with a
+            # cooldown active.
+            cooldown = self.throttles.cooldown_seconds(work.provider)
+            ready_at = max(self._next_submission.get(work.provider, 0.0), now + cooldown)
             if ready_at > now:
                 pacing_wait = ready_at - now
                 wait_seconds = (

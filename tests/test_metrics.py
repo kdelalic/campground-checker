@@ -2,7 +2,11 @@
 
 from datetime import datetime, timezone
 
-from campsite_checker.metrics import CampgroundMetric
+from campsite_checker.metrics import (
+    CAMPGROUND_SCAN_FAILURES,
+    CampgroundMetric,
+    CampgroundScanFailures,
+)
 from campsite_checker.providers.recreation_gov import ProviderRequestMetrics
 from campsite_checker.status import ScanStatus
 from campsite_checker.throttle import ProviderThrottleRegistry
@@ -101,6 +105,49 @@ class TestPrometheusMetrics:
         assert f"campsite_checker_campground_available{labels} 1" in metrics
         assert f"campsite_checker_campground_campsites_available{labels} 7" in metrics
         assert f"campsite_checker_campground_last_scan_success{labels} 0" in metrics
+
+    def test_campground_scan_failures_are_exported_as_a_counter(self):
+        failures = CampgroundScanFailures()
+        failures.record_failure(3)
+        failures.record_failure(3)
+        failures.record_failure(4)
+
+        assert failures.get(3) == 2
+        assert failures.get(4) == 1
+        assert failures.get(99) == 0
+
+        status = ScanStatus()
+        status.update(
+            campgrounds=[
+                CampgroundMetric.from_entry(
+                    {"provider": "RecreationDotGov", "campground_id": 232447},
+                    config_index=3,
+                    available=False,
+                    available_sites=0,
+                    scan_success=False,
+                    scan_failures=failures.get(3),
+                )
+            ],
+        )
+
+        metrics = status.to_prometheus()
+        assert "# TYPE campsite_checker_campground_scan_failures_total counter" in metrics
+        assert 'campsite_checker_campground_scan_failures_total{config_index="3"' in metrics
+        assert metrics.count("campsite_checker_campground_scan_failures_total") == 3
+
+    def test_campground_scan_failures_default_to_the_process_registry(self):
+        CAMPGROUND_SCAN_FAILURES.clear()
+        CAMPGROUND_SCAN_FAILURES.record_failure(7)
+        try:
+            campground = CampgroundMetric.from_entry(
+                {"provider": "RecreationDotGov", "campground_id": 232447},
+                config_index=7,
+                available=False,
+                available_sites=0,
+            )
+            assert campground.scan_failures == 1
+        finally:
+            CAMPGROUND_SCAN_FAILURES.clear()
 
     def test_campground_name_falls_back_to_stable_id(self):
         campground = CampgroundMetric.from_entry(

@@ -16,6 +16,7 @@ from .dispatch import (
     ProviderCooldownActive,
     get_dispatcher,
 )
+from .metrics import CAMPGROUND_SCAN_FAILURES
 from .providers import PROVIDER_DISPLAY, PROVIDER_MAP
 from .results import get_facility_name
 from .throttle import PROVIDER_THROTTLES, RateLimitDetection, detect_rate_limit
@@ -549,12 +550,19 @@ def execute_searches(
 
     for provider, (skipped_count, cooldown) in skipped_by_provider.items():
         logger.warning(
-            "Provider %s cooldown active; skipped %d campground(s), retrying next scan "
-            "(%.0fs remaining)",
+            "Provider %s cooldown too long to wait out; skipped %d campground(s), "
+            "retrying next scan (%.0fs remaining)",
             PROVIDER_DISPLAY.get(provider, provider),
             skipped_count,
             cooldown,
         )
+
+    # Counted here rather than in ScanStatus because an alert scan republishes
+    # cached dashboard results; see metrics.CampgroundScanFailures. Entries
+    # without a config index come from ad-hoc callers and are not tracked.
+    for entry, _results, error in results_by_index.values():
+        if error is not None and "_config_index" in entry:
+            CAMPGROUND_SCAN_FAILURES.record_failure(entry["_config_index"])
 
     total_elapsed = time.monotonic() - total_start
     for provider, durations in durations_by_provider.items():

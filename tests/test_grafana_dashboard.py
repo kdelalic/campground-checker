@@ -10,6 +10,7 @@ PER_CAMPGROUND_METRICS = {
     "campsite_checker_campground_available",
     "campsite_checker_campground_campsites_available",
     "campsite_checker_campground_last_scan_success",
+    "campsite_checker_campground_scan_failures_total",
 }
 
 
@@ -72,6 +73,7 @@ def test_dashboard_visualizes_per_campground_metrics():
         "Availability by Campground",
         "Failed Campground Searches",
         "Campgrounds with Search Errors",
+        "Campground Search Failures",
         "Availability Events",
     }
     assert expected_panels <= panels.keys()
@@ -79,6 +81,7 @@ def test_dashboard_visualizes_per_campground_metrics():
     detail_panels = {
         "Availability by Campground",
         "Campgrounds with Search Errors",
+        "Campground Search Failures",
         "Availability Events",
     }
     for title in detail_panels:

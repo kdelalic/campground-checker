@@ -255,10 +255,15 @@ class TestProviderPacing:
 
 
 class TestCooldownAtDispatch:
-    def test_new_cooldown_fails_queued_work_from_both_scan_types(self, dispatchers):
+    def test_long_cooldown_fails_queued_work_from_both_scan_types(self, dispatchers):
         clock = FakeClock()
         registry = ProviderThrottleRegistry(clock=clock)
-        dispatcher = dispatchers(workers=1, throttles=registry, clock=clock)
+        dispatcher = dispatchers(
+            workers=1,
+            throttles=registry,
+            clock=clock,
+            max_cooldown_wait=30,  # below the 45s cooldown, so dashboard fails too
+        )
         blocker = Task("blocker")
         queued_alert = Task("queued_alert", blocking=False)
         queued_dash = Task("queued_dash", blocking=False)
@@ -283,6 +288,52 @@ class TestCooldownAtDispatch:
         blocker.release.set()
         assert blocker_future.result(timeout=TIMEOUT) == "blocker"
         assert other_future.result(timeout=TIMEOUT) == "other"
+
+    def test_short_cooldown_is_waited_out_by_dashboard_work(self, dispatchers):
+        """A brief rate-limit pause must not cost a whole dashboard batch.
+
+        Failing the batch instead would leave every campground in it stale
+        until the next dashboard interval, far longer than the pause.
+        """
+        clock = FakeClock()
+        registry = ProviderThrottleRegistry(clock=clock)
+        dispatcher = dispatchers(
+            workers=2,
+            throttles=registry,
+            clock=clock,
+            max_cooldown_wait=60,
+        )
+        queued_dash = Task("queued_dash", blocking=False)
+
+        registry.record_rate_limit("X", retry_after_seconds=30)
+        dash_future = dispatcher.submit(queued_dash, provider="X", priority=PRIORITY_DASHBOARD)
+
+        # Still inside the cooldown: queued, not failed.
+        assert not queued_dash.started.wait(0.2)
+        assert not dash_future.done()
+
+        clock.advance(30)
+        assert dash_future.result(timeout=TIMEOUT) == "queued_dash"
+
+    def test_alert_work_never_waits_out_a_cooldown(self, dispatchers):
+        """The alert scan re-runs within its interval, so it fails fast."""
+        clock = FakeClock()
+        registry = ProviderThrottleRegistry(clock=clock)
+        dispatcher = dispatchers(
+            workers=2,
+            throttles=registry,
+            clock=clock,
+            max_cooldown_wait=600,
+        )
+        queued_alert = Task("queued_alert", blocking=False)
+
+        registry.record_rate_limit("X", retry_after_seconds=30)
+        alert_future = dispatcher.submit(queued_alert, provider="X", priority=PRIORITY_ALERT)
+
+        with pytest.raises(ProviderCooldownActive) as skip:
+            alert_future.result(timeout=TIMEOUT)
+        assert skip.value.cooldown_seconds == 30
+        assert not queued_alert.started.is_set()
 
 
 class TestLifecycle:

@@ -49,6 +49,10 @@ logging.getLogger("camply").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+# Minimum idle time between the end of one dashboard sweep and the start of the
+# next, regardless of how far the sweep overran --dashboard-interval.
+MIN_DASHBOARD_IDLE_SECONDS = 60.0
+
 
 def _resident_memory_mb() -> float | None:
     """Return current RSS on Linux or peak RSS on other Unix platforms."""
@@ -389,6 +393,7 @@ def run_forever(
     # A zero sentinel does not work on freshly booted hosts whose monotonic clock
     # is still below the configured interval.
     last_dashboard_started = monotonic() - dashboard_interval * 60
+    last_dashboard_finished = last_dashboard_started
     cached_dashboard_results: list[ProcessedAvailability] = []
     dashboard_snapshot_ready = False
     dashboard_executor = concurrent.futures.ThreadPoolExecutor(
@@ -483,12 +488,18 @@ def run_forever(
                                 when=dashboard_outcome.completed_at,
                             )
                     dashboard_future = None
+                    last_dashboard_finished = monotonic()
 
                 # Start due dashboard-only work without blocking the alert scheduler.
                 now = monotonic()
                 dashboard_due = (
                     dashboard_future is None
                     and (now - last_dashboard_started) >= dashboard_interval * 60
+                    # A sweep that overruns its own interval is due the instant
+                    # it finishes, which would run sweeps back to back and raise
+                    # the request rate exactly when the provider is already
+                    # throttling. Always leave the provider an idle gap.
+                    and (now - last_dashboard_finished) >= MIN_DASHBOARD_IDLE_SECONDS
                 )
 
                 if dashboard_due and dashboard_entries:

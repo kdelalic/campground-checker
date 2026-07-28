@@ -79,8 +79,9 @@ These metrics are emitted once per configured campground:
 | `campsite_checker_campground_available` | Gauge | `1` when the campground's latest results contain availability; otherwise `0`. |
 | `campsite_checker_campground_campsites_available` | Gauge | Available campsite-date combinations for the campground. |
 | `campsite_checker_campground_last_scan_success` | Gauge | `1` when every search task for the campground succeeded; `0` when at least one provider search failed. |
+| `campsite_checker_campground_scan_failures_total` | Counter | Cumulative failed searches for the campground. The success gauge above only shows the latest scan, so this is what makes an intermittently failing campground visible over a range. |
 
-All three per-campground metrics use the same labels:
+All four per-campground metrics use the same labels:
 
 | Label | Description |
 | --- | --- |
@@ -126,6 +127,14 @@ campsite_checker_up == 0
 
 # Campground provider searches that failed
 campsite_checker_campground_last_scan_success == 0
+
+# Share of the last day each campground spent in a successful-scan state.
+# `scan_errors_total` stays at zero when some campgrounds fail and the
+# surrounding scan cycle still completes, so prefer this for coverage.
+avg_over_time(campsite_checker_campground_last_scan_success[24h])
+
+# Campgrounds failing most often over the last hour
+topk(5, increase(campsite_checker_campground_scan_failures_total[1h]))
 
 # Campgrounds with confirmed availability
 campsite_checker_campground_available == 1

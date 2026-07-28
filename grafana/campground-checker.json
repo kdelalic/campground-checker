@@ -282,7 +282,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Share of scan cycles in the selected range that completed without an unhandled error.",
+      "description": "Share of the selected range in which configured campgrounds were in a successful-scan state. Unlike scan_errors_total (whole-scan aborts, in \"Errors in Selected Range\"), this moves when individual campground searches fail while the surrounding scan succeeds.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -340,14 +340,14 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "100 * (sum(increase(campsite_checker_scans_total[$__range])) - sum(increase(campsite_checker_scan_errors_total[$__range]))) / clamp_min(sum(increase(campsite_checker_scans_total[$__range])), 1)",
+          "expr": "100 * avg(avg_over_time(campsite_checker_campground_last_scan_success{provider=~\"$provider\", alert=~\"$alert\"}[$__range]))",
           "instant": true,
-          "legendFormat": "Scan Success Rate",
+          "legendFormat": "Campground scan success rate",
           "range": false,
           "refId": "A"
         }
       ],
-      "title": "Scan Success Rate",
+      "title": "Campground Scan Success Rate",
       "type": "stat"
     },
     {
@@ -928,12 +928,106 @@
       "type": "state-timeline"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Failed searches per campground per hour. The top-level failure stat and table are instantaneous, so an intermittently failing campground is only visible here.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "id": 34,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(10, sum by (name) (rate(campsite_checker_campground_scan_failures_total{provider=~\"$provider\", alert=~\"$alert\"}[$__rate_interval]))) * 3600",
+          "legendFormat": "{{name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Campground Search Failures",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 43
       },
       "id": 28,
       "panels": [],
@@ -1001,7 +1095,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 36
+        "y": 44
       },
       "id": 7,
       "options": {
@@ -1109,7 +1203,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 36
+        "y": 44
       },
       "id": 8,
       "options": {
@@ -1205,7 +1299,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 36
+        "y": 44
       },
       "id": 9,
       "options": {
@@ -1246,7 +1340,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 52
       },
       "id": 29,
       "panels": [],
@@ -1314,7 +1408,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 45
+        "y": 53
       },
       "id": 10,
       "options": {
@@ -1427,7 +1521,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 45
+        "y": 53
       },
       "id": 11,
       "options": {
@@ -1550,7 +1644,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 45
+        "y": 53
       },
       "id": 25,
       "options": {
@@ -1628,7 +1722,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 53
+        "y": 61
       },
       "id": 12,
       "options": {
@@ -1701,7 +1795,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 53
+        "y": 61
       },
       "id": 13,
       "options": {
@@ -1791,7 +1885,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 53
+        "y": 61
       },
       "id": 32,
       "options": {
@@ -1868,7 +1962,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 53
+        "y": 61
       },
       "id": 6,
       "options": {
@@ -1910,7 +2004,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 65
       },
       "id": 30,
       "panels": [],
@@ -1977,7 +2071,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 58
+        "y": 66
       },
       "id": 20,
       "options": {
@@ -2126,7 +2220,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 58
+        "y": 66
       },
       "id": 21,
       "options": {
@@ -2242,7 +2336,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 58
+        "y": 66
       },
       "id": 33,
       "options": {
@@ -2284,7 +2378,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 74
       },
       "id": 31,
       "panels": [],
@@ -2341,7 +2435,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 67
+        "y": 75
       },
       "id": 22,
       "options": {
@@ -2437,7 +2531,7 @@
         "h": 8,
         "w": 9,
         "x": 6,
-        "y": 67
+        "y": 75
       },
       "id": 23,
       "options": {
@@ -2549,7 +2643,7 @@
         "h": 8,
         "w": 9,
         "x": 15,
-        "y": 67
+        "y": 75
       },
       "id": 24,
       "options": {

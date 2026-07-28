@@ -39,6 +39,19 @@ DEFAULT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
 REQUESTS_PER_SECOND = 1
 MAX_CONCURRENT_REQUESTS = 2
 
+# A 429 is retryable here because `_pause_gate_if_rate_limited` has already
+# deferred the shared gate by `Retry-After` (or 30s) before we get to decide.
+# The retry therefore blocks in `RequestGate._acquire` until the provider is
+# ready again instead of re-issuing immediately, so the backoff is the
+# provider's own rather than a fixed local delay.
+#
+# Alert requests get fewer of these than dashboard requests: a rate-limited
+# alert scan re-runs within `--alert-interval` anyway, so it is better to
+# return late-but-fresh on the next cycle than to stack multiple provider
+# pauses onto one latency-sensitive scan.
+DEFAULT_MAX_RATE_LIMIT_RETRIES = 2
+ALERT_MAX_RATE_LIMIT_RETRIES = 1
+
 # These are Camply's current values, copied deliberately so unknown future
 # statuses continue to surface as potentially bookable instead of silently
 # hiding inventory.
@@ -243,6 +256,11 @@ class NativeSearchRecreationDotGov:
         self._request_gate = request_gate or REC_GOV_REQUEST_GATE
         self._request_metrics = request_metrics or PROVIDER_REQUEST_METRICS
         self.request_priority = request_priority
+        self._max_rate_limit_retries = (
+            ALERT_MAX_RATE_LIMIT_RETRIES
+            if request_priority == PRIORITY_ALERT_REQUEST
+            else DEFAULT_MAX_RATE_LIMIT_RETRIES
+        )
 
         provider = self.provider_class()
         self.campgrounds = provider.find_campgrounds(
@@ -275,6 +293,8 @@ class NativeSearchRecreationDotGov:
         url = AVAILABILITY_URL.format(facility_id=facility_id)
         params = {"start_date": month.strftime("%Y-%m-01T00:00:00.000Z")}
         last_error: Exception | None = None
+        rate_limit_retries = 0
+        gate_paced = False
 
         for attempt in range(DEFAULT_MAX_ATTEMPTS):
             self._request_metrics.record_attempt(self.provider_name)
@@ -294,27 +314,38 @@ class NativeSearchRecreationDotGov:
             except (requests.Timeout, requests.ConnectionError) as exc:
                 last_error = exc
                 retryable = True
+                gate_paced = False
             except requests.HTTPError as exc:
                 last_error = exc
                 status_code = exc.response.status_code if exc.response is not None else None
-                retryable = status_code is not None and 500 <= status_code < 600
+                if status_code == 429:
+                    retryable = rate_limit_retries < self._max_rate_limit_retries
+                    rate_limit_retries += 1
+                    gate_paced = True
+                else:
+                    retryable = status_code is not None and 500 <= status_code < 600
+                    gate_paced = False
             except (TypeError, ValueError) as exc:
                 last_error = exc
                 retryable = False
+                gate_paced = False
 
             if not retryable or attempt == DEFAULT_MAX_ATTEMPTS - 1:
                 self._request_metrics.record_failure(self.provider_name)
                 raise last_error
 
-            delay = DEFAULT_RETRY_DELAYS_SECONDS[attempt]
+            # The gate already holds the provider's own backoff, so sleeping a
+            # local delay on top of it would just add latency.
+            delay = 0.0 if gate_paced else DEFAULT_RETRY_DELAYS_SECONDS[attempt]
             self._request_metrics.record_retry(self.provider_name)
             logger.warning(
-                "Recreation.gov request failed for facility %s (%s); retrying in %.1fs",
+                "Recreation.gov request failed for facility %s (%s); retrying %s",
                 facility_id,
                 last_error,
-                delay,
+                "once the provider pause elapses" if gate_paced else f"in {delay:.1f}s",
             )
-            self._sleep(delay)
+            if delay:
+                self._sleep(delay)
 
         raise RuntimeError("unreachable")
 
