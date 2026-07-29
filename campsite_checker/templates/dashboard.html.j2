@@ -63,26 +63,47 @@
 </head>
 <body data-refresh-seconds="{{ refresh_seconds }}" data-stale-after-seconds="{{ stale_after_seconds }}">
 <div class="container">
-<header>
-<h1>&#x1F3D5; Campsite Availability</h1>
-<p class="timestamp">Updated <span id="relative-age">just now</span> <span class="timestamp-exact">(<span id="last-updated" data-timestamp="{{ timestamp_iso }}">{{ timestamp_label }}</span>)</span></p>
+<header class="hero">
+<div class="hero-brand"><span class="brand-mark" aria-hidden="true"><i></i></span><span>Campground availability monitor</span></div>
+<div class="hero-main">
+<div class="hero-copy">
+<p class="eyebrow">Plan less. Camp more.</p>
+<h1>Campsite Availability</h1>
+<p class="hero-intro">A clear view of open sites across the campgrounds on your watchlist.</p>
+</div>
+<div class="freshness-card">
+<span class="live-dot" aria-hidden="true"></span>
+<div class="freshness-copy">
+<span class="freshness-label">Latest scan</span>
+<p class="timestamp"><span id="relative-age">just now</span> <span class="timestamp-exact"><span id="last-updated" data-timestamp="{{ timestamp_iso }}">{{ timestamp_label }}</span></span></p>
 <div class="freshness-actions">
 {% if refresh_label %}<span class="refresh-status">{{ refresh_label }}</span>{% endif %}
 <button id="refresh-now" class="text-button" type="button">Refresh now</button>
 </div>
+</div>
+</div>
+</div>
 <p id="stale-warning" class="stale-warning" role="status" hidden>&#9888; This dashboard has not been updated on schedule. Availability may be stale.</p>
+<div class="hero-meta">
 {% if stats %}
 <p id="stat-line" class="stat-line" aria-live="polite"><strong>{{ stats.available }}</strong> of {{ stats.total }} campgrounds with availability{% if stats.soonest %} &middot; soonest <strong>{{ stats.soonest }}</strong>{% endif %}{% if stats.failed %} &middot; <span class="stat-failed">&#9888; {{ stats.failed }} scan(s) failed</span>{% endif %}</p>
 {% endif %}
 {% if search_filter %}
 <p class="filter-line" title="The criteria this scan searched with">&#x1F50D; Searching <strong>{{ search_filter.days }}</strong>{% if search_filter.nights %} &middot; <strong>{{ search_filter.nights }}</strong>{% endif %} &middot; {{ search_filter.date_range }} &middot; {{ search_filter.dates }} date(s)</p>
 {% endif %}
+</div>
 </header>
 
 <main>
 {% if months %}
 <section class="calendar-container" aria-labelledby="calendar-heading">
+<div class="section-heading">
+<div>
+<p class="section-kicker">Availability map</p>
 <h2 id="calendar-heading" class="section-title">Choose a date</h2>
+</div>
+<p class="section-description">Select a highlighted day to see exactly where you can stay.</p>
+</div>
 <div class="calendar-controls">
 <button id="prev-month-btn" class="nav-btn" type="button" aria-label="Previous month" disabled>&larr;</button>
 <label class="sr-only" for="month-selector">Calendar month</label>
@@ -120,7 +141,10 @@
 {% if cards %}
 <section class="results-section" aria-labelledby="results-heading">
 <div class="results-heading-row">
+<div>
+<p class="section-kicker">Your watchlist</p>
 <h2 id="results-heading" class="section-title">Campgrounds</h2>
+</div>
 <span id="result-count" class="result-count" aria-live="polite"></span>
 </div>
 <div class="results-toolbar">
