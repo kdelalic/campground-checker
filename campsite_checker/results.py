@@ -49,6 +49,10 @@ class ProcessedAvailability:
     notification_keys: frozenset[NotificationKey]
     total_sites: int
     search_succeeded: bool = True
+    # Set only by the dashboard publisher when it substitutes the most recent
+    # successful snapshot for a newly failed scan. Other consumers continue to
+    # see the live scan result exactly as returned by the provider.
+    last_successful_at: datetime | None = None
 
     @property
     def available(self) -> bool:

@@ -5,7 +5,7 @@ import time
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
@@ -18,6 +18,7 @@ from .results import (
     ProcessedAvailability,
     availability_fingerprint,
     count_matching_dates,
+    entry_identity,
     process_results,
 )
 from .weekdays import WEEKDAY_LABELS
@@ -26,6 +27,7 @@ from .weekdays import WEEKDAY_LABELS
 # republishes on its own cadence, so this only bounds how stale a left-open tab
 # can get.
 DEFAULT_REFRESH_SECONDS = 300
+DEFAULT_STALE_AFTER_SECONDS = 2 * 60 * 60
 
 TEMPLATE_DIR = "templates"
 PAGE_TEMPLATE = "dashboard.html.j2"
@@ -61,6 +63,9 @@ class DashboardPublisher:
         self.last_uploaded_fingerprint: str | None = None
         self._last_written_at: float | None = None
         self._last_uploaded_at: float | None = None
+        self._successful_snapshots: dict[
+            tuple[str, str], tuple[ProcessedAvailability, datetime]
+        ] = {}
 
     def _is_stale(self, last_at: float | None, now: float) -> bool:
         return last_at is None or (now - last_at) >= self.freshness_interval_seconds
@@ -71,7 +76,8 @@ class DashboardPublisher:
         day_filter: set[int] | None = None,
         search_filter: SearchFilterView | None = None,
     ) -> DashboardPublishResult:
-        fingerprint = availability_fingerprint(availabilities)
+        rendered_availabilities = self._retain_last_successful(availabilities)
+        fingerprint = availability_fingerprint(rendered_availabilities)
         if search_filter is not None:
             # The rendered filter is part of the page, and its date range rolls
             # forward daily, so an unchanged availability set must still
@@ -84,7 +90,16 @@ class DashboardPublisher:
             or self._is_stale(self._last_written_at, now)
         )
         if written:
-            generate_dashboard(availabilities, day_filter, self.output_path, search_filter)
+            generate_dashboard(
+                rendered_availabilities,
+                day_filter,
+                self.output_path,
+                search_filter,
+                stale_after_seconds=max(
+                    DEFAULT_REFRESH_SECONDS * 2,
+                    int(self.freshness_interval_seconds * 2),
+                ),
+            )
             self.last_written_fingerprint = fingerprint
             self._last_written_at = now
 
@@ -106,6 +121,50 @@ class DashboardPublisher:
             uploaded=uploaded,
             public_url=public_url,
         )
+
+    def _retain_last_successful(
+        self,
+        availabilities: list[ProcessedAvailability],
+    ) -> list[ProcessedAvailability]:
+        """Use a labeled prior snapshot when a campground cannot be checked.
+
+        This cache deliberately lives at the presentation boundary: alerts,
+        metrics, and health reporting must continue to reflect the current
+        failed scan rather than the dashboard's last-known-good fallback.
+        """
+        now = datetime.now(timezone.utc).astimezone()
+        rendered = []
+        for availability in availabilities:
+            configured_identity = availability.entry.get("_config_index")
+            if configured_identity is None:
+                configured_identity = entry_identity(
+                    availability.entry,
+                    availability.entry.get("name", ""),
+                )
+            key = (
+                availability.entry.get("provider", "RecreationDotGov"),
+                str(configured_identity),
+            )
+            if availability.search_succeeded:
+                clean = replace(availability, last_successful_at=None)
+                self._successful_snapshots[key] = (clean, now)
+                rendered.append(clean)
+                continue
+
+            previous = self._successful_snapshots.get(key)
+            if previous is not None and not availability.available:
+                snapshot, successful_at = previous
+                rendered.append(
+                    replace(
+                        snapshot,
+                        entry=availability.entry,
+                        search_succeeded=False,
+                        last_successful_at=successful_at,
+                    )
+                )
+            else:
+                rendered.append(availability)
+        return rendered
 
 
 def get_dashboard_path(args, config: dict) -> str | None:
@@ -180,6 +239,10 @@ class CardView:
     # because entries may disagree, and an entry with `criteria` searches
     # several stay lengths at once.
     nights: str = ""
+    unique_sites: int = 0
+    date_count: int = 0
+    stale_label: str = ""
+    stale_timestamp_iso: str = ""
 
     @property
     def css_class(self) -> str:
@@ -189,10 +252,22 @@ class CardView:
             return "card card-unavailable"
         return "card card-partial" if self.partial else "card"
 
+    @property
+    def availability_label(self) -> str:
+        if self.state == "empty":
+            return "No availability"
+        opening_label = "opening" if self.total == 1 else "openings"
+        date_label = "date" if self.date_count == 1 else "dates"
+        site_label = "site" if self.unique_sites == 1 else "unique sites"
+        return (
+            f"{self.total} {opening_label} across {self.date_count} {date_label}"
+            f" · {self.unique_sites} {site_label}"
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class CalendarCell:
-    kind: str  # "available" | "day" | "empty"
+    kind: str  # "available" | "searched" | "day" | "empty"
     day: int = 0
     iso: str = ""
     count: int = 0
@@ -206,6 +281,7 @@ class CalendarCell:
 class CalendarMonth:
     id: str
     label: str
+    year_month: str
     weeks: tuple[tuple[CalendarCell, ...], ...]
 
 
@@ -231,11 +307,17 @@ class SearchFilterView:
     date_range: str
     dates: int
     nights: str = ""
+    start: date | None = None
+    end: date | None = None
+    day_filter: frozenset[int] | None = None
 
     @property
     def fingerprint(self) -> str:
         """Identity for change detection; the range rolls forward daily."""
-        return f"{self.days}|{self.nights}|{self.date_range}|{self.dates}"
+        return (
+            f"{self.days}|{self.nights}|{self.date_range}|{self.dates}"
+            f"|{self.start}|{self.end}|{self.day_filter}"
+        )
 
 
 def entry_nights(entry: dict) -> list[int]:
@@ -293,16 +375,28 @@ def build_search_filter_view(
         nights=format_nights(
             night for availability in availabilities for night in entry_nights(availability.entry)
         ),
+        start=start,
+        end=end,
+        day_filter=frozenset(day_filter) if day_filter is not None else None,
     )
 
 
-def build_calendar_months(all_availabilities: dict[date, int]) -> list[CalendarMonth]:
-    """Lay out every month spanned by the results as a grid of cells."""
-    if not all_availabilities:
+def build_calendar_months(
+    all_availabilities: dict[date, int],
+    start: date | None = None,
+    end: date | None = None,
+    day_filter: frozenset[int] | set[int] | None = None,
+) -> list[CalendarMonth]:
+    """Lay out the complete searched range, including dates with no results."""
+    if start is None and not all_availabilities:
         return []
 
-    min_date = min(all_availabilities)
-    max_date = max(all_availabilities)
+    min_date = start or min(all_availabilities)
+    # Search windows are end-exclusive. Without an explicit range, retain the
+    # historic behavior of ending on the last result date.
+    max_date = end - timedelta(days=1) if end is not None else max(all_availabilities)
+    if max_date < min_date:
+        return []
     cal = calendar.Calendar(firstweekday=6)  # Sunday start
 
     months: list[CalendarMonth] = []
@@ -326,6 +420,17 @@ def build_calendar_months(all_availabilities: dict[date, int]) -> list[CalendarM
                             short_label=d.strftime("%a, %b %-d"),
                         )
                     )
+                elif min_date <= d <= max_date and (
+                    day_filter is None or d.weekday() in day_filter
+                ):
+                    cells.append(
+                        CalendarCell(
+                            kind="searched",
+                            day=d.day,
+                            iso=d.isoformat(),
+                            label=f"{d.strftime('%B %-d, %Y')} — searched, no availability",
+                        )
+                    )
                 else:
                     cells.append(CalendarCell(kind="day", day=d.day))
             weeks.append(tuple(cells))
@@ -334,6 +439,7 @@ def build_calendar_months(all_availabilities: dict[date, int]) -> list[CalendarM
             CalendarMonth(
                 id=f"cal-month-{len(months)}",
                 label=f"{calendar.month_name[curr_month]} {curr_year}",
+                year_month=f"{curr_year:04d}-{curr_month:02d}",
                 weeks=tuple(weeks),
             )
         )
@@ -385,6 +491,19 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
         name = entry.get("name") or f"Campground #{entry.get('campground_id', '?')}"
 
     scan_failed = not availability.search_succeeded
+    stale_label = ""
+    stale_timestamp_iso = ""
+    if availability.last_successful_at is not None:
+        successful_at = availability.last_successful_at
+        if successful_at.tzinfo is None:
+            successful_at = successful_at.replace(tzinfo=timezone.utc).astimezone()
+        stale_timestamp_iso = successful_at.isoformat()
+        stale_label = (
+            f"Showing last successful data from {successful_at.strftime('%b %-d at %-I:%M %p')}"
+        )
+    elif scan_failed and availability.available:
+        stale_label = "Some provider requests failed; these results may be incomplete"
+
     if not availability.available:
         # A failed search carries no information about this campground, so it
         # must not read as "nothing open here".
@@ -398,6 +517,8 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
             # An empty card is exactly where the stay length matters most: it
             # says what "no availability" was actually checked against.
             nights=build_nights_label(entry),
+            stale_label=stale_label,
+            stale_timestamp_iso=stale_timestamp_iso,
         )
 
     sites_by_date = group_sites_by_date(availability.campsites)
@@ -413,7 +534,9 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
     return CardView(
         id=card_id,
         name=name,
-        state="available",
+        # A retained snapshot remains useful for booking, but it is not current
+        # availability and must sort/filter/render as a failed scan.
+        state="failed" if stale_timestamp_iso else "available",
         total=availability.total_sites,
         rows=rows,
         booking_url=availability.booking_url,
@@ -421,6 +544,10 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
         # Some searches for this entry succeeded and some did not, so what is
         # shown is real but incomplete.
         partial=scan_failed,
+        unique_sites=len({site.campsite_id for site in availability.campsites}),
+        date_count=len(rows),
+        stale_label=stale_label,
+        stale_timestamp_iso=stale_timestamp_iso,
     )
 
 
@@ -456,6 +583,7 @@ def build_dashboard_html(
     scan_timestamp: datetime | None = None,
     refresh_seconds: int = DEFAULT_REFRESH_SECONDS,
     search_filter: SearchFilterView | None = None,
+    stale_after_seconds: int = DEFAULT_STALE_AFTER_SECONDS,
 ) -> str:
     """Generate a complete self-contained HTML string."""
     if scan_timestamp is None:
@@ -475,7 +603,9 @@ def build_dashboard_html(
 
     all_availabilities: dict[date, int] = defaultdict(int)
     for availability in availabilities:
-        if availability.available:
+        # Retained last-known-good rows are shown inside their failed card but
+        # never painted green in the calendar or counted as current results.
+        if availability.available and availability.last_successful_at is None:
             for booking_date, campsite_ids in availability.campsite_ids_by_date.items():
                 all_availabilities[booking_date] += len(campsite_ids)
 
@@ -488,6 +618,17 @@ def build_dashboard_html(
             failed=sum(card.state == "failed" or card.partial for card in cards),
         )
 
+    calendar_start = search_filter.start if search_filter is not None else None
+    calendar_end = search_filter.end if search_filter is not None else None
+    calendar_day_filter = search_filter.day_filter if search_filter is not None else None
+    refresh_label = ""
+    if refresh_seconds > 0:
+        if refresh_seconds % 60 == 0:
+            minutes = refresh_seconds // 60
+            refresh_label = f"Auto-refreshes every {minutes} minute{'s' if minutes != 1 else ''}"
+        else:
+            refresh_label = f"Auto-refreshes every {refresh_seconds} seconds"
+
     return (
         template_environment()
         .get_template(PAGE_TEMPLATE)
@@ -495,12 +636,22 @@ def build_dashboard_html(
             css=read_asset("dashboard.css"),
             js=read_asset("dashboard.js"),
             refresh_seconds=refresh_seconds,
+            refresh_label=refresh_label,
+            stale_after_seconds=stale_after_seconds,
             timestamp_iso=scan_timestamp.isoformat(),
             timestamp_label=scan_timestamp.strftime("%b %-d, %Y at %-I:%M %p"),
             stats=stats,
             search_filter=search_filter,
-            months=build_calendar_months(all_availabilities),
+            months=build_calendar_months(
+                all_availabilities,
+                calendar_start,
+                calendar_end,
+                calendar_day_filter,
+            ),
             cards=cards,
+            available_cards=[card for card in cards if card.state == "available"],
+            failed_cards=[card for card in cards if card.state == "failed"],
+            empty_cards=[card for card in cards if card.state == "empty"],
         )
     )
 
@@ -516,9 +667,15 @@ def generate_dashboard(
     day_filter: set[int] | None,
     output_path: str,
     search_filter: SearchFilterView | None = None,
+    stale_after_seconds: int = DEFAULT_STALE_AFTER_SECONDS,
 ) -> str:
     """Build HTML, write to disk, and immediately free the string."""
-    content = build_dashboard_html(entries_with_results, day_filter, search_filter=search_filter)
+    content = build_dashboard_html(
+        entries_with_results,
+        day_filter,
+        search_filter=search_filter,
+        stale_after_seconds=stale_after_seconds,
+    )
     write_dashboard(content, output_path)
     del content
     return output_path

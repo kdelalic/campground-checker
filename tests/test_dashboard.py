@@ -38,7 +38,7 @@ def test_dashboard_reuses_preprocessed_availability(monkeypatch):
     )
 
     assert "Test Area — Test Campground" in content
-    assert "1 open site(s)" in content
+    assert "1 opening across 1 date · 1 site" in content
     assert "https://example.com/book" in content
 
 
@@ -62,7 +62,7 @@ class TestFailedScanRendering:
         content = render([failed])
 
         assert "Scan failed" in content
-        assert '<div class="card card-unavailable card-failed"' in content
+        assert '<article class="card card-unavailable card-failed"' in content
         assert "No availability" not in content
 
     def test_empty_successful_scan_still_reads_as_no_availability(self):
@@ -72,7 +72,7 @@ class TestFailedScanRendering:
 
         assert "No availability" in content
         assert "Scan failed" not in content
-        assert '<div class="card card-unavailable card-failed"' not in content
+        assert '<article class="card card-unavailable card-failed"' not in content
 
     def test_failed_scan_marked_in_quick_nav(self):
         failed = process_filtered_results({"name": "Kirk Creek"}, [], search_succeeded=False)
@@ -80,8 +80,8 @@ class TestFailedScanRendering:
 
         content = render([failed, ok])
 
-        assert 'data-ref="site-0" data-unavailable="true" data-failed="true"' in content
-        assert 'data-ref="site-1" data-unavailable="true">' in content
+        assert 'data-ref="site-0" data-state="failed"' in content
+        assert 'data-ref="site-1" data-state="empty"' in content
         assert "nav-failed" in content
 
     def test_partial_results_keep_data_but_flag_staleness(self):
@@ -94,8 +94,8 @@ class TestFailedScanRendering:
         content = render([partial])
 
         assert "Partial scan" in content
-        assert '<div class="card card-partial"' in content
-        assert "1 open site(s)" in content
+        assert '<article class="card card-partial"' in content
+        assert "1 opening across 1 date · 1 site" in content
 
     def test_failure_count_shown_in_summary_stats(self):
         content = render(
@@ -128,7 +128,7 @@ class TestSummaryStats:
         content = render([])
 
         assert '<p class="stat-line"' not in content
-        assert "No availability found in the current scan." in content
+        assert "No campgrounds were included in the current scan." in content
 
 
 class TestPerSiteDetail:
@@ -214,7 +214,7 @@ class TestRefreshAndAccessibility:
             refresh_seconds=42,
         )
 
-        assert '<body data-refresh-seconds="42">' in content
+        assert '<body data-refresh-seconds="42" data-stale-after-seconds="7200">' in content
 
     def test_refresh_can_be_disabled(self):
         content = build_dashboard_html(
@@ -224,15 +224,15 @@ class TestRefreshAndAccessibility:
             refresh_seconds=0,
         )
 
-        assert '<body data-refresh-seconds="0">' in content
+        assert '<body data-refresh-seconds="0" data-stale-after-seconds="7200">' in content
         assert "if (refreshSeconds > 0) {" in content
 
     def test_calendar_days_are_keyboard_operable(self):
         content = render([process_filtered_results({}, [make_campsite()])])
 
-        assert 'tabindex="0" role="button"' in content
+        assert '<td class="calendar-available"><button type="button"' in content
         assert 'aria-label="July 4, 2026' in content
-        assert 'e.key === "Enter"' in content
+        assert 'button.addEventListener("click"' in content
 
     def test_page_stays_self_contained(self):
         content = render([process_filtered_results({}, [make_campsite()])])
@@ -257,7 +257,7 @@ class TestTemplateAssets:
         escaped JS operators would silently break the page."""
         content = render([process_filtered_results({}, [make_campsite()])])
 
-        assert "idx <= 0" in content
+        assert "index <= 0" in content
         assert "refreshDue && document.visibilityState" in content
         assert "&amp;&amp;" not in content
         assert "&lt;=" not in content

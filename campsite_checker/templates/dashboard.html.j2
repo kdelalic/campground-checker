@@ -2,7 +2,56 @@
   Self-contained availability dashboard. The CSS and JS are inlined verbatim
   from sibling static assets: the page is uploaded to object storage as a
   single file, so it must never reference an external asset.
-#}<!DOCTYPE html>
+#}
+{% macro render_card(card) -%}
+<article class="{{ card.css_class }}" id="{{ card.id }}" data-state="{{ card.state }}" data-name="{{ card.name|lower }}" data-openings="{{ card.total }}">
+<div class="card-header">
+<h2>{{ card.name }}</h2>
+{% if card.state == "failed" %}
+<span class="card-badges">
+{% if card.nights %}<span class="site-count site-count-nights" title="Minimum consecutive nights searched">{{ card.nights }}</span>{% endif %}
+<span class="site-count site-count-failed">&#9888; {% if card.rows %}Stale snapshot{% else %}Scan failed{% endif %}</span>
+{% if card.rows %}<span class="site-count site-count-availability">{{ card.availability_label }}</span>{% endif %}
+</span>
+{% else %}
+<span class="card-badges">
+{% if card.nights %}<span class="site-count site-count-nights" title="Minimum consecutive nights searched">{{ card.nights }}</span>{% endif %}
+{% if card.partial %}<span class="site-count site-count-failed">&#9888; {% if card.stale_timestamp_iso %}Stale snapshot{% else %}Partial scan{% endif %}</span>{% endif %}
+<span class="site-count site-count-availability{% if card.state == 'empty' %} site-count-none{% endif %}">{{ card.availability_label }}</span>
+</span>
+{% endif %}
+</div>
+{% if card.stale_label %}
+<p class="card-status{% if card.stale_timestamp_iso %} stale-snapshot{% endif %}"{% if card.stale_timestamp_iso %} data-timestamp="{{ card.stale_timestamp_iso }}"{% endif %}>&#9888; {{ card.stale_label }}</p>
+{% elif card.state == "failed" %}
+<p class="card-status">No current availability data is available for this campground.</p>
+{% endif %}
+{% if card.rows %}
+<div class="table-container">
+<table>
+<caption class="sr-only">Available dates and campsites for {{ card.name }}</caption>
+<thead><tr><th scope="col">Date</th><th scope="col">Availability</th></tr></thead>
+<tbody>
+{% for row in card.rows %}
+<tr data-date="{{ row.iso }}" data-count="{{ row.count }}">
+<td><details class="date-detail"{% if loop.first %} open{% endif %}><summary>{{ row.label }}</summary><ul class="site-list">
+{%- for site in row.sites %}
+<li><span class="site-identity">{% if site.url %}<a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.name }}</a>{% else %}<strong>{{ site.name }}</strong>{% endif %}{% if site.loop %}<span class="site-loop">{{ site.loop }}</span>{% endif %}</span>{% if site.url %}<a class="site-book-link" href="{{ site.url }}" target="_blank" rel="noopener" aria-label="Book {{ site.name }}">Book site &rarr;</a>{% endif %}</li>
+{%- endfor %}
+</ul></details></td>
+<td><span class="available-badge">{{ row.count }} site{% if row.count != 1 %}s{% endif %}</span></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+{% if card.booking_url %}
+<div class="book-action"><a class="book-link" href="{{ card.booking_url }}" target="_blank" rel="noopener">View campground &amp; book &rarr;</a></div>
+{% endif %}
+</article>
+{%- endmacro %}
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -12,36 +61,47 @@
 {{ css|safe }}
 </style>
 </head>
-<body data-refresh-seconds="{{ refresh_seconds }}">
+<body data-refresh-seconds="{{ refresh_seconds }}" data-stale-after-seconds="{{ stale_after_seconds }}">
 <div class="container">
 <header>
 <h1>&#x1F3D5; Campsite Availability</h1>
-<p class="timestamp">Last updated: <span id="last-updated" data-timestamp="{{ timestamp_iso }}">{{ timestamp_label }}</span></p>
+<p class="timestamp">Updated <span id="relative-age">just now</span> <span class="timestamp-exact">(<span id="last-updated" data-timestamp="{{ timestamp_iso }}">{{ timestamp_label }}</span>)</span></p>
+<div class="freshness-actions">
+{% if refresh_label %}<span class="refresh-status">{{ refresh_label }}</span>{% endif %}
+<button id="refresh-now" class="text-button" type="button">Refresh now</button>
+</div>
+<p id="stale-warning" class="stale-warning" role="status" hidden>&#9888; This dashboard has not been updated on schedule. Availability may be stale.</p>
 {% if stats %}
-<p class="stat-line"><strong>{{ stats.available }}</strong> of {{ stats.total }} campgrounds with availability{% if stats.soonest %} &middot; soonest <strong>{{ stats.soonest }}</strong>{% endif %}{% if stats.failed %} &middot; <span class="stat-failed">&#9888; {{ stats.failed }} scan(s) failed</span>{% endif %}</p>
+<p id="stat-line" class="stat-line" aria-live="polite"><strong>{{ stats.available }}</strong> of {{ stats.total }} campgrounds with availability{% if stats.soonest %} &middot; soonest <strong>{{ stats.soonest }}</strong>{% endif %}{% if stats.failed %} &middot; <span class="stat-failed">&#9888; {{ stats.failed }} scan(s) failed</span>{% endif %}</p>
 {% endif %}
 {% if search_filter %}
 <p class="filter-line" title="The criteria this scan searched with">&#x1F50D; Searching <strong>{{ search_filter.days }}</strong>{% if search_filter.nights %} &middot; <strong>{{ search_filter.nights }}</strong>{% endif %} &middot; {{ search_filter.date_range }} &middot; {{ search_filter.dates }} date(s)</p>
 {% endif %}
 </header>
 
+<main>
 {% if months %}
-<div class="calendar-container">
+<section class="calendar-container" aria-labelledby="calendar-heading">
+<h2 id="calendar-heading" class="section-title">Choose a date</h2>
 <div class="calendar-controls">
-<button id="prev-month-btn" class="nav-btn" title="Previous Month" disabled>&larr;</button>
-<select id="month-selector">{% for month in months %}<option value="{{ month.id }}">{{ month.label }}</option>{% endfor %}</select>
-<button id="next-month-btn" class="nav-btn" title="Next Month" disabled>&rarr;</button>
-<span id="date-filter" class="date-filter" style="display: none;">Showing <strong id="date-filter-label"></strong><button id="clear-date-filter" title="Show all dates" aria-label="Clear date filter">&times;</button></span>
+<button id="prev-month-btn" class="nav-btn" type="button" aria-label="Previous month" disabled>&larr;</button>
+<label class="sr-only" for="month-selector">Calendar month</label>
+<select id="month-selector">{% for month in months %}<option value="{{ month.id }}" data-month="{{ month.year_month }}">{{ month.label }}</option>{% endfor %}</select>
+<button id="next-month-btn" class="nav-btn" type="button" aria-label="Next month" disabled>&rarr;</button>
+<span id="date-filter" class="date-filter" aria-live="polite" hidden>Showing <strong id="date-filter-label"></strong><button id="clear-date-filter" type="button" title="Show all dates" aria-label="Clear date filter">&times;</button></span>
 </div>
 {% for month in months %}
-<div class="calendar-month" id="{{ month.id }}"{% if not loop.first %} style="display: none;"{% endif %}>
+<div class="calendar-month" id="{{ month.id }}" data-month="{{ month.year_month }}"{% if not loop.first %} hidden{% endif %}>
 <table class="calendar-table">
-<thead><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr></thead>
+<caption class="sr-only">{{ month.label }} campsite availability</caption>
+<thead><tr><th scope="col">Su</th><th scope="col">Mo</th><th scope="col">Tu</th><th scope="col">We</th><th scope="col">Th</th><th scope="col">Fr</th><th scope="col">Sa</th></tr></thead>
 <tbody>
 {% for week in month.weeks %}
 <tr>{% for cell in week %}
   {%- if cell.kind == "available" -%}
-    <td class="calendar-available" data-date="{{ cell.iso }}" data-label="{{ cell.short_label }}" tabindex="0" role="button" aria-label="{{ cell.label }}" title="{{ cell.count }} site(s) available">{{ cell.day }}</td>
+    <td class="calendar-available"><button type="button" data-date="{{ cell.iso }}" data-label="{{ cell.short_label }}" aria-label="{{ cell.label }}"><span class="calendar-day-number">{{ cell.day }}</span><span class="calendar-count" aria-hidden="true">{{ cell.count }}</span></button></td>
+  {%- elif cell.kind == "searched" -%}
+    <td class="calendar-searched-empty"><span aria-label="{{ cell.label }}">{{ cell.day }}</span></td>
   {%- elif cell.kind == "day" -%}
     <td class="calendar-day">{{ cell.day }}</td>
   {%- else -%}
@@ -53,53 +113,50 @@
 </table>
 </div>
 {% endfor %}
-</div>
+<div class="calendar-legend" aria-label="Calendar legend"><span><i class="legend-swatch legend-available"></i>Available <small>count shown</small></span><span><i class="legend-swatch legend-searched"></i>Searched, none found</span><span><i class="legend-swatch legend-not-searched"></i>Not searched</span></div>
+</section>
 {% endif %}
 
 {% if cards %}
-<nav class="quick-nav"><h3>Jump To</h3><ul>
+<section class="results-section" aria-labelledby="results-heading">
+<div class="results-heading-row">
+<h2 id="results-heading" class="section-title">Campgrounds</h2>
+<span id="result-count" class="result-count" aria-live="polite"></span>
+</div>
+<div class="results-toolbar">
+<label class="search-control" for="campground-search"><span>Find campground</span><input id="campground-search" type="search" placeholder="Search by name" autocomplete="off"></label>
+<label class="status-control" for="status-filter"><span>Show</span><select id="status-filter"><option value="actionable">Available &amp; failed</option><option value="available">Available only</option><option value="failed">Failed scans</option><option value="all">All campgrounds</option></select></label>
+</div>
+
+<nav class="quick-nav" aria-label="Jump to campground"><h3>Jump to</h3><ul>
 {%- for card in cards %}
-<li data-ref="{{ card.id }}"{% if card.state != "available" %} data-unavailable="true"{% endif %}{% if card.state == "failed" %} data-failed="true"{% endif %}><a href="#{{ card.id }}">{{ card.name }}</a> {% if card.state == "failed" %}<span class="nav-count nav-failed" title="Scan failed">&#9888;</span>{% elif card.state == "empty" %}<span class="nav-count nav-none">&mdash;</span>{% else %}<span class="nav-count">{{ card.total }}</span>{% endif %}</li>
+<li data-ref="{{ card.id }}" data-state="{{ card.state }}" data-name="{{ card.name|lower }}"><a href="#{{ card.id }}">{{ card.name }}</a> {% if card.state == "failed" %}<span class="nav-count nav-failed" title="Scan failed">&#9888;</span>{% elif card.state == "empty" %}<span class="nav-count nav-none">&mdash;</span>{% else %}<span class="nav-count" title="{{ card.availability_label }}">{{ card.total }}</span>{% endif %}</li>
 {%- endfor %}
 </ul></nav>
 
-{% for card in cards %}
-<div class="{{ card.css_class }}" id="{{ card.id }}">
-<div class="card-header">
-<h2>{{ card.name }}</h2>
-{% if card.state == "failed" %}
-<span class="site-count site-count-failed">&#9888; Scan failed &mdash; data may be stale</span>
-{% else %}
-<span class="card-badges">{% if card.nights %}<span class="site-count site-count-nights" title="Minimum consecutive nights searched">{{ card.nights }}</span>{% endif %}{% if card.partial %}<span class="site-count site-count-failed">&#9888; Partial scan</span>{% endif %}<span class="site-count{% if card.state == "empty" %} site-count-none{% endif %}">{% if card.state == "empty" %}No availability{% else %}{{ card.total }} open site(s){% endif %}</span></span>
-{% endif %}
-</div>
-{% if card.rows %}
-<div class="table-container">
-<table>
-<thead><tr><th>Date</th><th>Available</th></tr></thead>
-<tbody>
-{% for row in card.rows %}
-<tr data-date="{{ row.iso }}" data-count="{{ row.count }}">
-<td>{% if row.sites %}<details class="date-detail"><summary>{{ row.label }}</summary><ul class="site-list">
-{%- for site in row.sites %}
-<li>{% if site.url %}<a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.name }}</a>{% else %}{{ site.name }}{% endif %}{% if site.loop %}<span class="site-loop">{{ site.loop }}</span>{% endif %}</li>
-{%- endfor %}
-</ul></details>{% else %}{{ row.label }}{% endif %}</td>
-<td><span class="available-badge">{{ row.count }} site(s)</span></td>
-</tr>
+<div id="no-filter-results" class="no-results" role="status" hidden>No campgrounds match these filters.</div>
+
+<div id="actionable-results">
+{% for card in cards if card.state != "empty" %}
+{{ render_card(card) }}
 {% endfor %}
-</tbody>
-</table>
 </div>
-{% endif %}
-{% if card.booking_url %}
-<div class="book-action"><a class="book-link" href="{{ card.booking_url }}" target="_blank">Book now &rarr;</a></div>
-{% endif %}
-</div>
+
+{% if empty_cards %}
+<details id="empty-results" class="empty-results">
+<summary><span><strong>{{ empty_cards|length }}</strong> campground{% if empty_cards|length != 1 %}s{% endif %} checked with no availability</span><span class="empty-toggle-label">Show</span></summary>
+<div class="empty-card-list">
+{% for card in empty_cards %}
+{{ render_card(card) }}
 {% endfor %}
-{% else %}
-<div class="no-results">&#x1F6D1; No availability found in the current scan.</div>
+</div>
+</details>
 {% endif %}
+</section>
+{% else %}
+<div class="no-results">&#x1F6D1; No campgrounds were included in the current scan.</div>
+{% endif %}
+</main>
 </div>
 <script>
 {{ js|safe }}
