@@ -9,6 +9,8 @@ from campsite_checker.dashboard import (
     DashboardPublisher,
     build_calendar_months,
     build_dashboard_html,
+    build_nights_label,
+    build_search_filter_view,
     read_asset,
 )
 from campsite_checker.results import process_filtered_results, process_results
@@ -408,3 +410,146 @@ def test_publisher_republishes_unchanged_content_once_stale(tmp_path):
     assert stale.written is True
     assert stale.uploaded is True
     assert uploader.calls == 2
+
+
+class TestSearchFilterView:
+    """The page must say what it searched for, or an empty page is ambiguous."""
+
+    def test_all_days_when_no_filter(self):
+        view = build_search_filter_view(None, date(2026, 8, 1), date(2026, 8, 15))
+
+        assert view.days == "All days"
+        assert view.date_range == "Aug 1, 2026 – Aug 15, 2026"
+        assert view.dates == 14
+
+    def test_single_day_filter(self):
+        view = build_search_filter_view({4}, date(2026, 8, 1), date(2026, 8, 29))
+
+        assert view.days == "Friday"
+        assert view.dates == 4
+
+    def test_multiple_days_are_listed_in_week_order(self):
+        view = build_search_filter_view({5, 4}, date(2026, 8, 1), date(2026, 8, 15))
+
+        assert view.days == "Friday, Saturday"
+
+    def test_accepts_datetimes(self):
+        view = build_search_filter_view(
+            None,
+            datetime(2026, 8, 1, 9, 30),
+            datetime(2026, 8, 3, 9, 30),
+        )
+
+        assert view.date_range == "Aug 1, 2026 – Aug 3, 2026"
+
+    def test_fingerprint_tracks_every_rendered_field(self):
+        base = build_search_filter_view({4}, date(2026, 8, 1), date(2026, 8, 29))
+
+        assert (
+            base.fingerprint
+            == build_search_filter_view({4}, date(2026, 8, 1), date(2026, 8, 29)).fingerprint
+        )
+        # A relative window rolls forward without any config change.
+        assert (
+            base.fingerprint
+            != build_search_filter_view({4}, date(2026, 8, 2), date(2026, 8, 30)).fingerprint
+        )
+        assert (
+            base.fingerprint
+            != build_search_filter_view(None, date(2026, 8, 1), date(2026, 8, 29)).fingerprint
+        )
+
+    def test_filter_line_is_rendered_into_the_header(self):
+        processed = process_results({"campground_id": 1}, [make_campsite()], None)
+
+        content = build_dashboard_html(
+            [processed],
+            None,
+            scan_timestamp=datetime(2026, 7, 26, tzinfo=timezone.utc),
+            search_filter=build_search_filter_view({4}, date(2026, 8, 1), date(2026, 8, 29)),
+        )
+
+        # The CSS is inlined, so match the rendered element, not the class name.
+        assert '<p class="filter-line"' in content
+        assert "Friday" in content
+        assert "Aug 1, 2026 – Aug 29, 2026" in content
+        assert "4 date(s)" in content
+
+    def test_header_omits_the_line_without_a_filter(self):
+        processed = process_results({"campground_id": 1}, [make_campsite()], None)
+
+        assert '<p class="filter-line"' not in render([processed])
+
+
+class TestNightsLabel:
+    """Nights live per card because entries may disagree and `criteria`
+    searches several stay lengths under one entry."""
+
+    def test_defaults_to_the_entry_nights(self):
+        assert build_nights_label({"nights": 3}) == "3 nights"
+
+    def test_singular_for_one_night(self):
+        assert build_nights_label({}) == "1 night"
+
+    def test_searched_nights_win_over_the_configured_value(self):
+        """`--nights` and `criteria` are invisible from the entry's own key."""
+        assert build_nights_label({"nights": 2, "_searched_nights": [4]}) == "4 nights"
+
+    def test_multiple_stay_lengths_are_listed(self):
+        assert build_nights_label({"_searched_nights": [3, 1, 3]}) == "1 / 3 nights"
+
+    def test_badge_renders_on_a_card_with_availability(self):
+        processed = process_results(
+            {"campground_id": 1, "_searched_nights": [2]}, [make_campsite()], None
+        )
+
+        content = render([processed])
+
+        assert "site-count-nights" in content
+        assert "2 nights" in content
+
+    def test_badge_renders_on_an_empty_card(self):
+        """This is where it matters most: it says what found nothing."""
+        processed = process_filtered_results({"campground_id": 1, "nights": 2}, [])
+
+        content = render([processed])
+
+        assert "No availability" in content
+        assert "2 nights" in content
+
+
+class TestDateFilterBanner:
+    def test_calendar_cells_carry_a_short_label_for_the_banner(self):
+        months = build_calendar_months({date(2026, 8, 14): 3})
+        cells = [cell for week in months[0].weeks for cell in week if cell.kind == "available"]
+
+        assert cells[0].short_label == "Fri, Aug 14"
+
+    def test_banner_markup_and_labels_are_rendered(self):
+        processed = process_results(
+            {"campground_id": 1}, [make_campsite(booking_date=datetime(2026, 8, 14))], None
+        )
+
+        content = render([processed])
+
+        assert 'id="date-filter"' in content
+        assert 'id="date-filter-label"' in content
+        assert 'data-label="Fri, Aug 14"' in content
+
+
+def test_publisher_rewrites_when_only_the_search_filter_changes(tmp_path):
+    """A rolling window changes the page without changing availability."""
+    output_path = tmp_path / "dashboard.html"
+    publisher = DashboardPublisher(str(output_path))
+    processed = process_results({}, [make_campsite(campsite_id=1)], None)
+    first_filter = build_search_filter_view(None, date(2026, 8, 1), date(2026, 8, 15))
+    second_filter = build_search_filter_view(None, date(2026, 8, 2), date(2026, 8, 16))
+
+    first = publisher.publish([processed], search_filter=first_filter)
+    unchanged = publisher.publish([processed], search_filter=first_filter)
+    rolled = publisher.publish([processed], search_filter=second_filter)
+
+    assert first.written is True
+    assert unchanged.written is False
+    assert rolled.written is True
+    assert "Aug 2, 2026 – Aug 16, 2026" in output_path.read_text()

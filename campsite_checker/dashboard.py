@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import calendar
 import time
 from collections import defaultdict
@@ -14,8 +16,10 @@ from jinja2 import Environment, PackageLoader
 from .results import (
     ProcessedAvailability,
     availability_fingerprint,
+    count_matching_dates,
     process_results,
 )
+from .weekdays import WEEKDAY_LABELS
 
 # How often an already-open browser tab re-fetches the page. The checker
 # republishes on its own cadence, so this only bounds how stale a left-open tab
@@ -64,8 +68,14 @@ class DashboardPublisher:
         self,
         availabilities: list[ProcessedAvailability],
         day_filter: set[int] | None = None,
+        search_filter: SearchFilterView | None = None,
     ) -> DashboardPublishResult:
         fingerprint = availability_fingerprint(availabilities)
+        if search_filter is not None:
+            # The rendered filter is part of the page, and its date range rolls
+            # forward daily, so an unchanged availability set must still
+            # republish when the range moves.
+            fingerprint = f"{fingerprint}|{search_filter.fingerprint}"
         now = self._clock()
         written = (
             fingerprint != self.last_written_fingerprint
@@ -73,7 +83,7 @@ class DashboardPublisher:
             or self._is_stale(self._last_written_at, now)
         )
         if written:
-            generate_dashboard(availabilities, day_filter, self.output_path)
+            generate_dashboard(availabilities, day_filter, self.output_path, search_filter)
             self.last_written_fingerprint = fingerprint
             self._last_written_at = now
 
@@ -165,6 +175,10 @@ class CardView:
     rows: tuple[DateRowView, ...]
     booking_url: str
     partial: bool = False
+    # Pre-formatted, e.g. "2 nights". Per-card rather than in the page header
+    # because entries may disagree, and an entry with `criteria` searches
+    # several stay lengths at once.
+    nights: str = ""
 
     @property
     def css_class(self) -> str:
@@ -182,6 +196,9 @@ class CalendarCell:
     iso: str = ""
     count: int = 0
     label: str = ""
+    # Rendered into the cell so the date-filter banner can name the selected
+    # day without the static JS asset having to format dates itself.
+    short_label: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +214,66 @@ class StatsView:
     total: int
     soonest: str
     failed: int
+
+
+@dataclass(frozen=True, slots=True)
+class SearchFilterView:
+    """The criteria the scan actually ran with.
+
+    Without this, "No availability" on the page is ambiguous: it could mean
+    nothing is open at all, or that nothing is open on the days being searched.
+    Nights are deliberately absent — they live on each card, since entries may
+    disagree.
+    """
+
+    days: str
+    date_range: str
+    dates: int
+
+    @property
+    def fingerprint(self) -> str:
+        """Identity for change detection; the range rolls forward daily."""
+        return f"{self.days}|{self.date_range}|{self.dates}"
+
+
+def build_search_filter_view(
+    day_filter: set[int] | None,
+    start_dt: datetime | date,
+    end_dt: datetime | date,
+) -> SearchFilterView:
+    """Describe a scan's day filter and date range for the page header."""
+    if day_filter is None:
+        days = "All days"
+    else:
+        days = ", ".join(WEEKDAY_LABELS[day] for day in sorted(day_filter))
+    start = start_dt.date() if isinstance(start_dt, datetime) else start_dt
+    end = end_dt.date() if isinstance(end_dt, datetime) else end_dt
+    midnight = datetime.min.time()
+    return SearchFilterView(
+        days=days,
+        date_range=f"{start.strftime('%b %-d, %Y')} – {end.strftime('%b %-d, %Y')}",
+        # `count_matching_dates` takes datetimes; callers may hold either.
+        dates=count_matching_dates(
+            datetime.combine(start, midnight),
+            datetime.combine(end, midnight),
+            day_filter,
+        ),
+    )
+
+
+def build_nights_label(entry: dict) -> str:
+    """Format the stay lengths searched for one entry.
+
+    `runner.run_once` stamps the resolved values on the entry, because the
+    effective nights depend on the `--nights` override and on any `criteria`,
+    neither of which is visible from the entry's own `nights` key.
+    """
+    nights = entry.get("_searched_nights") or [entry.get("nights", 1)]
+    unique = sorted({int(value) for value in nights})
+    if not unique:
+        return ""
+    label = " / ".join(str(value) for value in unique)
+    return f"{label} night" if unique == [1] else f"{label} nights"
 
 
 def build_calendar_months(all_availabilities: dict[date, int]) -> list[CalendarMonth]:
@@ -226,6 +303,7 @@ def build_calendar_months(all_availabilities: dict[date, int]) -> list[CalendarM
                             iso=d.isoformat(),
                             count=count,
                             label=f"{d.strftime('%B %-d, %Y')} — {count} site(s) available",
+                            short_label=d.strftime("%a, %b %-d"),
                         )
                     )
                 else:
@@ -297,6 +375,9 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
             total=0,
             rows=(),
             booking_url="",
+            # An empty card is exactly where the stay length matters most: it
+            # says what "no availability" was actually checked against.
+            nights=build_nights_label(entry),
         )
 
     sites_by_date = group_sites_by_date(availability.campsites)
@@ -316,6 +397,7 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
         total=availability.total_sites,
         rows=rows,
         booking_url=availability.booking_url,
+        nights=build_nights_label(entry),
         # Some searches for this entry succeeded and some did not, so what is
         # shown is real but incomplete.
         partial=scan_failed,
@@ -327,6 +409,7 @@ def build_dashboard_html(
     day_filter: set[int] | None,
     scan_timestamp: datetime | None = None,
     refresh_seconds: int = DEFAULT_REFRESH_SECONDS,
+    search_filter: SearchFilterView | None = None,
 ) -> str:
     """Generate a complete self-contained HTML string."""
     if scan_timestamp is None:
@@ -372,6 +455,7 @@ def build_dashboard_html(
             timestamp_iso=scan_timestamp.isoformat(),
             timestamp_label=scan_timestamp.strftime("%b %-d, %Y at %-I:%M %p"),
             stats=stats,
+            search_filter=search_filter,
             months=build_calendar_months(all_availabilities),
             cards=cards,
         )
@@ -388,9 +472,10 @@ def generate_dashboard(
     entries_with_results: list[tuple[dict, list[AvailableCampsite]] | ProcessedAvailability],
     day_filter: set[int] | None,
     output_path: str,
+    search_filter: SearchFilterView | None = None,
 ) -> str:
     """Build HTML, write to disk, and immediately free the string."""
-    content = build_dashboard_html(entries_with_results, day_filter)
+    content = build_dashboard_html(entries_with_results, day_filter, search_filter=search_filter)
     write_dashboard(content, output_path)
     del content
     return output_path

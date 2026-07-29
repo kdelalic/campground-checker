@@ -23,6 +23,9 @@ h1{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-0
 .stat-line{color:var(--text-muted);font-size:0.9rem;margin:6px 0 0}
 .stat-line strong{color:var(--text-color);font-weight:600}
 .stat-failed{color:#b45309;font-weight:600}
+/* What the scan searched for, so an empty page is not ambiguous. */
+.filter-line{color:var(--text-muted);font-size:0.85rem;margin:4px 0 0}
+.filter-line strong{color:var(--text-color);font-weight:600}
 
 .quick-nav {
   background:var(--card-bg);
@@ -89,6 +92,36 @@ h1{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-0
 .calendar-controls button:hover {
   background: var(--primary);
   color: #fff;
+}
+/* Names the clicked date. The selected cell is highlighted too, but that is
+   off-screen once the cards are in view. */
+.date-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 9999px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.date-filter strong { font-weight: 600; }
+.calendar-controls .date-filter button {
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.calendar-controls .date-filter button:hover {
+  background: rgba(4, 120, 87, 0.15);
+  color: inherit;
 }
 .calendar-controls button.nav-btn {
   border-color: var(--border-color);
@@ -176,6 +209,9 @@ h1{font-size:2rem;margin:0 0 8px;font-weight:700;color:#1e293b;letter-spacing:-0
 .nav-none{background:#f1f5f9;color:var(--text-muted);}
 
 .card-badges{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+/* Informational, not a result count — kept visually distinct from the green
+   availability badge so it does not read as "2 sites". */
+.site-count-nights{background:#eff6ff;color:#1d4ed8;padding:4px 12px;border-radius:9999px;font-size:0.875rem;font-weight:600;white-space:nowrap;}
 .site-count-failed{background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:9999px;font-size:0.875rem;font-weight:600;white-space:nowrap;}
 .card-failed{opacity:1;border-color:var(--accent);border-left:4px solid var(--accent);background:#fffbeb;}
 .card-partial{border-left:4px solid var(--accent);}
@@ -248,6 +284,9 @@ tr:last-child td {border-bottom:none;}
   .site-count-none { background: #334155; color: #94a3b8; }
   .nav-none { background: #334155; color: #94a3b8; }
   .site-count-failed { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+  .site-count-nights { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+  .date-filter { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+  .calendar-controls .date-filter button:hover { background: rgba(52, 211, 153, 0.25); }
   .nav-failed { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
   .card-failed { background: rgba(245, 158, 11, 0.08); }
   .stat-failed { color: #fbbf24; }

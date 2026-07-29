@@ -56,7 +56,7 @@ def _hashable_ids(value) -> tuple:
     return (value,)
 
 
-def _effective_nights(entry: dict, args) -> int:
+def effective_nights(entry: dict, args) -> int:
     return args.nights if args.nights is not None else entry.get("nights", 1)
 
 
@@ -89,7 +89,7 @@ def _batch_key(entry: dict, args) -> tuple | None:
         return None
     return (
         entry.get("provider", "RecreationDotGov"),
-        _effective_nights(entry, args),
+        effective_nights(entry, args),
         _effective_weekends_only(entry, args),
         _hashable_ids(entry.get("recreation_area")),
     )
@@ -156,7 +156,7 @@ def build_searcher(
     kwargs: dict = dict(
         search_window=search_window,
         weekends_only=_effective_weekends_only(entry, args),
-        nights=_effective_nights(entry, args),
+        nights=effective_nights(entry, args),
     )
 
     if _supports_request_priority(search_class):

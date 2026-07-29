@@ -9,6 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const prevMonthBtn = document.getElementById("prev-month-btn");
   const nextMonthBtn = document.getElementById("next-month-btn");
   const clearBtn = document.getElementById("clear-date-filter");
+  const dateFilter = document.getElementById("date-filter");
+  const dateFilterLabel = document.getElementById("date-filter-label");
   const allMonths = document.querySelectorAll(".calendar-month");
   const availCells = document.querySelectorAll(".calendar-available");
   const allCards = document.querySelectorAll(".card");
@@ -86,19 +88,19 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
+    let selectedLabel = "";
     availCells.forEach(cell => {
       if (dateStr && cell.getAttribute("data-date") === dateStr) {
         cell.classList.add("selected-date");
+        // Rendered server-side, so this asset stays free of date formatting.
+        selectedLabel = cell.getAttribute("data-label") || dateStr;
       } else {
         cell.classList.remove("selected-date");
       }
     });
 
-    if (dateStr) {
-      if(clearBtn) clearBtn.style.display = "inline-block";
-    } else {
-      if(clearBtn) clearBtn.style.display = "none";
-    }
+    if (dateFilterLabel) dateFilterLabel.textContent = selectedLabel;
+    if (dateFilter) dateFilter.style.display = dateStr ? "inline-flex" : "none";
   }
 
   availCells.forEach(cell => {

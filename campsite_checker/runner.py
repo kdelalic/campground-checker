@@ -35,7 +35,7 @@ from .results import (
     format_processed_results,
     process_filtered_results,
 )
-from .search import execute_searches
+from .search import effective_nights, execute_searches
 from .state import SENT_KEYS_FILE, load_sent_keys, save_sent_keys
 from .weekdays import WEEKDAY_LABELS
 
@@ -185,6 +185,15 @@ def run_once(
     search_tasks = expand_search_tasks(entries, day_filter)
     task_entries = [entry for _, entry, _ in search_tasks]
 
+    # Record the stay lengths actually searched so the dashboard can label each
+    # card. Neither the `--nights` override nor a `criteria` block is visible
+    # from an entry's own `nights` key, and one entry can search several.
+    nights_by_entry: dict[int, set[int]] = defaultdict(set)
+    for orig_idx, task_entry, _task_filter in search_tasks:
+        nights_by_entry[orig_idx].add(effective_nights(task_entry, args))
+    for orig_idx, nights in nights_by_entry.items():
+        entries[orig_idx]["_searched_nights"] = sorted(nights)
+
     priority = PRIORITY_DASHBOARD if scan_type == "dashboard" else PRIORITY_ALERT
     results_by_task = execute_searches(task_entries, search_window, args, priority=priority)
 
@@ -239,9 +248,16 @@ def run_once(
         logger.info("\U0001f3d5  No availability found. (%.1fs)", elapsed)
 
     if dashboard_path:
-        from .dashboard import generate_dashboard
+        from .dashboard import build_search_filter_view, generate_dashboard
 
-        generate_dashboard(all_with_results, None, dashboard_path)
+        # `all_with_results` is already filtered, hence the `None` day filter;
+        # the view describes what that filtering was.
+        generate_dashboard(
+            all_with_results,
+            None,
+            dashboard_path,
+            build_search_filter_view(day_filter, start_dt, end_dt),
+        )
         logger.info("   Dashboard written to %s", dashboard_path)
 
     return current_keys, found_entries, all_with_results
@@ -379,7 +395,7 @@ def run_forever(
 
     dashboard_publisher = None
     if dashboard_path:
-        from .dashboard import DashboardPublisher
+        from .dashboard import DashboardPublisher, build_search_filter_view
         from .upload import R2Uploader, get_r2_config
 
         r2_config = get_r2_config(args, raw_config)
@@ -528,7 +544,15 @@ def run_forever(
                 # --- Generate dashboard from merged results ---
                 if dashboard_publisher is not None and dashboard_snapshot_ready:
                     merged = alert_all + cached_dashboard_results
-                    publish_result = dashboard_publisher.publish(merged)
+                    # Recomputed per publish: a relative window rolls forward,
+                    # so the rendered range changes without any config change.
+                    window_start, window_end = compute_date_range(args)
+                    publish_result = dashboard_publisher.publish(
+                        merged,
+                        search_filter=build_search_filter_view(
+                            day_filter, window_start, window_end
+                        ),
+                    )
                     if publish_result.written:
                         logger.info("   Dashboard written to %s", dashboard_path)
                     else:

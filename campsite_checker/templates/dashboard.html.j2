@@ -20,6 +20,9 @@
 {% if stats %}
 <p class="stat-line"><strong>{{ stats.available }}</strong> of {{ stats.total }} campgrounds with availability{% if stats.soonest %} &middot; soonest <strong>{{ stats.soonest }}</strong>{% endif %}{% if stats.failed %} &middot; <span class="stat-failed">&#9888; {{ stats.failed }} scan(s) failed</span>{% endif %}</p>
 {% endif %}
+{% if search_filter %}
+<p class="filter-line" title="The criteria this scan searched with">&#x1F50D; Searching <strong>{{ search_filter.days }}</strong> &middot; {{ search_filter.date_range }} &middot; {{ search_filter.dates }} date(s)</p>
+{% endif %}
 </header>
 
 {% if months %}
@@ -28,7 +31,7 @@
 <button id="prev-month-btn" class="nav-btn" title="Previous Month" disabled>&larr;</button>
 <select id="month-selector">{% for month in months %}<option value="{{ month.id }}">{{ month.label }}</option>{% endfor %}</select>
 <button id="next-month-btn" class="nav-btn" title="Next Month" disabled>&rarr;</button>
-<button id="clear-date-filter" style="display: none;">Clear Filter</button>
+<span id="date-filter" class="date-filter" style="display: none;">Showing <strong id="date-filter-label"></strong><button id="clear-date-filter" title="Show all dates" aria-label="Clear date filter">&times;</button></span>
 </div>
 {% for month in months %}
 <div class="calendar-month" id="{{ month.id }}"{% if not loop.first %} style="display: none;"{% endif %}>
@@ -38,7 +41,7 @@
 {% for week in month.weeks %}
 <tr>{% for cell in week %}
   {%- if cell.kind == "available" -%}
-    <td class="calendar-available" data-date="{{ cell.iso }}" tabindex="0" role="button" aria-label="{{ cell.label }}" title="{{ cell.count }} site(s) available">{{ cell.day }}</td>
+    <td class="calendar-available" data-date="{{ cell.iso }}" data-label="{{ cell.short_label }}" tabindex="0" role="button" aria-label="{{ cell.label }}" title="{{ cell.count }} site(s) available">{{ cell.day }}</td>
   {%- elif cell.kind == "day" -%}
     <td class="calendar-day">{{ cell.day }}</td>
   {%- else -%}
@@ -67,7 +70,7 @@
 {% if card.state == "failed" %}
 <span class="site-count site-count-failed">&#9888; Scan failed &mdash; data may be stale</span>
 {% else %}
-<span class="card-badges">{% if card.partial %}<span class="site-count site-count-failed">&#9888; Partial scan</span>{% endif %}<span class="site-count{% if card.state == "empty" %} site-count-none{% endif %}">{% if card.state == "empty" %}No availability{% else %}{{ card.total }} open site(s){% endif %}</span></span>
+<span class="card-badges">{% if card.nights %}<span class="site-count site-count-nights" title="Minimum consecutive nights searched">{{ card.nights }}</span>{% endif %}{% if card.partial %}<span class="site-count site-count-failed">&#9888; Partial scan</span>{% endif %}<span class="site-count{% if card.state == "empty" %} site-count-none{% endif %}">{% if card.state == "empty" %}No availability{% else %}{{ card.total }} open site(s){% endif %}</span></span>
 {% endif %}
 </div>
 {% if card.rows %}
