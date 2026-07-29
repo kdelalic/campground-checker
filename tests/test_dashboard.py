@@ -274,8 +274,15 @@ class TestRefreshAndAccessibility:
         content = render([process_filtered_results({}, [make_campsite()])])
 
         assert "<script src=" not in content
-        assert "<link " not in content
+        assert '<link rel="stylesheet"' not in content
+        assert '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,' in content
         assert "@import" not in content
+
+    def test_favicon_uses_the_apple_campsite_emoji(self):
+        content = render([process_filtered_results({}, [make_campsite()])])
+
+        assert "font-family='Apple%20Color%20Emoji,%20Segoe%20UI%20Emoji,%20sans-serif'" in content
+        assert "%F0%9F%8F%95%EF%B8%8F" in content
 
 
 class TestTemplateAssets:
@@ -311,6 +318,21 @@ class TestTemplateAssets:
 
         assert first is second
         assert read_asset.cache_info().hits == 1
+
+    def test_calendar_keeps_its_compact_density(self):
+        css = read_asset("dashboard.css")
+
+        assert "width: min(100%, 680px);" in css
+        assert "border-spacing: 4px;" in css
+        assert "height: 46px;" in css
+        assert (
+            ".calendar-available button {\n"
+            "  display: flex;\n"
+            "  align-items: center;\n"
+            "  justify-content: center;"
+        ) in css
+        # Compact mobile spacing must not shrink the actionable date target.
+        assert ".calendar-table th, .calendar-table td { height: 43px; }" in css
 
 
 class TestViewModels:

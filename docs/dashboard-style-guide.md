@@ -159,6 +159,8 @@ It contains:
 Do not add a second title, slogan, introductory paragraph, promotional
 description, decorative icon treatment, or nested freshness card. The 🏕️ emoji
 is the only brand mark and should not receive a glow or drop shadow.
+Use that same mark for the self-contained favicon, with Apple Color Emoji first
+in its font fallback so it matches the masthead on macOS.
 
 ### Summary values
 
@@ -170,6 +172,12 @@ must remain stable.
 
 ### Calendar
 
+- Keep the calendar in a compact, centered surface instead of stretching its
+  outer card across the full content column.
+- Cluster each available date with its count. Avoid distributing the two values
+  across the full cell width.
+- Use close, even gutters between dates. Preserve at least `43px` for actionable
+  date cells on small screens even as the surrounding padding tightens.
 - Available dates use solid pine.
 - The count uses a small warm-yellow marker.
 - Searched dates with no result use muted paper.
@@ -233,7 +241,8 @@ The layout has two maintained breakpoints:
 
 ### At `820px`
 
-- The calendar uses the full available width.
+- The calendar keeps its compact centered width, while its inner panel uses all
+  of the available calendar surface.
 - Summary cells retain their compact layout.
 
 ### At `620px`
