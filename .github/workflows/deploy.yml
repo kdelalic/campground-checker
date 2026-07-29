@@ -30,3 +30,9 @@ jobs:
           install -m 0644 grafana/campground-checker.json \
             /srv/docker/monitoring/grafana/dashboards/campground-checker.json
           docker compose up -d --remove-orphans
+          # BuildKit's default GC reserves ~79 GiB before it collects anything,
+          # so every deploy's cache accumulated unbounded (16 GB at the
+          # 2026-07-28 storage audit). Cap it here, right after the build that
+          # produces it, so the newest layers survive and older ones are dropped.
+          # Runs after `up` so a prune can never delay the deploy itself.
+          docker buildx prune -f --max-used-space=2GB
