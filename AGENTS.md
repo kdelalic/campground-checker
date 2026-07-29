@@ -11,6 +11,7 @@ which polls providers, sends Telegram alerts, and renders a static dashboard.
 | Topic | File |
 | --- | --- |
 | Module map, design decisions | [docs/architecture.md](docs/architecture.md) |
+| Dashboard visual language and UI conventions | [docs/dashboard-style-guide.md](docs/dashboard-style-guide.md) |
 | Metric reference, Grafana, PromQL | [docs/observability.md](docs/observability.md) |
 | Docker, env vars, homelab deploy | [docs/deployment.md](docs/deployment.md) |
 | User-facing setup and usage | [README.md](README.md) |
