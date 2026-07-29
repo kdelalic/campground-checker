@@ -111,6 +111,19 @@ class TestFailedScanRendering:
 
 
 class TestSummaryStats:
+    def test_summary_is_presented_as_scannable_metrics(self):
+        content = render(
+            [
+                process_filtered_results({"name": "Upper Pines"}, [make_campsite()]),
+                process_filtered_results({"name": "North Pines"}, []),
+            ]
+        )
+
+        assert 'id="snapshot-stats"' in content
+        assert 'id="summary-primary-value">1</strong>' in content
+        assert 'id="summary-primary-suffix"> of 2</small>' in content
+        assert 'id="summary-secondary-label"' in content
+
     def test_soonest_available_date_reported(self):
         availability = process_filtered_results(
             {"name": "Upper Pines"},
@@ -227,12 +240,20 @@ class TestRefreshAndAccessibility:
         assert '<body data-refresh-seconds="0" data-stale-after-seconds="7200">' in content
         assert "if (refreshSeconds > 0) {" in content
 
+    def test_stale_state_is_reflected_on_freshness_card(self):
+        content = render([process_filtered_results({}, [make_campsite()])])
+
+        assert 'document.querySelector(".freshness-card")' in content
+        assert 'freshnessCard.classList.toggle("is-stale", isStale)' in content
+
     def test_calendar_days_are_keyboard_operable(self):
         content = render([process_filtered_results({}, [make_campsite()])])
 
         assert '<td class="calendar-available"><button type="button"' in content
+        assert 'aria-pressed="false"' in content
         assert 'aria-label="July 4, 2026' in content
         assert 'button.addEventListener("click"' in content
+        assert 'button.setAttribute("aria-pressed", selected ? "true" : "false")' in content
 
     def test_page_stays_self_contained(self):
         content = render([process_filtered_results({}, [make_campsite()])])

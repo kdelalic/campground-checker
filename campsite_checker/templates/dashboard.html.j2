@@ -34,7 +34,7 @@
 <tbody>
 {% for row in card.rows %}
 <tr data-date="{{ row.iso }}" data-count="{{ row.count }}">
-<td><details class="date-detail"{% if loop.first %} open{% endif %}><summary>{{ row.label }}</summary><ul class="site-list">
+<td><details class="date-detail"><summary>{{ row.label }}</summary><ul class="site-list">
 {%- for site in row.sites %}
 <li><span class="site-identity">{% if site.url %}<a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.name }}</a>{% else %}<strong>{{ site.name }}</strong>{% endif %}{% if site.loop %}<span class="site-loop">{{ site.loop }}</span>{% endif %}</span>{% if site.url %}<a class="site-book-link" href="{{ site.url }}" target="_blank" rel="noopener" aria-label="Book {{ site.name }}">Book site &rarr;</a>{% endif %}</li>
 {%- endfor %}
@@ -64,13 +64,8 @@
 <body data-refresh-seconds="{{ refresh_seconds }}" data-stale-after-seconds="{{ stale_after_seconds }}">
 <div class="container">
 <header class="hero">
-<div class="hero-brand"><span class="brand-mark" aria-hidden="true"><i></i></span><span>Campground availability monitor</span></div>
-<div class="hero-main">
-<div class="hero-copy">
-<p class="eyebrow">Plan less. Camp more.</p>
-<h1>Campsite Availability</h1>
-<p class="hero-intro">A clear view of open sites across the campgrounds on your watchlist.</p>
-</div>
+<div class="hero-topbar">
+<div class="hero-brand"><span class="brand-mark" aria-hidden="true">&#x1F3D5;&#xFE0F;</span><span>Campground checker</span></div>
 <div class="freshness-card">
 <span class="live-dot" aria-hidden="true"></span>
 <div class="freshness-copy">
@@ -83,15 +78,41 @@
 </div>
 </div>
 </div>
-<p id="stale-warning" class="stale-warning" role="status" hidden>&#9888; This dashboard has not been updated on schedule. Availability may be stale.</p>
-<div class="hero-meta">
+<div class="hero-main{% if stats %} hero-main-with-stats{% endif %}">
+<div class="hero-copy">
+<p class="eyebrow">Your campsite watchlist</p>
+<h1>Campsite availability</h1>
+<p class="hero-intro">Open dates, recent scans, and booking links for the campgrounds you care about.</p>
+</div>
 {% if stats %}
-<p id="stat-line" class="stat-line" aria-live="polite"><strong>{{ stats.available }}</strong> of {{ stats.total }} campgrounds with availability{% if stats.soonest %} &middot; soonest <strong>{{ stats.soonest }}</strong>{% endif %}{% if stats.failed %} &middot; <span class="stat-failed">&#9888; {{ stats.failed }} scan(s) failed</span>{% endif %}</p>
-{% endif %}
-{% if search_filter %}
-<p class="filter-line" title="The criteria this scan searched with">&#x1F50D; Searching <strong>{{ search_filter.days }}</strong>{% if search_filter.nights %} &middot; <strong>{{ search_filter.nights }}</strong>{% endif %} &middot; {{ search_filter.date_range }} &middot; {{ search_filter.dates }} date(s)</p>
+<div id="snapshot-stats" class="snapshot-stats">
+<div class="snapshot-stat snapshot-stat-primary">
+<span id="summary-primary-label" class="snapshot-label">With openings</span>
+<span class="snapshot-value"><strong id="summary-primary-value">{{ stats.available }}</strong><small id="summary-primary-suffix"> of {{ stats.total }}</small></span>
+<span id="summary-primary-detail" class="snapshot-detail">in your watchlist</span>
+</div>
+<div class="snapshot-stat">
+<span id="summary-secondary-label" class="snapshot-label">Next opening</span>
+<strong id="summary-secondary-value" class="snapshot-value snapshot-value-date">{{ stats.soonest or "—" }}</strong>
+<span id="summary-secondary-detail" class="snapshot-detail">{% if stats.soonest %}soonest available date{% else %}nothing open yet{% endif %}</span>
+</div>
+<div class="snapshot-stat{% if stats.failed %} snapshot-stat-warning{% endif %}">
+<span class="snapshot-label">Scan health</span>
+<strong class="snapshot-value">{% if stats.failed %}{{ stats.failed }}{% else %}All clear{% endif %}</strong>
+<span class="snapshot-detail">{% if stats.failed %}campground{% if stats.failed != 1 %}s{% endif %} need attention{% else %}every campground checked{% endif %}</span>
+</div>
+</div>
 {% endif %}
 </div>
+<p id="stale-warning" class="stale-warning" role="status" hidden>&#9888; This dashboard has not been updated on schedule. Availability may be stale.</p>
+{% if stats %}
+<p id="stat-line" class="stat-line sr-only" aria-live="polite"><strong>{{ stats.available }}</strong> of {{ stats.total }} campgrounds with availability{% if stats.soonest %} &middot; soonest <strong>{{ stats.soonest }}</strong>{% endif %}{% if stats.failed %} &middot; <span class="stat-failed">&#9888; {{ stats.failed }} scan(s) failed</span>{% endif %}</p>
+{% endif %}
+{% if search_filter %}
+<div class="hero-meta">
+<p class="filter-line" title="The criteria this scan searched with"><span class="filter-line-label"><i aria-hidden="true"></i> Search scope</span><span class="filter-chip"><small>Days</small><strong>{{ search_filter.days }}</strong></span>{% if search_filter.nights %}<span class="filter-chip"><small>Stay</small><strong>{{ search_filter.nights }}</strong></span>{% endif %}<span class="filter-chip"><small>Window</small><strong>{{ search_filter.date_range }}</strong></span><span class="filter-chip"><small>Dates checked</small><strong>{{ search_filter.dates }} date(s)</strong></span></p>
+</div>
+{% endif %}
 </header>
 
 <main>
@@ -99,11 +120,12 @@
 <section class="calendar-container" aria-labelledby="calendar-heading">
 <div class="section-heading">
 <div>
-<p class="section-kicker">Availability map</p>
+<p class="section-kicker">Availability calendar</p>
 <h2 id="calendar-heading" class="section-title">Choose a date</h2>
 </div>
-<p class="section-description">Select a highlighted day to see exactly where you can stay.</p>
+<p class="section-description">Pick a highlighted date to narrow the campground list below.</p>
 </div>
+<div class="calendar-panel">
 <div class="calendar-controls">
 <button id="prev-month-btn" class="nav-btn" type="button" aria-label="Previous month" disabled>&larr;</button>
 <label class="sr-only" for="month-selector">Calendar month</label>
@@ -120,7 +142,7 @@
 {% for week in month.weeks %}
 <tr>{% for cell in week %}
   {%- if cell.kind == "available" -%}
-    <td class="calendar-available"><button type="button" data-date="{{ cell.iso }}" data-label="{{ cell.short_label }}" aria-label="{{ cell.label }}"><span class="calendar-day-number">{{ cell.day }}</span><span class="calendar-count" aria-hidden="true">{{ cell.count }}</span></button></td>
+    <td class="calendar-available"><button type="button" aria-pressed="false" data-date="{{ cell.iso }}" data-label="{{ cell.short_label }}" aria-label="{{ cell.label }}"><span class="calendar-day-number">{{ cell.day }}</span><span class="calendar-count" aria-hidden="true">{{ cell.count }}</span></button></td>
   {%- elif cell.kind == "searched" -%}
     <td class="calendar-searched-empty"><span aria-label="{{ cell.label }}">{{ cell.day }}</span></td>
   {%- elif cell.kind == "day" -%}
@@ -134,6 +156,7 @@
 </table>
 </div>
 {% endfor %}
+</div>
 <div class="calendar-legend" aria-label="Calendar legend"><span><i class="legend-swatch legend-available"></i>Available <small>count shown</small></span><span><i class="legend-swatch legend-searched"></i>Searched, none found</span><span><i class="legend-swatch legend-not-searched"></i>Not searched</span></div>
 </section>
 {% endif %}
@@ -142,7 +165,7 @@
 <section class="results-section" aria-labelledby="results-heading">
 <div class="results-heading-row">
 <div>
-<p class="section-kicker">Your watchlist</p>
+<p class="section-kicker">Campgrounds on your list</p>
 <h2 id="results-heading" class="section-title">Campgrounds</h2>
 </div>
 <span id="result-count" class="result-count" aria-live="polite"></span>

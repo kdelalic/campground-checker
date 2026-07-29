@@ -2,8 +2,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const lastUpdated = document.getElementById("last-updated");
   const relativeAge = document.getElementById("relative-age");
   const staleWarning = document.getElementById("stale-warning");
+  const freshnessCard = document.querySelector(".freshness-card");
   const refreshNow = document.getElementById("refresh-now");
   const statLine = document.getElementById("stat-line");
+  const snapshotFields = {
+    primaryLabel: document.getElementById("summary-primary-label"),
+    primaryValue: document.getElementById("summary-primary-value"),
+    primarySuffix: document.getElementById("summary-primary-suffix"),
+    primaryDetail: document.getElementById("summary-primary-detail"),
+    secondaryLabel: document.getElementById("summary-secondary-label"),
+    secondaryValue: document.getElementById("summary-secondary-value"),
+    secondaryDetail: document.getElementById("summary-secondary-detail"),
+  };
   const resultCount = document.getElementById("result-count");
   const noFilterResults = document.getElementById("no-filter-results");
   const monthSelector = document.getElementById("month-selector");
@@ -20,12 +30,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const allCards = Array.from(document.querySelectorAll(".card"));
   const navItems = Array.from(document.querySelectorAll(".quick-nav li"));
   const defaultStatHtml = statLine ? statLine.innerHTML : "";
+  const defaultSnapshotText = Object.fromEntries(
+    Object.entries(snapshotFields).map(([name, element]) => [
+      name,
+      element ? element.textContent : "",
+    ]),
+  );
   const allowedStatuses = new Set(["actionable", "available", "failed", "all"]);
   const urlParams = new URLSearchParams(window.location.search);
   let activeDate = null;
 
   function plural(value, singular, pluralForm) {
     return `${value} ${value === 1 ? singular : pluralForm}`;
+  }
+
+  function updateSnapshot(values = {}) {
+    Object.entries(snapshotFields).forEach(([name, element]) => {
+      if (element) element.textContent = values[name] ?? defaultSnapshotText[name];
+    });
   }
 
   function formatExactDate(timestamp) {
@@ -64,7 +86,9 @@ document.addEventListener("DOMContentLoaded", () => {
       document.body.getAttribute("data-stale-after-seconds") || "0",
       10,
     );
-    if (staleWarning) staleWarning.hidden = staleAfter <= 0 || ageSeconds < staleAfter;
+    const isStale = staleAfter > 0 && ageSeconds >= staleAfter;
+    if (staleWarning) staleWarning.hidden = !isStale;
+    if (freshnessCard) freshnessCard.classList.toggle("is-stale", isStale);
   }
 
   function currentMonthValue() {
@@ -200,16 +224,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     availButtons.forEach((button) => {
-      button.classList.toggle("selected-date", button.getAttribute("data-date") === activeDate);
+      const selected = button.getAttribute("data-date") === activeDate;
+      button.classList.toggle("selected-date", selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
     });
 
     const selectedButton = availButtons.find(
       (button) => button.getAttribute("data-date") === activeDate,
     );
+    const selectedDateLabel = selectedButton
+      ? selectedButton.getAttribute("data-label") || activeDate
+      : activeDate;
     if (dateFilterLabel) {
-      dateFilterLabel.textContent = selectedButton
-        ? selectedButton.getAttribute("data-label") || activeDate
-        : "";
+      dateFilterLabel.textContent = selectedDateLabel || "";
     }
     if (dateFilter) dateFilter.hidden = !activeDate;
 
@@ -231,12 +258,32 @@ document.addEventListener("DOMContentLoaded", () => {
       const emptySummaryVisible = emptyResults && !emptyResults.hidden;
       noFilterResults.hidden = visibleCards > 0 || emptySummaryVisible;
     }
+    if (activeDate) {
+      updateSnapshot({
+        primaryLabel: "Campgrounds",
+        primaryValue: String(visibleCards),
+        primarySuffix: "",
+        primaryDetail: `open on ${selectedDateLabel}`,
+        secondaryLabel: "Open sites",
+        secondaryValue: String(visibleOpenings),
+        secondaryDetail: "across the selected date",
+      });
+    } else if (query || status !== "actionable") {
+      updateSnapshot({
+        primaryLabel: "Campgrounds",
+        primaryValue: String(visibleCards),
+        primarySuffix: "",
+        primaryDetail: "match the current filters",
+        secondaryLabel: "Open sites",
+        secondaryValue: String(visibleOpenings),
+        secondaryDetail: "across visible results",
+      });
+    } else {
+      updateSnapshot();
+    }
     if (statLine) {
       if (activeDate) {
-        const dateLabel = selectedButton
-          ? selectedButton.getAttribute("data-label") || activeDate
-          : activeDate;
-        statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"} on ${dateLabel}`;
+        statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"} on ${selectedDateLabel}`;
       } else if (query || status !== "actionable") {
         statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} shown · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"}`;
       } else {
