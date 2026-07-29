@@ -3,7 +3,8 @@ from __future__ import annotations
 import calendar
 import time
 from collections import defaultdict
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from functools import lru_cache
 from importlib.resources import files
@@ -221,27 +222,58 @@ class SearchFilterView:
     """The criteria the scan actually ran with.
 
     Without this, "No availability" on the page is ambiguous: it could mean
-    nothing is open at all, or that nothing is open on the days being searched.
-    Nights are deliberately absent — they live on each card, since entries may
-    disagree.
+    nothing is open at all, or that nothing is open on the days and stay
+    lengths being searched. ``nights`` summarises every entry on the page; the
+    per-card badge stays authoritative when they disagree.
     """
 
     days: str
     date_range: str
     dates: int
+    nights: str = ""
 
     @property
     def fingerprint(self) -> str:
         """Identity for change detection; the range rolls forward daily."""
-        return f"{self.days}|{self.date_range}|{self.dates}"
+        return f"{self.days}|{self.nights}|{self.date_range}|{self.dates}"
+
+
+def entry_nights(entry: dict) -> list[int]:
+    """Stay lengths searched for one entry, shortest first.
+
+    `runner.run_once` stamps the resolved values on the entry, because the
+    effective nights depend on the `--nights` override and on any `criteria`,
+    neither of which is visible from the entry's own `nights` key.
+    """
+    nights = entry.get("_searched_nights") or [entry.get("nights", 1)]
+    return sorted({int(value) for value in nights})
+
+
+def format_nights(values: Iterable[int]) -> str:
+    """Render stay lengths as a label, e.g. "2 nights" or "1 / 3 nights"."""
+    unique = sorted(set(values))
+    if not unique:
+        return ""
+    label = " / ".join(str(value) for value in unique)
+    return f"{label} night" if unique == [1] else f"{label} nights"
+
+
+def build_nights_label(entry: dict) -> str:
+    """Format the stay lengths searched for one entry."""
+    return format_nights(entry_nights(entry))
 
 
 def build_search_filter_view(
     day_filter: set[int] | None,
     start_dt: datetime | date,
     end_dt: datetime | date,
+    availabilities: Iterable[ProcessedAvailability] = (),
 ) -> SearchFilterView:
-    """Describe a scan's day filter and date range for the page header."""
+    """Describe a scan's day filter, stay length, and date range for the header.
+
+    Nights are summarised from the availabilities being rendered rather than
+    from the config, so the header can never disagree with the cards below it.
+    """
     if day_filter is None:
         days = "All days"
     else:
@@ -258,22 +290,10 @@ def build_search_filter_view(
             datetime.combine(end, midnight),
             day_filter,
         ),
+        nights=format_nights(
+            night for availability in availabilities for night in entry_nights(availability.entry)
+        ),
     )
-
-
-def build_nights_label(entry: dict) -> str:
-    """Format the stay lengths searched for one entry.
-
-    `runner.run_once` stamps the resolved values on the entry, because the
-    effective nights depend on the `--nights` override and on any `criteria`,
-    neither of which is visible from the entry's own `nights` key.
-    """
-    nights = entry.get("_searched_nights") or [entry.get("nights", 1)]
-    unique = sorted({int(value) for value in nights})
-    if not unique:
-        return ""
-    label = " / ".join(str(value) for value in unique)
-    return f"{label} night" if unique == [1] else f"{label} nights"
 
 
 def build_calendar_months(all_availabilities: dict[date, int]) -> list[CalendarMonth]:
@@ -404,6 +424,32 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
     )
 
 
+def card_sort_key(card: CardView) -> tuple:
+    """Order cards by how much they have to offer, most first.
+
+    Campgrounds with availability lead, ranked by site count. Failed scans come
+    next: "we could not check" is more actionable than a confirmed empty, and
+    burying them under every empty campground would hide the one state the
+    reader may need to do something about. Name breaks ties so the order is
+    stable between scans that find the same counts.
+    """
+    rank = {"available": 0, "failed": 1, "empty": 2}[card.state]
+    return (rank, -card.total, card.name.lower())
+
+
+def build_dashboard_cards(availabilities: Iterable[ProcessedAvailability]) -> list[CardView]:
+    """Build every card in display order.
+
+    Anchor ids are assigned after sorting so they run in display order, and the
+    "Jump To" nav renders from this same list, so the two always agree.
+    """
+    cards = sorted(
+        (build_card_view(availability, "") for availability in availabilities),
+        key=card_sort_key,
+    )
+    return [replace(card, id=f"site-{index}") for index, card in enumerate(cards)]
+
+
 def build_dashboard_html(
     entries_with_results: list[tuple[dict, list[AvailableCampsite]] | ProcessedAvailability],
     day_filter: set[int] | None,
@@ -425,10 +471,7 @@ def build_dashboard_html(
         for item in entries_with_results
     ]
 
-    cards = [
-        build_card_view(availability, f"site-{index}")
-        for index, availability in enumerate(availabilities)
-    ]
+    cards = build_dashboard_cards(availabilities)
 
     all_availabilities: dict[date, int] = defaultdict(int)
     for availability in availabilities:

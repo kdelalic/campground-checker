@@ -21,7 +21,7 @@
 <p class="stat-line"><strong>{{ stats.available }}</strong> of {{ stats.total }} campgrounds with availability{% if stats.soonest %} &middot; soonest <strong>{{ stats.soonest }}</strong>{% endif %}{% if stats.failed %} &middot; <span class="stat-failed">&#9888; {{ stats.failed }} scan(s) failed</span>{% endif %}</p>
 {% endif %}
 {% if search_filter %}
-<p class="filter-line" title="The criteria this scan searched with">&#x1F50D; Searching <strong>{{ search_filter.days }}</strong> &middot; {{ search_filter.date_range }} &middot; {{ search_filter.dates }} date(s)</p>
+<p class="filter-line" title="The criteria this scan searched with">&#x1F50D; Searching <strong>{{ search_filter.days }}</strong>{% if search_filter.nights %} &middot; <strong>{{ search_filter.nights }}</strong>{% endif %} &middot; {{ search_filter.date_range }} &middot; {{ search_filter.dates }} date(s)</p>
 {% endif %}
 </header>
 

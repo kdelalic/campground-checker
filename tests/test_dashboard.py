@@ -8,6 +8,7 @@ from campsite_checker.dashboard import (
     CardView,
     DashboardPublisher,
     build_calendar_months,
+    build_dashboard_cards,
     build_dashboard_html,
     build_nights_label,
     build_search_filter_view,
@@ -553,3 +554,144 @@ def test_publisher_rewrites_when_only_the_search_filter_changes(tmp_path):
     assert unchanged.written is False
     assert rolled.written is True
     assert "Aug 2, 2026 – Aug 16, 2026" in output_path.read_text()
+
+
+class TestHeaderNights:
+    """The header summarises stay length; the per-card badge stays exact."""
+
+    def test_uniform_nights_are_shown_once(self):
+        availabilities = [
+            process_results({"campground_id": 1, "nights": 2}, [make_campsite()], None),
+            process_results({"campground_id": 2, "nights": 2}, [make_campsite()], None),
+        ]
+
+        view = build_search_filter_view(None, date(2026, 8, 1), date(2026, 8, 15), availabilities)
+
+        assert view.nights == "2 nights"
+
+    def test_disagreeing_entries_are_summarised(self):
+        availabilities = [
+            process_results({"campground_id": 1, "nights": 1}, [make_campsite()], None),
+            process_results({"campground_id": 2, "_searched_nights": [3]}, [make_campsite()], None),
+        ]
+
+        view = build_search_filter_view(None, date(2026, 8, 1), date(2026, 8, 15), availabilities)
+
+        assert view.nights == "1 / 3 nights"
+
+    def test_omitted_without_availabilities(self):
+        view = build_search_filter_view(None, date(2026, 8, 1), date(2026, 8, 15))
+
+        assert view.nights == ""
+
+    def test_fingerprint_tracks_nights(self):
+        args = (None, date(2026, 8, 1), date(2026, 8, 15))
+        one = process_results({"campground_id": 1, "nights": 1}, [make_campsite()], None)
+        two = process_results({"campground_id": 1, "nights": 2}, [make_campsite()], None)
+
+        assert (
+            build_search_filter_view(*args, [one]).fingerprint
+            != build_search_filter_view(*args, [two]).fingerprint
+        )
+
+    def test_rendered_into_the_header_line(self):
+        processed = process_results({"campground_id": 1, "nights": 2}, [make_campsite()], None)
+
+        content = build_dashboard_html(
+            [processed],
+            None,
+            scan_timestamp=datetime(2026, 7, 26, tzinfo=timezone.utc),
+            search_filter=build_search_filter_view(
+                {4}, date(2026, 8, 1), date(2026, 8, 29), [processed]
+            ),
+        )
+
+        header = content.split("</header>")[0]
+        assert "2 nights" in header
+
+    def test_header_line_survives_an_empty_nights_summary(self):
+        processed = process_results({"campground_id": 1}, [make_campsite()], None)
+
+        content = build_dashboard_html(
+            [processed],
+            None,
+            scan_timestamp=datetime(2026, 7, 26, tzinfo=timezone.utc),
+            search_filter=build_search_filter_view({4}, date(2026, 8, 1), date(2026, 8, 29)),
+        )
+
+        assert '<p class="filter-line"' in content
+        assert "Friday" in content
+
+
+class TestCardOrdering:
+    """Most availability first — the page exists to surface open sites."""
+
+    @staticmethod
+    def _availability(name, sites, succeeded=True):
+        """A campground named `name` with `sites` open sites."""
+        return process_filtered_results(
+            {"name": name, "campground_id": name},
+            [
+                make_campsite(campsite_id=index, facility_name=name, recreation_area="")
+                for index in range(sites)
+            ],
+            search_succeeded=succeeded,
+        )
+
+    def test_cards_are_ordered_by_available_site_count(self):
+        availabilities = [
+            self._availability("Few", 1),
+            self._availability("Many", 5),
+            self._availability("Some", 3),
+        ]
+
+        cards = build_dashboard_cards(availabilities)
+
+        assert [(card.name, card.total) for card in cards] == [
+            ("Many", 5),
+            ("Some", 3),
+            ("Few", 1),
+        ]
+
+    def test_failed_scans_outrank_confirmed_empties(self):
+        """ "Could not check" is more actionable than "checked, nothing there"."""
+        availabilities = [
+            self._availability("Empty", 0),
+            self._availability("Failed", 0, succeeded=False),
+            self._availability("Open", 2),
+        ]
+
+        cards = build_dashboard_cards(availabilities)
+
+        assert [card.state for card in cards] == ["available", "failed", "empty"]
+
+    def test_equal_counts_fall_back_to_name_for_a_stable_order(self):
+        availabilities = [
+            self._availability("Beta", 2),
+            self._availability("alpha", 2),
+        ]
+
+        cards = build_dashboard_cards(availabilities)
+
+        assert [card.name for card in cards] == ["alpha", "Beta"]
+
+    def test_anchor_ids_run_in_display_order(self):
+        availabilities = [self._availability("Few", 1), self._availability("Many", 5)]
+
+        cards = build_dashboard_cards(availabilities)
+
+        assert [card.id for card in cards] == ["site-0", "site-1"]
+        assert cards[0].name == "Many"
+
+    def test_nav_and_cards_agree_in_the_rendered_page(self):
+        availabilities = [
+            self._availability("Few", 1),
+            self._availability("Many", 5),
+        ]
+
+        content = render(availabilities)
+
+        nav = content.split("</nav>")[0]
+        assert nav.index("Many") < nav.index("Few")
+        body = content.split("</nav>")[1]
+        assert body.index("Many") < body.index("Few")

@@ -256,7 +256,7 @@ def run_once(
             all_with_results,
             None,
             dashboard_path,
-            build_search_filter_view(day_filter, start_dt, end_dt),
+            build_search_filter_view(day_filter, start_dt, end_dt, all_with_results),
         )
         logger.info("   Dashboard written to %s", dashboard_path)
 
@@ -550,7 +550,7 @@ def run_forever(
                     publish_result = dashboard_publisher.publish(
                         merged,
                         search_filter=build_search_filter_view(
-                            day_filter, window_start, window_end
+                            day_filter, window_start, window_end, merged
                         ),
                     )
                     if publish_result.written:
