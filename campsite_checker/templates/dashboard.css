@@ -502,8 +502,8 @@ h1 {
   font-weight: 760;
 }
 .quick-nav ul {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px 10px;
   margin: 0;
   padding: 0;
@@ -513,7 +513,6 @@ h1 {
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 280px;
   min-width: 0;
   padding: 4px 7px;
   border: 1px solid #e0ceb1;
@@ -521,7 +520,14 @@ h1 {
   background: var(--paper-muted);
   font-size: 0.78rem;
 }
-.quick-nav a,
+.quick-nav a {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--pine-deep);
+  font-weight: 720;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
 .site-list a {
   overflow: hidden;
   color: var(--pine-deep);
@@ -727,6 +733,7 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
 
 @media (max-width: 820px) {
   .snapshot-stat { min-height: 82px; }
+  .quick-nav ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 620px) {
@@ -776,8 +783,7 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   .status-control select { width: 100%; }
   .quick-nav { grid-template-columns: 1fr; gap: 7px; }
   .quick-nav h3 { margin-top: 0; }
-  .quick-nav ul { flex-wrap: nowrap; padding-bottom: 3px; overflow-x: auto; }
-  .quick-nav li { flex: 0 0 auto; }
+  .quick-nav ul { grid-template-columns: minmax(0, 1fr); }
   .card { border-radius: 9px; }
   .card-header { align-items: flex-start; padding: 17px 14px 14px; flex-direction: column; }
   .card-badges { justify-content: flex-start; }

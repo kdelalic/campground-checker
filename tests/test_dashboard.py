@@ -334,6 +334,16 @@ class TestTemplateAssets:
         # Compact mobile spacing must not shrink the actionable date target.
         assert ".calendar-table th, .calendar-table td { height: 43px; }" in css
 
+    def test_quick_nav_keeps_full_campground_names_visible(self):
+        css = read_asset("dashboard.css")
+
+        assert (
+            ".quick-nav ul {\n  display: grid;\n  grid-template-columns: repeat(3, minmax(0, 1fr));"
+        ) in css
+        assert ".quick-nav a {\n  flex: 1 1 auto;\n  min-width: 0;" in css
+        assert "overflow-wrap: anywhere;" in css
+        assert ".quick-nav a,\n.site-list a" not in css
+
 
 class TestViewModels:
     def test_calendar_spans_every_month_between_first_and_last_date(self):
