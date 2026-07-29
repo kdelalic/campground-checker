@@ -111,6 +111,15 @@ class TestFailedScanRendering:
 
 
 class TestSummaryStats:
+    def test_header_is_compact_and_plain(self):
+        content = render([process_filtered_results({"name": "Upper Pines"}, [make_campsite()])])
+
+        assert "<title>Campground checker</title>" in content
+        assert "<h1>Campground checker</h1>" in content
+        assert "Your campsite watchlist" not in content
+        assert "Open dates, recent scans" not in content
+        assert 'class="hero-main' not in content
+
     def test_summary_is_presented_as_scannable_metrics(self):
         content = render(
             [
@@ -123,6 +132,12 @@ class TestSummaryStats:
         assert 'id="summary-primary-value">1</strong>' in content
         assert 'id="summary-primary-suffix"> of 2</small>' in content
         assert 'id="summary-secondary-label"' in content
+
+    def test_cards_do_not_have_a_decorative_status_stripe(self):
+        content = render([process_filtered_results({"name": "Upper Pines"}, [make_campsite()])])
+
+        assert ".card::before" not in content
+        assert ".card-partial::before" not in content
 
     def test_soonest_available_date_reported(self):
         availability = process_filtered_results(
