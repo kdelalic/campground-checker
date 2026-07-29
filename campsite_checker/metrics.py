@@ -138,8 +138,10 @@ class MetricsSnapshot:
     scan_count: int
     error_count: int
     entries_count: int
-    available_entries_count: int
-    available_sites_count: int
+    # None means "no complete result snapshot yet", which renders as an absent
+    # gauge instead of a misleading 0; see `ScanStatus.snapshot`.
+    available_entries_count: int | None
+    available_sites_count: int | None
     last_scan_duration_seconds: float
     last_scan_timestamp: float
     last_alert_scan_timestamp: float
@@ -283,6 +285,10 @@ def render_prometheus(snapshot: MetricsSnapshot) -> str:
 
     lines = []
     for name, help_text, metric_type, value in process_metrics:
+        # A None value means the metric has nothing meaningful to report yet;
+        # omit the series entirely so consumers see a gap rather than a zero.
+        if value is None:
+            continue
         lines.extend(
             (
                 f"# HELP {name} {help_text}",

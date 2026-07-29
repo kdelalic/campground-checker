@@ -31,6 +31,11 @@ class ScanStatus:
         self.entries_count: int = 0
         self.available_entries_count: int = 0
         self.available_sites_count: int = 0
+        # False until a scan has covered *every* configured entry. Alert scans
+        # publish before the first dashboard sweep finishes, so until then the
+        # availability totals cover only the alert tier and would understate
+        # the real figures; see `snapshot`.
+        self.results_complete: bool = False
         self.campgrounds: tuple[CampgroundMetric, ...] = ()
         self.last_scan_duration_seconds: float = 0
         self.alert_interval_minutes: int = 5
@@ -63,6 +68,7 @@ class ScanStatus:
         campgrounds: list[CampgroundMetric] | tuple[CampgroundMetric, ...] | None = None,
         duration_seconds: float = 0,
         error: bool = False,
+        results_complete: bool | None = None,
     ) -> None:
         """Record a completed scan cycle.
 
@@ -78,6 +84,8 @@ class ScanStatus:
                 self.available_entries_count = available_entries_count
             if available_sites_count is not None:
                 self.available_sites_count = available_sites_count
+            if results_complete is not None:
+                self.results_complete = results_complete
             if campgrounds is not None:
                 self.campgrounds = tuple(campgrounds)
             self.last_scan_duration_seconds = duration_seconds
@@ -184,8 +192,18 @@ class ScanStatus:
                 scan_count=self.scan_count,
                 error_count=self.error_count,
                 entries_count=self.entries_count,
-                available_entries_count=self.available_entries_count,
-                available_sites_count=self.available_sites_count,
+                # None renders as an absent gauge rather than a zero. Before
+                # the first complete snapshot these totals cover only the alert
+                # tier, and exporting that as 0 graphs a real-looking drop on
+                # every restart (deploys, and the daily state backup) instead
+                # of the gap it actually is. `entries_count` is exempt: it is
+                # the configured entry count and is correct immediately.
+                available_entries_count=(
+                    self.available_entries_count if self.results_complete else None
+                ),
+                available_sites_count=(
+                    self.available_sites_count if self.results_complete else None
+                ),
                 last_scan_duration_seconds=self.last_scan_duration_seconds,
                 last_scan_timestamp=_timestamp(self.last_scan_time),
                 last_alert_scan_timestamp=_timestamp(self.last_alert_scan),

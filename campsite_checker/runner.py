@@ -590,6 +590,10 @@ def run_forever(
                     ),
                     campgrounds=campground_metrics,
                     duration_seconds=monotonic() - scan_started,
+                    # These totals span the alert tier plus the cached
+                    # dashboard results, so they only describe every
+                    # configured entry once a dashboard snapshot exists.
+                    results_complete=dashboard_snapshot_ready,
                 )
 
                 # Free scan-local data before sleeping

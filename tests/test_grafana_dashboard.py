@@ -14,6 +14,24 @@ PER_CAMPGROUND_METRICS = {
 }
 
 
+def _steady_state_status():
+    """A `ScanStatus` past warm-up, exporting the full metric surface.
+
+    Some metrics are deliberately absent until the first complete result
+    snapshot, so a freshly constructed `ScanStatus` understates what the
+    endpoint exports in normal operation.
+    """
+    status = ScanStatus()
+    status.update(
+        entries_count=1,
+        available_entries_count=1,
+        available_sites_count=1,
+        duration_seconds=1.0,
+        results_complete=True,
+    )
+    return status
+
+
 def _dashboard_queries(value):
     if isinstance(value, dict):
         if isinstance(value.get("expr"), str):
@@ -35,7 +53,7 @@ def test_dashboard_references_exported_metrics():
     exported_metrics = set(
         re.findall(
             r"^# TYPE (campsite_checker_[a-zA-Z0-9_:]+) ",
-            ScanStatus().to_prometheus(),
+            _steady_state_status().to_prometheus(),
             re.MULTILINE,
         )
     )

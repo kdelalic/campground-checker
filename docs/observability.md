@@ -45,8 +45,8 @@ Process-wide metrics have no application-defined labels:
 | `campsite_checker_scans_total` | Counter | Completed scan cycles, including cycles that ended with an error. |
 | `campsite_checker_scan_errors_total` | Counter | Scan cycles that ended with an unhandled error. Individual campground failures are reported by the per-campground success metric. |
 | `campsite_checker_campgrounds_monitored` | Gauge | Configured campgrounds included in the latest completed cycle. |
-| `campsite_checker_campgrounds_available` | Gauge | Campgrounds with availability in the latest combined alert and dashboard results. |
-| `campsite_checker_campsites_available` | Gauge | Available campsite-date combinations in the latest combined results. This is not a count of unique physical sites. |
+| `campsite_checker_campgrounds_available` | Gauge | Campgrounds with availability in the latest combined alert and dashboard results. Absent until the first complete snapshot. |
+| `campsite_checker_campsites_available` | Gauge | Available campsite-date combinations in the latest combined results. This is not a count of unique physical sites. Absent until the first complete snapshot. |
 | `campsite_checker_last_scan_duration_seconds` | Gauge | Wall-clock duration of the latest scan cycle. |
 | `campsite_checker_last_scan_timestamp_seconds` | Gauge | Unix timestamp when the latest scan cycle completed, or `0` before the first cycle. |
 | `campsite_checker_last_alert_scan_timestamp_seconds` | Gauge | Unix timestamp when the latest priority alert scan completed, or `0` before the first alert scan. |
@@ -98,8 +98,23 @@ retain their last results and refresh on the dashboard interval. Treat
 `campsite_checker_campground_available == 0` as confirmed no availability only
 when the matching `campsite_checker_campground_last_scan_success` is `1`.
 Per-campground series are absent before the first complete result snapshot or
-when a whole scan cycle fails before results can be assembled. Counters and
-timestamps reset when the process restarts.
+when a whole scan cycle fails before results can be assembled. The two
+aggregate availability gauges (`campsite_checker_campgrounds_available` and
+`campsite_checker_campsites_available`) are absent for the same reason: alert
+scans publish before the first dashboard sweep finishes, so until then their
+totals would cover only the alert tier and understate the real figures.
+Exporting that as `0` would graph a drop indistinguishable from "availability
+vanished". `campsite_checker_campgrounds_monitored` is exempt — it is the
+configured entry count and is correct immediately.
+
+Counters and timestamps reset when the process restarts. Restarts are routine
+here: every deploy, plus the daily state backup that briefly stops the
+container. Use `rate()` or `increase()` for anything spanning a restart, since
+a raw counter value only covers the current process lifetime. Timestamp metrics
+report `0` for "never happened" (Prometheus has no null), so guard staleness
+queries with `> 0` — for example
+`time() - (campsite_checker_last_alert_scan_timestamp_seconds > 0)` — or a
+freshly started process reads as infinitely stale.
 
 Example Prometheus scrape configuration:
 

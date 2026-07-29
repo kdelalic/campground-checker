@@ -64,6 +64,7 @@ class TestPrometheusMetrics:
             available_sites_count=9,
             duration_seconds=1.25,
             error=True,
+            results_complete=True,
         )
         metrics = status.to_prometheus()
         assert "campsite_checker_scans_total 1" in metrics
@@ -73,6 +74,59 @@ class TestPrometheusMetrics:
         assert "campsite_checker_campsites_available 9" in metrics
         assert "campsite_checker_last_scan_duration_seconds 1.25" in metrics
         assert not metrics.endswith("\n\n")
+
+    def test_availability_totals_are_absent_until_the_snapshot_is_complete(self):
+        """Warm-up must read as a gap, not as "availability vanished".
+
+        Alert scans publish before the first dashboard sweep finishes, so these
+        totals would cover only the alert tier. Exporting that as 0 graphed a
+        real-looking drop on every restart.
+        """
+        status = ScanStatus()
+        status.update(
+            entries_count=34,
+            available_entries_count=0,
+            available_sites_count=0,
+            duration_seconds=6.2,
+        )
+        metrics = status.to_prometheus()
+
+        assert "campsite_checker_campgrounds_available" not in metrics
+        assert "campsite_checker_campsites_available" not in metrics
+        # The configured entry count is correct immediately, so it still shows.
+        assert "campsite_checker_campgrounds_monitored 34" in metrics
+        # An absent metric must drop its HELP/TYPE header too, not just the row.
+        assert "# TYPE campsite_checker_campsites_available" not in metrics
+
+    def test_availability_totals_appear_once_the_snapshot_completes(self):
+        status = ScanStatus()
+        status.update(entries_count=34, available_entries_count=0, available_sites_count=0)
+        assert "campsite_checker_campsites_available" not in status.to_prometheus()
+
+        status.update(
+            entries_count=34,
+            available_entries_count=20,
+            available_sites_count=1648,
+            results_complete=True,
+        )
+        metrics = status.to_prometheus()
+        assert "campsite_checker_campgrounds_available 20" in metrics
+        assert "campsite_checker_campsites_available 1648" in metrics
+
+    def test_completeness_survives_a_later_error_only_update(self):
+        """An error-only update keeps previous values; it must not re-hide them."""
+        status = ScanStatus()
+        status.update(
+            entries_count=34,
+            available_entries_count=20,
+            available_sites_count=1648,
+            results_complete=True,
+        )
+        status.update(duration_seconds=0.5, error=True)
+
+        metrics = status.to_prometheus()
+        assert "campsite_checker_campgrounds_available 20" in metrics
+        assert "campsite_checker_campsites_available 1648" in metrics
 
     def test_per_campground_metrics(self):
         status = ScanStatus()
