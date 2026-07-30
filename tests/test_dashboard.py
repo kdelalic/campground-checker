@@ -63,7 +63,9 @@ class TestFailedScanRendering:
 
         assert "Scan failed" in content
         assert '<article class="card card-unavailable card-failed"' in content
-        assert "No availability" not in content
+        card_start = content.index('<article class="card card-unavailable card-failed"')
+        card_end = content.index("</article>", card_start)
+        assert "No availability" not in content[card_start:card_end]
 
     def test_empty_successful_scan_still_reads_as_no_availability(self):
         empty = process_filtered_results({"name": "North Pines", "campground_id": 1}, [])
@@ -285,6 +287,132 @@ class TestRefreshAndAccessibility:
         assert "%F0%9F%8F%95%EF%B8%8F" in content
 
 
+class TestCampgroundMap:
+    def test_configured_coordinates_render_one_campground_marker(self):
+        availability = process_filtered_results(
+            {
+                "name": "Upper Pines",
+                "latitude": 37.7361111,
+                "longitude": -119.5625,
+            },
+            [make_campsite()],
+        )
+
+        content = render([availability])
+
+        assert '<section class="map-container" aria-labelledby="map-heading">' in content
+        assert 'data-latitude="37.7361111"' in content
+        assert 'data-longitude="-119.5625"' in content
+        assert 'data-state="available"' in content
+        assert "Leaflet 1.9.4" in content
+        assert "https://tile.openstreetmap.org/{z}/{x}/{y}.png" in content
+        assert "OpenStreetMap</a> contributors" in content
+
+    def test_empty_and_failed_campgrounds_still_have_markers(self):
+        empty = process_filtered_results(
+            {"name": "North Pines", "latitude": 37.74, "longitude": -119.56},
+            [],
+        )
+        failed = process_filtered_results(
+            {"name": "Kirk Creek", "latitude": 35.99, "longitude": -121.49},
+            [],
+            search_succeeded=False,
+        )
+
+        content = render([empty, failed])
+
+        assert 'data-name="North Pines" data-state="empty"' in content
+        assert 'data-name="Kirk Creek" data-state="failed"' in content
+        assert "No availability" in content
+        assert "Scan failed" in content
+
+    def test_provider_result_location_is_a_fallback(self):
+        availability = process_filtered_results(
+            {"name": "Provider-located campground"},
+            [make_campsite(latitude=38.95499, longitude=-120.08248)],
+        )
+
+        content = render([availability])
+
+        assert 'data-latitude="38.95499"' in content
+        assert 'data-longitude="-120.08248"' in content
+
+    def test_map_is_omitted_when_no_coordinates_exist(self):
+        content = render(
+            [process_filtered_results({"name": "Unmapped campground"}, [make_campsite()])]
+        )
+
+        assert 'id="campground-map"' not in content
+        assert "Leaflet 1.9.4" not in content
+        assert "https://tile.openstreetmap.org" not in content
+
+    def test_map_zoom_and_responsive_bounds_are_explicit(self):
+        content = render(
+            [
+                process_filtered_results(
+                    {"name": "One", "latitude": 38.0, "longitude": -122.0},
+                    [make_campsite()],
+                ),
+                process_filtered_results(
+                    {"name": "Two", "latitude": 36.0, "longitude": -119.0},
+                    [make_campsite()],
+                ),
+            ]
+        )
+
+        assert "campgroundMap.setView(points[0], 13" in content
+        assert "campgroundMap.fitBounds(points" in content
+        assert "padding: [42, 42]" in content
+        assert "maxZoom: 14" in content
+        assert "new ResizeObserver" in content
+        assert "campgroundMap.invalidateSize" in content
+
+    def test_map_markers_follow_the_existing_filters(self):
+        content = render(
+            [
+                process_filtered_results(
+                    {"name": "Upper Pines", "latitude": 37.73, "longitude": -119.56},
+                    [make_campsite()],
+                )
+            ]
+        )
+
+        assert "card.dataset.mapVisible = visible || visibleInsideDisclosure" in content
+        assert 'card.dataset.mapVisible === "true"' in content
+        assert "syncMapMarkers();" in content
+        assert "visibleMapEntries.length" in content
+
+    def test_marker_popup_uses_text_nodes_for_campground_data(self):
+        availability = process_filtered_results(
+            {
+                "name": '<script>alert("x")</script>',
+                "latitude": 37.73,
+                "longitude": -119.56,
+            },
+            [],
+        )
+
+        content = render([availability])
+
+        assert '<script>alert("x")</script>' not in content
+        assert "&lt;script&gt;alert" in content
+        assert "link.textContent = entry.name" in content
+        assert "status.textContent = mapEntryStatus(entry)" in content
+
+    def test_accessible_marker_list_mirrors_the_map(self):
+        availability = process_filtered_results(
+            {"name": "North Pines", "latitude": 37.74, "longitude": -119.56},
+            [],
+        )
+
+        content = render([availability])
+
+        assert '<ul id="map-marker-data" class="sr-only">' in content
+        assert 'role="region" aria-label="Interactive map of campground locations"' in content
+        assert '<a href="#site-0">North Pines</a> — No availability' in content
+        assert 'aria-label="Map marker legend"' in content
+
+
 class TestTemplateAssets:
     """The page is uploaded to object storage as one file, so the CSS and JS
     live in sibling static assets that are inlined at render time."""
@@ -308,7 +436,14 @@ class TestTemplateAssets:
     def test_assets_ship_inside_the_package(self):
         templates = files("campsite_checker").joinpath("templates")
 
-        for name in ("dashboard.html.j2", "dashboard.css", "dashboard.js"):
+        for name in (
+            "dashboard.html.j2",
+            "dashboard.css",
+            "dashboard.js",
+            "vendor/leaflet-1.9.4.css",
+            "vendor/leaflet-1.9.4.js",
+            "vendor/LEAFLET-LICENSE.txt",
+        ):
             assert templates.joinpath(name).is_file(), name
 
     def test_asset_reads_are_cached(self):

@@ -214,6 +214,26 @@ message, border, and content.
 Date rows use native `details` and `summary` disclosure. Keep them collapsed by
 default so a long result list stays scannable.
 
+### Campground map
+
+The map is a geographic index of campground-level status, not a campsite map.
+
+- Show one marker per configured campground. Do not add individual campsite
+  markers, routes, polygons, terrain layers, or decorative overlays.
+- Fit the view to markers matching the active date, name, and status filters.
+  Cap a single marker at campground scale rather than building scale.
+- Recalculate the map size and visible bounds when its responsive container
+  changes size.
+- When provider coordinates are identical, group those campgrounds under one
+  marker and list each campground in its popup.
+- Use pine for available, muted paper for no availability, and warm yellow for
+  failed or stale. Repeat those meanings in text and in the legend.
+- Popup campground names link to the corresponding result card.
+- Keep the accessible marker-data list in the document. Result cards remain
+  the authoritative non-map representation.
+- Use the official HTTPS OpenStreetMap tile URL, show visible attribution, rely
+  on normal browser caching, and never add prefetch or offline downloads.
+
 ### Actions and links
 
 - The campground booking action is solid tent orange.
@@ -244,6 +264,7 @@ The layout has two maintained breakpoints:
 - The calendar keeps its compact centered width, while its inner panel uses all
   of the available calendar surface.
 - Summary cells retain their compact layout.
+- The map keeps the active marker bounds after its width changes.
 
 ### At `620px`
 
@@ -252,6 +273,7 @@ The layout has two maintained breakpoints:
 - Search criteria stack into labeled rows.
 - Search and status controls become one column.
 - Calendar spacing and date cells become more compact.
+- The map uses a fixed compact height and its legend wraps below it.
 - Quick navigation scrolls horizontally.
 - Card headings, badges, and individual site rows stack.
 - The main booking action becomes full width.
@@ -277,10 +299,11 @@ information. Reflow it.
 
 ## Implementation constraints
 
-The dashboard is a single self-contained HTML file. CSS and JavaScript are
-inlined during Jinja rendering. Do not add:
+The dashboard is a single HTML artifact. Application CSS/JavaScript and the
+vendored Leaflet runtime are inlined during Jinja rendering. OpenStreetMap
+tiles are the only permitted external image requests. Do not add:
 
-- external fonts, icon libraries, or image requests;
+- external fonts, icon libraries, or non-map image requests;
 - a frontend build step or framework;
 - JavaScript-only access to essential availability data;
 - template syntax inside `dashboard.js`.
@@ -298,6 +321,9 @@ These hooks are part of the current JavaScript contract:
 | `.quick-nav li[data-ref][data-state][data-name]` | Quick-navigation filtering |
 | `#campground-search`, `#status-filter` | Result controls |
 | `#month-selector`, `#date-filter` | Calendar controls |
+| `#campground-map`, `#map-marker-data` | Map initialization and marker data |
+| `data-card-id`, `data-latitude`, `data-longitude` | Marker-to-card mapping |
+| `data-map-visible` | Result-filter and visible-marker synchronization |
 
 Rename or remove a hook only when `dashboard.js` and its focused tests are
 updated in the same change.
@@ -334,7 +360,7 @@ remove it.
 - [ ] Keyboard focus and screen-reader labels still work.
 - [ ] Light mode, dark mode, `820px`, and `620px` layouts are considered.
 - [ ] The page does not overflow horizontally.
-- [ ] The dashboard remains a self-contained HTML file.
+- [ ] The dashboard remains one HTML artifact; only map tiles load externally.
 - [ ] Focused dashboard tests cover new behavior or protected markup.
 - [ ] Formatting, linting, and the full test suite pass:
 

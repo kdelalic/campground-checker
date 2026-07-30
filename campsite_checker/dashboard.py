@@ -243,6 +243,8 @@ class CardView:
     date_count: int = 0
     stale_label: str = ""
     stale_timestamp_iso: str = ""
+    latitude: float | None = None
+    longitude: float | None = None
 
     @property
     def css_class(self) -> str:
@@ -480,6 +482,27 @@ def build_site_views(sites: list[AvailableCampsite]) -> tuple[SiteView, ...]:
     return tuple(views)
 
 
+def get_map_coordinates(availability: ProcessedAvailability) -> tuple[float, float] | None:
+    """Resolve one stable campground marker location.
+
+    Configured coordinates are authoritative because empty and failed scans
+    have no result objects to inspect. Provider coordinates remain a useful
+    fallback for installations that have not added map metadata yet.
+    """
+    latitude = availability.entry.get("latitude")
+    longitude = availability.entry.get("longitude")
+    if latitude is not None and longitude is not None:
+        return float(latitude), float(longitude)
+
+    for campsite in availability.campsites:
+        location = getattr(campsite, "location", None)
+        latitude = getattr(location, "latitude", None)
+        longitude = getattr(location, "longitude", None)
+        if latitude is not None and longitude is not None:
+            return float(latitude), float(longitude)
+    return None
+
+
 def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardView:
     """Turn one campground's normalized availability into a renderable card."""
     entry = availability.entry
@@ -491,6 +514,8 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
         name = entry.get("name") or f"Campground #{entry.get('campground_id', '?')}"
 
     scan_failed = not availability.search_succeeded
+    coordinates = get_map_coordinates(availability)
+    latitude, longitude = coordinates if coordinates is not None else (None, None)
     stale_label = ""
     stale_timestamp_iso = ""
     if availability.last_successful_at is not None:
@@ -519,6 +544,8 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
             nights=build_nights_label(entry),
             stale_label=stale_label,
             stale_timestamp_iso=stale_timestamp_iso,
+            latitude=latitude,
+            longitude=longitude,
         )
 
     sites_by_date = group_sites_by_date(availability.campsites)
@@ -548,6 +575,8 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
         date_count=len(rows),
         stale_label=stale_label,
         stale_timestamp_iso=stale_timestamp_iso,
+        latitude=latitude,
+        longitude=longitude,
     )
 
 
@@ -600,6 +629,7 @@ def build_dashboard_html(
     ]
 
     cards = build_dashboard_cards(availabilities)
+    map_cards = [card for card in cards if card.latitude is not None and card.longitude is not None]
 
     all_availabilities: dict[date, int] = defaultdict(int)
     for availability in availabilities:
@@ -635,6 +665,8 @@ def build_dashboard_html(
         .render(
             css=read_asset("dashboard.css"),
             js=read_asset("dashboard.js"),
+            leaflet_css=read_asset("vendor/leaflet-1.9.4.css"),
+            leaflet_js=read_asset("vendor/leaflet-1.9.4.js"),
             refresh_seconds=refresh_seconds,
             refresh_label=refresh_label,
             stale_after_seconds=stale_after_seconds,
@@ -649,6 +681,7 @@ def build_dashboard_html(
                 calendar_day_filter,
             ),
             cards=cards,
+            map_cards=map_cards,
             available_cards=[card for card in cards if card.state == "available"],
             failed_cards=[card for card in cards if card.state == "failed"],
             empty_cards=[card for card in cards if card.state == "empty"],

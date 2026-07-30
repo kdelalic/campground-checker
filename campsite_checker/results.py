@@ -72,6 +72,8 @@ def availability_fingerprint(
             "recreation_area": entry.get("recreation_area"),
             "campsite_id": entry.get("campsite_id"),
             "name": entry.get("name"),
+            "latitude": entry.get("latitude"),
+            "longitude": entry.get("longitude"),
         }
         dates = [
             [

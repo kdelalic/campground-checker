@@ -25,10 +25,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const searchInput = document.getElementById("campground-search");
   const statusFilter = document.getElementById("status-filter");
   const emptyResults = document.getElementById("empty-results");
+  const mapElement = document.getElementById("campground-map");
+  const mapResultCount = document.getElementById("map-result-count");
+  const mapEmpty = document.getElementById("map-empty");
   const allMonths = Array.from(document.querySelectorAll(".calendar-month"));
   const availButtons = Array.from(document.querySelectorAll(".calendar-available button"));
   const allCards = Array.from(document.querySelectorAll(".card"));
   const navItems = Array.from(document.querySelectorAll(".quick-nav li"));
+  const mapEntries = Array.from(document.querySelectorAll("#map-marker-data li")).map(
+    (element) => ({
+      cardId: element.getAttribute("data-card-id") || "",
+      latitude: parseFloat(element.getAttribute("data-latitude") || ""),
+      longitude: parseFloat(element.getAttribute("data-longitude") || ""),
+      name: element.getAttribute("data-name") || "",
+      state: element.getAttribute("data-state") || "empty",
+      openings: parseInt(element.getAttribute("data-openings") || "0", 10),
+      availability: element.getAttribute("data-availability") || "",
+    }),
+  ).filter((entry) => Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude));
   const defaultStatHtml = statLine ? statLine.innerHTML : "";
   const defaultSnapshotText = Object.fromEntries(
     Object.entries(snapshotFields).map(([name, element]) => [
@@ -39,6 +53,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const allowedStatuses = new Set(["actionable", "available", "failed", "all"]);
   const urlParams = new URLSearchParams(window.location.search);
   let activeDate = null;
+  let campgroundMap = null;
+  let mapMarkerLayer = null;
+  let visibleMapEntries = [];
+  let mapResizeFrame = null;
 
   function plural(value, singular, pluralForm) {
     return `${value} ${value === 1 ? singular : pluralForm}`;
@@ -154,6 +172,138 @@ document.addEventListener("DOMContentLoaded", () => {
     return cardState !== "empty" || Boolean(query);
   }
 
+  function mapEntryStatus(entry) {
+    if (entry.state === "available") return entry.availability;
+    if (entry.state === "failed") return "Failed or stale scan";
+    return "No availability";
+  }
+
+  function popupContent(entries) {
+    const list = document.createElement("ul");
+    list.className = "map-popup-list";
+    entries.forEach((entry) => {
+      const item = document.createElement("li");
+      item.className = "map-popup-item";
+      const link = document.createElement("a");
+      link.className = "map-popup-link";
+      link.href = `#${entry.cardId}`;
+      link.textContent = entry.name;
+      const status = document.createElement("span");
+      status.className = "map-popup-status";
+      status.textContent = mapEntryStatus(entry);
+      item.append(link, status);
+      list.append(item);
+    });
+    return list;
+  }
+
+  function groupMarkerState(entries) {
+    if (entries.some((entry) => entry.state === "available")) return "available";
+    if (entries.some((entry) => entry.state === "failed")) return "failed";
+    return "empty";
+  }
+
+  function fitMapToEntries(entries) {
+    if (!campgroundMap || entries.length === 0) return;
+    const points = entries.map((entry) => [entry.latitude, entry.longitude]);
+    if (points.length === 1) {
+      campgroundMap.setView(points[0], 13, { animate: false });
+      return;
+    }
+    campgroundMap.fitBounds(points, {
+      animate: false,
+      padding: [42, 42],
+      maxZoom: 14,
+    });
+  }
+
+  function syncMapMarkers() {
+    if (!campgroundMap || !mapMarkerLayer || !window.L) return;
+    visibleMapEntries = mapEntries.filter((entry) => {
+      const card = document.getElementById(entry.cardId);
+      return card && card.dataset.mapVisible === "true";
+    });
+
+    mapMarkerLayer.clearLayers();
+    const groups = new Map();
+    visibleMapEntries.forEach((entry) => {
+      // Provider coordinates occasionally repeat for multiple campground
+      // facilities. Keep every campground accessible in one shared popup
+      // instead of stacking indistinguishable markers.
+      const key = `${entry.latitude.toFixed(5)},${entry.longitude.toFixed(5)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(entry);
+    });
+
+    groups.forEach((entries) => {
+      const state = groupMarkerState(entries);
+      const count = entries.length > 1 ? String(entries.length) : "";
+      const title = entries.length === 1
+        ? `${entries[0].name}: ${mapEntryStatus(entries[0])}`
+        : `${entries.length} campgrounds at this location`;
+      const icon = window.L.divIcon({
+        className: "map-marker-container",
+        html: `<span class="map-marker-dot map-marker-${state}">${count}</span>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -11],
+      });
+      const marker = window.L.marker(
+        [entries[0].latitude, entries[0].longitude],
+        { icon, keyboard: true, title },
+      );
+      marker.bindPopup(popupContent(entries), { maxWidth: 310 });
+      marker.on("add", () => {
+        const markerElement = marker.getElement();
+        if (markerElement) {
+          markerElement.setAttribute("aria-label", title);
+          markerElement.setAttribute("role", "button");
+        }
+      });
+      marker.addTo(mapMarkerLayer);
+    });
+
+    if (mapResultCount) {
+      mapResultCount.textContent = `${plural(
+        visibleMapEntries.length,
+        "campground",
+        "campgrounds",
+      )} mapped`;
+    }
+    if (mapEmpty) mapEmpty.hidden = visibleMapEntries.length > 0;
+
+    window.requestAnimationFrame(() => {
+      campgroundMap.invalidateSize({ animate: false, pan: false });
+      fitMapToEntries(visibleMapEntries);
+    });
+  }
+
+  function initializeMap() {
+    if (!mapElement || !window.L || mapEntries.length === 0) return;
+    campgroundMap = window.L.map(mapElement, {
+      minZoom: 2,
+      maxZoom: 18,
+    });
+    fitMapToEntries(mapEntries);
+    window.L.tileLayer(mapElement.getAttribute("data-tile-url"), {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(campgroundMap);
+    mapMarkerLayer = window.L.layerGroup().addTo(campgroundMap);
+
+    if (window.ResizeObserver) {
+      const observer = new ResizeObserver(() => {
+        if (mapResizeFrame !== null) window.cancelAnimationFrame(mapResizeFrame);
+        mapResizeFrame = window.requestAnimationFrame(() => {
+          campgroundMap.invalidateSize({ animate: false, pan: false });
+          fitMapToEntries(visibleMapEntries);
+          mapResizeFrame = null;
+        });
+      });
+      observer.observe(mapElement);
+    }
+  }
+
   function applyFilters({ sync = true } = {}) {
     const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
     const status = statusFilter ? statusFilter.value : "actionable";
@@ -188,6 +338,10 @@ document.addEventListener("DOMContentLoaded", () => {
         && !activeDate
       );
       card.hidden = !(visible || visibleInsideDisclosure);
+      // Confirmed-empty cards remain part of the default collapsed results,
+      // so keep their campground markers visible until a date, name, or
+      // explicit status filter excludes them.
+      card.dataset.mapVisible = visible || visibleInsideDisclosure ? "true" : "false";
 
       const availabilityBadge = card.querySelector(".site-count-availability");
       if (availabilityBadge) {
@@ -253,6 +407,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (status === "all" || query) emptyResults.open = visibleEmptyCards > 0;
     }
 
+    syncMapMarkers();
     if (resultCount) resultCount.textContent = `${plural(visibleCards, "campground", "campgrounds")} shown`;
     if (noFilterResults) {
       const emptySummaryVisible = emptyResults && !emptyResults.hidden;
@@ -341,6 +496,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (refreshNow) refreshNow.addEventListener("click", () => window.location.reload());
 
+  initializeMap();
   updateFreshness();
   setInterval(updateFreshness, 60 * 1000);
   const storedDate = urlParams.get("date");

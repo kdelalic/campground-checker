@@ -452,6 +452,149 @@ h1 {
 .legend-searched { background: #d9c8ae; }
 .legend-not-searched { border: 1px solid var(--line-strong); background: transparent; }
 
+.map-container { margin: 0 0 36px; }
+.map-container .section-heading { margin: 0 2px 14px; }
+.map-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--paper-muted);
+}
+#campground-map {
+  width: 100%;
+  height: clamp(330px, 48vw, 470px);
+  background: var(--canvas-deep);
+}
+.map-description {
+  padding: 9px 12px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+.map-empty {
+  position: absolute;
+  z-index: 700;
+  top: 50%;
+  left: 50%;
+  min-width: min(86%, 330px);
+  padding: 12px 14px;
+  margin: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+.map-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-top: 10px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+.map-legend span { display: flex; align-items: center; gap: 6px; }
+.map-legend-marker {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  outline: 1px solid var(--line-strong);
+}
+.map-legend-available { background: var(--pine); }
+.map-legend-empty { background: var(--paper-muted); }
+.map-legend-failed { background: var(--sun); }
+.map-noscript {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+/* Leaflet is vendored and inlined; these rules keep its controls and popups
+   aligned with the dashboard palette without changing familiar map behavior. */
+.leaflet-container {
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+}
+.leaflet-bar {
+  overflow: hidden;
+  border: 1px solid var(--line-strong) !important;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  width: 38px;
+  height: 38px;
+  border-bottom-color: var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  line-height: 38px;
+}
+.leaflet-bar a:hover { background: var(--paper-muted); }
+.leaflet-control-attribution {
+  padding: 2px 5px;
+  background: rgb(255 248 233 / 90%) !important;
+  color: #4b433b;
+  font-size: 0.62rem;
+}
+.leaflet-control-attribution a { color: #203a2b; }
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: none;
+}
+.leaflet-popup-content-wrapper { border-radius: var(--radius-sm); }
+.leaflet-popup-content { min-width: 190px; margin: 12px 14px; }
+.leaflet-popup-close-button { color: var(--ink-soft) !important; }
+.map-popup-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.map-popup-item + .map-popup-item { padding-top: 9px; border-top: 1px solid var(--line); }
+.map-popup-link {
+  color: var(--pine-deep);
+  font-weight: 760;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.map-popup-link:hover { text-decoration: underline; }
+.map-popup-status {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 0.69rem;
+}
+.map-marker-container {
+  border: 0;
+  background: transparent;
+}
+.map-marker-dot {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--paper);
+  border-radius: 50%;
+  outline: 1px solid var(--line-strong);
+  color: #fff8e9;
+  font-size: 0.65rem;
+  font-weight: 820;
+}
+.map-marker-available { background: var(--pine); }
+.map-marker-empty { background: var(--paper-muted); color: var(--ink-soft); }
+.map-marker-failed { background: var(--sun); color: #4f3c24; }
+
 .results-heading-row { margin: 0 2px 14px; }
 .result-count {
   padding: 4px 8px;
@@ -778,6 +921,10 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   .calendar-count { min-width: 17px; height: 15px; margin: -2px auto 0; font-size: 0.55rem; }
   .calendar-searched-empty > span { border-radius: 6px; }
   .calendar-legend { align-items: flex-start; justify-content: flex-start; gap: 6px 14px; }
+  .map-container { margin-bottom: 30px; }
+  #campground-map { height: 330px; }
+  .map-description { font-size: 0.69rem; }
+  .map-legend { align-items: flex-start; justify-content: flex-start; gap: 7px 14px; }
   .results-toolbar { grid-template-columns: 1fr; }
   .search-control, .status-control { align-items: stretch; flex-direction: column; gap: 4px; }
   .status-control select { width: 100%; }
@@ -848,6 +995,12 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   .calendar-available button:hover { background: #315b40; }
   .calendar-count { color: #45331f; }
   .legend-searched { background: #68766b; }
+  .leaflet-tile-pane { filter: brightness(0.78) saturate(0.72) contrast(1.08); }
+  .leaflet-control-attribution {
+    background: rgb(40 53 50 / 92%) !important;
+    color: #ded3c2;
+  }
+  .leaflet-control-attribution a { color: var(--pine-deep); }
   .quick-nav li { border-color: #4b5c52; }
   .quick-nav a,
   .site-list a,

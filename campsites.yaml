@@ -5,103 +5,171 @@ defaults:
 campsites:
   RecreationDotGov:
     - campground_id: 233359 # Point Reyes National Seashore, CA - Point Reyes National Seashore Campground
+      latitude: 38.04121
+      longitude: -122.800354
       alert: false
       enabled: true
     - campground_id: 232491 # Golden Gate National Recreation Area, CA - Kirby Cove Campground
+      latitude: 37.84035
+      longitude: -122.4888889
       alert: true
       enabled: true
     - campground_id: 232447 # Yosemite National Park, CA - Upper Pines Campground
+      latitude: 37.7361111
+      longitude: -119.5625
       alert: false
       enabled: true
     - campground_id: 232450 # Yosemite National Park, CA - Lower Pines Campground
+      latitude: 37.7408333
+      longitude: -119.5666667
       alert: false
       enabled: true
     - campground_id: 232449 # Yosemite National Park, CA - North Pines Campground
+      latitude: 37.7419444
+      longitude: -119.5655556
       alert: false
       enabled: true
     - campground_id: 232452 # Yosemite National Park, CA - Crane Flat Campground
+      latitude: 37.7638889
+      longitude: -119.8444444
       alert: false
       enabled: true
     - campground_id: 232451 # Yosemite National Park, CA - Hodgdon Meadow Campground
+      latitude: 37.7988889
+      longitude: -119.8658333
       alert: false
       enabled: true
     - campground_id: 232769 # Lake Tahoe Basin Management Unit, CA - Fallen Leaf Campground
+      latitude: 38.926376
+      longitude: -120.046995
       alert: false
       enabled: true
     - campground_id: 233116 # Los Padres National Forest, - Kirk Creek Campground
+      latitude: 35.9916667
+      longitude: -121.4941667
       alert: false
       enabled: true
     - campground_id: 232461 # Sequoia & Kings Canyon National Parks, CA - Lodgepole Campground-Sequoia And Kings Canyon National Park
+      latitude: 36.6067111
+      longitude: -118.7258
       alert: false
     - campground_id: 253917 # Sequoia & Kings Canyon National Parks, CA - Sentinel Campground
+      latitude: 36.7902778
+      longitude: -118.6719444
       alert: false
     - campground_id: 10124502 # Sequoia & Kings Canyon National Parks, CA - Azalea Campground
+      latitude: 36.743529
+      longitude: -118.965325
       alert: false
     - campground_id: 232768 # Lake Tahoe Basin Management Unit, CA - Nevada Beach Campground
+      latitude: 38.981464
+      longitude: -119.95154
       alert: false
       enabled: true
 
   ReserveCalifornia:
     - campground_id: 786 # Emerald Bay SP - Upper Eagle Point (sites 1-33)
+      latitude: 38.9549924331999
+      longitude: -120.082480519
       alert: false
       enabled: true
     - campground_id: 472 # Emerald Bay SP - Lower Eagle Point (sites 34-100)
+      latitude: 38.9615028719
+      longitude: -120.080054721
       alert: false
       enabled: true
     - campground_id: 453 # D.L. Bliss SP - Lower Pine (sites 1-32)
+      latitude: 38.988464
+      longitude: -120.098376
       alert: false
       enabled: true
     - campground_id: 455 # D.L. Bliss SP - Upper Pine (sites 33-88)
+      latitude: 38.987096
+      longitude: -120.100629
       alert: false
       enabled: true
     - campground_id: 2154 # D.L. Bliss SP - East Ridge Campground (sites 91-112)
+      latitude: 38.990674
+      longitude: -120.105124
       alert: false
       enabled: true
     - campground_id: 458 # D.L. Bliss SP - West Ridge Campground (sites 113 - 130)
+      latitude: 38.993092
+      longitude: -120.104995
       alert: false
       enabled: true
     - campground_id: 454 # D.L. Bliss SP - Beach Camp (sites 141-165)
+      latitude: 38.9990969027
+      longitude: -120.101538007
       alert: true
       enabled: true
     - campground_id: 653 # Samuel P. Taylor SP - Creekside Loop (sites 1-25)
+      latitude: 38.019703
+      longitude: -122.735497
       alert: false
       enabled: true
     - campground_id: 657 # Samuel P. Taylor SP - Orchard Hill Loop (sites 26-59)
+      latitude: 38.03162706
+      longitude: -122.7331142
       alert: false
       enabled: true
     - campground_id: 494 # Grover Hot Springs SP - Hot Springs Campground (sites 1-36)
+      latitude: 38.70043
+      longitude: -119.836174
       alert: false
       enabled: true
     - campground_id: 495 # Grover Hot Springs SP - Hot Springs Campground (sites 37-76)
+      latitude: 38.697256
+      longitude: -119.834383
       alert: false
       enabled: true
     - campground_id: 706 # Sonoma Coast State Park - Wright's Beach (sites 1-27)
+      latitude: 38.4002415289999
+      longitude: -123.095075537
       alert: false
       enabled: true
     - campground_id: 2061 # Sonoma Coast State Park - Bodega Dunes
+      latitude: 38.341865
+      longitude: -123.055032
       alert: false
       enabled: true
     - campground_id: 648 # Salt Point SP - Gerstle Cove Campground (sites 1-30)
+      latitude: 38.56887265
+      longitude: -123.3248053
       alert: false
       enabled: true
     - campground_id: 344 # Calaveras Big Trees SP - North Grove (sites 1-26)
+      latitude: 38.27429557
+      longitude: -120.3018488
       alert: false
       enabled: true
     - campground_id: 346 # Calaveras Big Trees SP - North Grove (sites 27-59)
+      latitude: 38.27524635
+      longitude: -120.3065509
       alert: false
       enabled: true
     - campground_id: 348 # Calaveras Big Trees SP - North Grove (sites 60-74)
+      latitude: 38.28190401
+      longitude: -120.2906697
       alert: false
       enabled: true
     - campground_id: 349 # Calaveras Big Trees SP - Oak Hollow Campground
+      latitude: 38.27194494
+      longitude: -120.2866697
       alert: false
       enabled: true
     - campground_id: 504 # Henry Cowell Redwoods SP - Cowell Campground  South (sites 1-51)
+      latitude: 37.030417
+      longitude: -122.043021
       alert: false
       enabled: true
     - campground_id: 505 # Henry Cowell Redwoods SP - Cowell Campground North (sites 52-113)
+      latitude: 37.031856
+      longitude: -122.042398
       alert: false
       enabled: true
     - campground_id: 498 # Half Moon Bay SB - Francis Beach Campground
+      latitude: 37.4688245007
+      longitude: -122.445841032
       alert: false
       enabled: true

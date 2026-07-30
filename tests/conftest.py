@@ -15,6 +15,8 @@ def make_campsite(
     campsite_loop_name="Loop A",
     booking_url="https://example.com/camp",
     campsite_attributes=None,
+    latitude=None,
+    longitude=None,
 ):
     """Create a mock AvailableCampsite-like object for testing.
 
@@ -27,6 +29,9 @@ def make_campsite(
         campsite_attributes = [
             SimpleNamespace(attribute_name="Site Access", attribute_value="Drive-in"),
         ]
+    location = None
+    if latitude is not None and longitude is not None:
+        location = SimpleNamespace(latitude=latitude, longitude=longitude)
     return SimpleNamespace(
         campsite_id=campsite_id,
         facility_id=facility_id,
@@ -38,4 +43,5 @@ def make_campsite(
         campsite_loop_name=campsite_loop_name,
         booking_url=booking_url,
         campsite_attributes=campsite_attributes,
+        location=location,
     )

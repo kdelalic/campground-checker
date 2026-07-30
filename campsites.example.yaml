@@ -21,6 +21,10 @@
 #   alert           - true/false. Default: false
 #                     Set to true to enable Telegram alerts for this campground.
 #                     All campgrounds still appear on the dashboard and terminal.
+#   latitude        - Campground latitude for the dashboard map. Must be paired
+#                     with longitude. Provider coordinates are a fallback, but
+#                     configured coordinates also map empty and failed scans.
+#   longitude       - Campground longitude for the dashboard map.
 #
 # Date range is set via CLI flags, not here:
 #   --start / --end       Override the search window
@@ -70,6 +74,8 @@ campsites:
 
   RecreationDotGov:
     - campground_id: 232447
+      latitude: 37.7361111
+      longitude: -119.5625
       nights: 2
       weekends_only: false
 

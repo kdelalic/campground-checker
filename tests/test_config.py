@@ -277,6 +277,49 @@ class TestLoadConfig:
         assert entries[0]["provider"] == "RecreationDotGov"
         assert entries[0]["alert"] is True
 
+    def test_map_coordinates_load_as_numbers(self, tmp_path):
+        path = tmp_path / "campsites.yaml"
+        path.write_text(
+            """
+campsites:
+  RecreationDotGov:
+    - campground_id: 12345
+      latitude: 37.7361111
+      longitude: -119.5625
+"""
+        )
+
+        entries, _ = load_config(str(path))
+
+        assert entries[0]["latitude"] == 37.7361111
+        assert entries[0]["longitude"] == -119.5625
+
+    @pytest.mark.parametrize(
+        ("coordinates", "message"),
+        [
+            ("latitude: 37.7", "latitude and longitude must be specified together"),
+            ("longitude: -119.5", "latitude and longitude must be specified together"),
+            ("latitude: 91\n      longitude: 0", "latitude must be a number"),
+            ("latitude: 0\n      longitude: -181", "longitude must be a number"),
+            ('latitude: "37.7"\n      longitude: -119.5', "latitude must be a number"),
+        ],
+    )
+    def test_invalid_map_coordinates_exit(self, tmp_path, coordinates, message):
+        path = tmp_path / "campsites.yaml"
+        path.write_text(
+            f"""
+campsites:
+  RecreationDotGov:
+    - campground_id: 12345
+      {coordinates}
+"""
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            load_config(str(path))
+
+        assert message in str(exc_info.value)
+
     def test_list_format(self, tmp_path):
         path = tmp_path / "campsites.yaml"
         path.write_text(LIST_CONFIG)

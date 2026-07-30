@@ -233,6 +233,24 @@ def load_config(path: str) -> tuple[list[dict], dict]:
         if alert is not None and not isinstance(alert, bool):
             sys.exit(f"Error in '{label}': alert must be true or false")
 
+        latitude = entry.get("latitude")
+        longitude = entry.get("longitude")
+        if (latitude is None) != (longitude is None):
+            sys.exit(f"Error in '{label}': latitude and longitude must be specified together")
+        if latitude is not None:
+            if (
+                isinstance(latitude, bool)
+                or not isinstance(latitude, (int, float))
+                or not -90 <= latitude <= 90
+            ):
+                sys.exit(f"Error in '{label}': latitude must be a number between -90 and 90")
+            if (
+                isinstance(longitude, bool)
+                or not isinstance(longitude, (int, float))
+                or not -180 <= longitude <= 180
+            ):
+                sys.exit(f"Error in '{label}': longitude must be a number between -180 and 180")
+
         criteria_raw = entry.get("criteria")
         days_raw = entry.get("days")
 

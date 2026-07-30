@@ -24,8 +24,14 @@ campsites:
   - name: "Yosemite - Upper Pines"
     provider: RecreationDotGov   # default if omitted
     campground_id: 232447
+    latitude: 37.7361111          # optional dashboard map marker
+    longitude: -119.5625          # specify both latitude and longitude
     nights: 2                    # minimum consecutive nights (default: 1)
 ```
+
+Configured coordinates keep a campground on the map when a successful scan
+finds no availability or when a scan fails. When they are omitted, the
+dashboard uses provider result coordinates when available.
 
 See [campsites.example.yaml](campsites.example.yaml) for all options and providers.
 

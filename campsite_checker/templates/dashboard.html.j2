@@ -59,6 +59,8 @@
 <title>Campground checker</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20x='50'%20y='.9em'%20font-size='90'%20text-anchor='middle'%20font-family='Apple%20Color%20Emoji,%20Segoe%20UI%20Emoji,%20sans-serif'%3E%F0%9F%8F%95%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <style>
+{% if map_cards %}{{ leaflet_css|safe }}
+{% endif %}
 {{ css|safe }}
 </style>
 </head>
@@ -150,6 +152,27 @@
 </section>
 {% endif %}
 
+{% if map_cards %}
+<section class="map-container" aria-labelledby="map-heading">
+<div class="section-heading">
+<h2 id="map-heading" class="section-title">Campground map</h2>
+<span id="map-result-count" class="result-count" aria-live="polite">{{ map_cards|length }} campground{% if map_cards|length != 1 %}s{% endif %} mapped</span>
+</div>
+<div class="map-panel">
+<div id="campground-map" role="region" aria-label="Interactive map of campground locations" aria-describedby="map-description" data-tile-url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"></div>
+<p id="map-description" class="map-description">Select a marker for campground status and a link to its results.</p>
+<p id="map-empty" class="map-empty" role="status" hidden>No mapped campgrounds match these filters.</p>
+<ul id="map-marker-data" class="sr-only">
+{% for card in map_cards %}
+<li data-card-id="{{ card.id }}" data-latitude="{{ card.latitude }}" data-longitude="{{ card.longitude }}" data-name="{{ card.name }}" data-state="{{ card.state }}" data-openings="{{ card.total }}" data-availability="{{ card.availability_label }}"><a href="#{{ card.id }}">{{ card.name }}</a> — {% if card.state == "available" %}{{ card.availability_label }}{% elif card.state == "failed" %}{% if card.rows %}Stale snapshot{% else %}Scan failed{% endif %}{% else %}No availability{% endif %}</li>
+{% endfor %}
+</ul>
+</div>
+<div class="map-legend" aria-label="Map marker legend"><span><i class="map-legend-marker map-legend-available" aria-hidden="true"></i>Available</span><span><i class="map-legend-marker map-legend-empty" aria-hidden="true"></i>No availability</span><span><i class="map-legend-marker map-legend-failed" aria-hidden="true"></i>Failed or stale</span></div>
+<noscript><p class="map-noscript">The interactive map requires JavaScript. The campground list below contains the same status information.</p></noscript>
+</section>
+{% endif %}
+
 {% if cards %}
 <section class="results-section" aria-labelledby="results-heading">
 <div class="results-heading-row">
@@ -191,6 +214,10 @@
 {% endif %}
 </main>
 </div>
+{% if map_cards %}<script>
+{{ leaflet_js|safe }}
+</script>
+{% endif %}
 <script>
 {{ js|safe }}
 </script>

@@ -239,6 +239,18 @@ class TestProcessedAvailability:
             [process_filtered_results(entry, [], search_succeeded=False)]
         )
 
+    def test_fingerprint_tracks_map_coordinates(self):
+        first = process_filtered_results(
+            {"campground_id": 100, "latitude": 37.7, "longitude": -119.5},
+            [],
+        )
+        moved = process_filtered_results(
+            {"campground_id": 100, "latitude": 37.8, "longitude": -119.5},
+            [],
+        )
+
+        assert availability_fingerprint([first]) != availability_fingerprint([moved])
+
 
 # ── format_processed_results ────────────────────────────────────────────────
 
