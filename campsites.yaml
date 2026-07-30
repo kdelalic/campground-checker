@@ -1,6 +1,6 @@
 defaults:
-  days: [Friday]
-  nights: 2
+  days: [Saturday]
+  nights: 1
 
 campsites:
   RecreationDotGov:
