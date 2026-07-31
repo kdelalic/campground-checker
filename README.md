@@ -39,7 +39,7 @@ See [campsites.example.yaml](campsites.example.yaml) for all options and provide
 ## Usage
 
 ```bash
-# Check all campsites — next ~6 months, Sundays only (default)
+# Check all campsites — next ~3 months, Sundays only (default)
 python check_campsites.py
 
 # Use a different config file

@@ -319,7 +319,7 @@ def compute_date_range(args: argparse.Namespace) -> tuple[datetime, datetime]:
         except ValueError:
             sys.exit(f"Error: --end must be YYYY-MM-DD, got: {args.end}")
     else:
-        future = today + timedelta(days=181)
+        future = today + timedelta(days=91)
         end_dt = datetime(future.year, future.month, future.day)
 
     if end_dt <= start_dt:

@@ -23,7 +23,7 @@ which polls providers, sends Telegram alerts, and renders a static dashboard.
 # Install dependencies
 uv sync --all-extras
 
-# Run the checker (default: campsites.yaml, next ~6 months, Sundays only)
+# Run the checker (default: campsites.yaml, next ~3 months, Sundays only)
 uv run python check_campsites.py
 
 # Common options

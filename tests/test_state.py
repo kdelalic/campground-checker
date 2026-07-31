@@ -21,10 +21,10 @@ def test_sent_keys_are_only_written_when_content_changes(tmp_path):
 
 
 def test_sent_keys_keep_far_future_dates(tmp_path):
-    """Keys must survive for the whole ~6-month search window, not 14 days,
+    """Keys must survive for the whole ~3-month search window, not 14 days,
     so a redeploy cannot re-alert far-out bookings."""
     path = tmp_path / "sent.json"
-    keys = {_key(days_ahead=170)}
+    keys = {_key(days_ahead=80)}
 
     assert save_sent_keys(path, keys) is True
     assert load_sent_keys(path) == keys

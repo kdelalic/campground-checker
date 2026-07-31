@@ -229,12 +229,12 @@ class TestComputeDateRange:
         with pytest.raises(DateWindowExhausted):
             compute_date_range(args)
 
-    def test_default_end_is_about_6_months(self):
+    def test_default_end_is_about_3_months(self):
         args = _args()
         start, end = compute_date_range(args)
         today = date.today()
         assert start.date() == today
-        expected_end = today + timedelta(days=181)
+        expected_end = today + timedelta(days=91)
         assert end.date() == expected_end
 
 
