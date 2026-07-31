@@ -143,6 +143,7 @@ class MetricsSnapshot:
     available_entries_count: int | None
     available_sites_count: int | None
     last_scan_duration_seconds: float
+    last_alert_scan_duration_seconds: float
     last_scan_timestamp: float
     last_alert_scan_timestamp: float
     alert_interval_minutes: int
@@ -152,6 +153,15 @@ class MetricsSnapshot:
     dashboard_scan_error_count: int
     dashboard_scan_in_progress: bool
     last_dashboard_scan_duration_seconds: float
+    last_dashboard_publish_timestamp: float
+    dashboard_publish_count: int
+    dashboard_publish_error_count: int
+    dashboard_publish_in_progress: bool
+    last_dashboard_publish_duration_seconds: float
+    last_dashboard_render_duration_seconds: float
+    r2_upload_count: int
+    r2_upload_failure_count: int
+    last_r2_upload_duration_seconds: float
     notifications_sent: int
     notifications_failed: int
     campgrounds: tuple[CampgroundMetric, ...] = ()
@@ -211,9 +221,15 @@ def render_prometheus(snapshot: MetricsSnapshot) -> str:
         ),
         (
             "campsite_checker_last_scan_duration_seconds",
-            "Duration of the most recent scan cycle in seconds.",
+            "Duration of the most recent foreground alert cycle in seconds.",
             "gauge",
             snapshot.last_scan_duration_seconds,
+        ),
+        (
+            "campsite_checker_last_alert_scan_duration_seconds",
+            "Duration of the most recent priority alert search in seconds.",
+            "gauge",
+            snapshot.last_alert_scan_duration_seconds,
         ),
         (
             "campsite_checker_last_scan_timestamp_seconds",
@@ -268,6 +284,60 @@ def render_prometheus(snapshot: MetricsSnapshot) -> str:
             "Duration of the most recent background dashboard scan in seconds.",
             "gauge",
             snapshot.last_dashboard_scan_duration_seconds,
+        ),
+        (
+            "campsite_checker_last_dashboard_publish_timestamp_seconds",
+            "Unix timestamp of the most recent asynchronous dashboard publication.",
+            "gauge",
+            snapshot.last_dashboard_publish_timestamp,
+        ),
+        (
+            "campsite_checker_dashboard_publishes_total",
+            "Total number of completed asynchronous dashboard publication cycles.",
+            "counter",
+            snapshot.dashboard_publish_count,
+        ),
+        (
+            "campsite_checker_dashboard_publish_errors_total",
+            "Dashboard publication cycles that failed to render or upload.",
+            "counter",
+            snapshot.dashboard_publish_error_count,
+        ),
+        (
+            "campsite_checker_dashboard_publish_in_progress",
+            "Whether the asynchronous dashboard publisher is currently running.",
+            "gauge",
+            int(snapshot.dashboard_publish_in_progress),
+        ),
+        (
+            "campsite_checker_last_dashboard_publish_duration_seconds",
+            "Total duration of the most recent dashboard publication cycle.",
+            "gauge",
+            snapshot.last_dashboard_publish_duration_seconds,
+        ),
+        (
+            "campsite_checker_last_dashboard_render_duration_seconds",
+            "Duration of the most recent dashboard HTML render.",
+            "gauge",
+            snapshot.last_dashboard_render_duration_seconds,
+        ),
+        (
+            "campsite_checker_r2_uploads_total",
+            "Total number of attempted Cloudflare R2 dashboard uploads.",
+            "counter",
+            snapshot.r2_upload_count,
+        ),
+        (
+            "campsite_checker_r2_upload_failures_total",
+            "Cloudflare R2 dashboard uploads that failed.",
+            "counter",
+            snapshot.r2_upload_failure_count,
+        ),
+        (
+            "campsite_checker_last_r2_upload_duration_seconds",
+            "Duration of the most recent Cloudflare R2 dashboard upload attempt.",
+            "gauge",
+            snapshot.last_r2_upload_duration_seconds,
         ),
         (
             "campsite_checker_notifications_sent_total",

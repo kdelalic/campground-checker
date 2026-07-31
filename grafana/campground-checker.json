@@ -1352,7 +1352,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Wall-clock duration of each foreground alert scan cycle.",
+      "description": "Wall-clock duration of each priority alert search. Dashboard rendering and R2 publication run independently and are excluded.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1434,7 +1434,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max(campsite_checker_last_scan_duration_seconds)",
+          "expr": "max(campsite_checker_last_alert_scan_duration_seconds)",
           "instant": false,
           "legendFormat": "Duration",
           "range": true,
@@ -2390,7 +2390,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Current state of the single non-overlapping background dashboard worker.",
+      "description": "Current state of the background dashboard scanner and isolated dashboard publisher.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2407,7 +2407,7 @@
                 "1": {
                   "color": "blue",
                   "index": 1,
-                  "text": "Scanning"
+                  "text": "Busy"
                 }
               },
               "type": "value"
@@ -2461,7 +2461,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max(campsite_checker_dashboard_scan_in_progress)",
+          "expr": "clamp_max(max(campsite_checker_dashboard_scan_in_progress) + max(campsite_checker_dashboard_publish_in_progress), 1)",
           "instant": true,
           "legendFormat": "Dashboard Worker",
           "range": false,
@@ -2476,7 +2476,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Duration of each completed background dashboard scan.",
+      "description": "Separate timings for provider scanning, dashboard publication, HTML rendering, and Cloudflare R2 upload.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2559,12 +2559,48 @@
           "editorMode": "code",
           "expr": "max(campsite_checker_last_dashboard_scan_duration_seconds)",
           "instant": false,
-          "legendFormat": "Duration",
+          "legendFormat": "Provider scan",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(campsite_checker_last_dashboard_publish_duration_seconds)",
+          "instant": false,
+          "legendFormat": "Publication total",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(campsite_checker_last_dashboard_render_duration_seconds)",
+          "instant": false,
+          "legendFormat": "HTML render",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(campsite_checker_last_r2_upload_duration_seconds)",
+          "instant": false,
+          "legendFormat": "R2 upload",
+          "range": true,
+          "refId": "D"
         }
       ],
-      "title": "Dashboard Scan Duration",
+      "title": "Dashboard Work Duration",
       "type": "timeseries"
     },
     {
@@ -2572,7 +2608,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Hourly completion and error rates for the background dashboard worker, averaged over at least a 30-minute window (three scan periods).",
+      "description": "Hourly completion and error rates for background dashboard scans, publication cycles, and R2 uploads, averaged over at least a 30-minute window.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2687,9 +2723,48 @@
           "legendFormat": "Errors / hour",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(campsite_checker_dashboard_publishes_total[$__rate_interval])) * 3600",
+          "instant": false,
+          "interval": "30m",
+          "legendFormat": "Publishes / hour",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(campsite_checker_dashboard_publish_errors_total[$__rate_interval])) * 3600",
+          "instant": false,
+          "interval": "30m",
+          "legendFormat": "Publish errors / hour",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(campsite_checker_r2_upload_failures_total[$__rate_interval])) * 3600",
+          "instant": false,
+          "interval": "30m",
+          "legendFormat": "R2 failures / hour",
+          "range": true,
+          "refId": "E"
         }
       ],
-      "title": "Dashboard Scan Throughput and Errors",
+      "title": "Dashboard Throughput and Errors",
       "type": "timeseries"
     }
   ],

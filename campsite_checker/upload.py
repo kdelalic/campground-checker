@@ -5,6 +5,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+R2_CONNECT_TIMEOUT_SECONDS = 5
+R2_READ_TIMEOUT_SECONDS = 15
+R2_TOTAL_MAX_ATTEMPTS = 2
+
 
 @dataclass(frozen=True, slots=True)
 class R2UploadResult:
@@ -26,6 +30,7 @@ class R2Uploader:
         self._client_initialized = True
         try:
             import boto3
+            from botocore.config import Config
         except ImportError:
             logger.warning("boto3 is required for R2 upload: pip install boto3")
             return None
@@ -37,8 +42,27 @@ class R2Uploader:
             aws_access_key_id=self.r2_config["access_key_id"],
             aws_secret_access_key=self.r2_config["secret_access_key"],
             region_name="auto",
+            config=Config(
+                connect_timeout=R2_CONNECT_TIMEOUT_SECONDS,
+                read_timeout=R2_READ_TIMEOUT_SECONDS,
+                retries={
+                    "mode": "standard",
+                    "total_max_attempts": R2_TOTAL_MAX_ATTEMPTS,
+                },
+                tcp_keepalive=True,
+            ),
         )
         return self._client
+
+    def _reset_client(self) -> None:
+        client, self._client = self._client, None
+        self._client_initialized = False
+        close = getattr(client, "close", None)
+        if close is not None:
+            try:
+                close()
+            except Exception:
+                logger.debug("Failed to close discarded R2 client", exc_info=True)
 
     def upload(self, file_path: str) -> R2UploadResult:
         """Upload a dashboard while retaining the client's connection pool."""
@@ -57,6 +81,10 @@ class R2Uploader:
             )
         except Exception as exc:
             logger.warning("R2 upload failed: %s", exc)
+            # A pooled connection can become stale while the ten-minute
+            # dashboard interval elapses. Never retain a client after a failed
+            # transfer: the next publication gets a clean connection pool.
+            self._reset_client()
             return R2UploadResult(success=False)
 
         public_url = None

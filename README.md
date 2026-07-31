@@ -122,10 +122,13 @@ campground from every scan's searcher construction; transient lookup failures
 are never cached and are retried on the next scan. Dashboard files and
 R2 objects are only updated when semantic availability changes, plus a
 once-per-hour freshness republish so the page's "Last updated" timestamp stays
-distinguishable from a stopped checker; failed uploads are retried without
-rebuilding unchanged HTML. Full garbage collection runs every 12 scans by
-default and logs its
-duration, object count, and resident-memory measurement.
+distinguishable from a stopped checker. Rendering and R2 uploads run on an
+isolated, coalescing publisher worker, so a slow upload cannot block alert
+polling and only the newest pending snapshot is retained. R2 requests use
+bounded timeouts and failed connection pools are discarded; failed uploads are
+retried without rebuilding unchanged HTML. Full garbage collection runs every
+12 scans by default and logs its duration, object count, and resident-memory
+measurement.
 
 ## Monitoring
 

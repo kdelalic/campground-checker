@@ -38,6 +38,7 @@ class ScanStatus:
         self.results_complete: bool = False
         self.campgrounds: tuple[CampgroundMetric, ...] = ()
         self.last_scan_duration_seconds: float = 0
+        self.last_alert_scan_duration_seconds: float = 0
         self.alert_interval_minutes: int = 5
         self.dashboard_interval_minutes: int = 60
         self.last_dashboard_scan: datetime | None = None
@@ -45,6 +46,15 @@ class ScanStatus:
         self.dashboard_scan_error_count: int = 0
         self.dashboard_scan_in_progress: bool = False
         self.last_dashboard_scan_duration_seconds: float = 0
+        self.last_dashboard_publish: datetime | None = None
+        self.dashboard_publish_count: int = 0
+        self.dashboard_publish_error_count: int = 0
+        self.dashboard_publish_in_progress: bool = False
+        self.last_dashboard_publish_duration_seconds: float = 0
+        self.last_dashboard_render_duration_seconds: float = 0
+        self.r2_upload_count: int = 0
+        self.r2_upload_failure_count: int = 0
+        self.last_r2_upload_duration_seconds: float = 0
         self.notifications_sent: int = 0
         self.notifications_failed: int = 0
         # Set by the runner when Telegram bot polling starts; None = no bot.
@@ -97,9 +107,16 @@ class ScanStatus:
             self.notifications_sent += sent
             self.notifications_failed += failed
 
-    def mark_alert_scan(self, when: datetime | None = None) -> None:
+    def mark_alert_scan(
+        self,
+        when: datetime | None = None,
+        *,
+        duration_seconds: float | None = None,
+    ) -> None:
         with self._lock:
             self.last_alert_scan = when or datetime.now(timezone.utc)
+            if duration_seconds is not None:
+                self.last_alert_scan_duration_seconds = duration_seconds
 
     def start_dashboard_scan(self) -> None:
         with self._lock:
@@ -119,6 +136,35 @@ class ScanStatus:
             self.dashboard_scan_count += 1
             if error:
                 self.dashboard_scan_error_count += 1
+
+    def start_dashboard_publish(self) -> None:
+        with self._lock:
+            self.dashboard_publish_in_progress = True
+
+    def finish_dashboard_publish(
+        self,
+        *,
+        duration_seconds: float,
+        error: bool = False,
+        when: datetime | None = None,
+        render_duration_seconds: float | None = None,
+        upload_duration_seconds: float | None = None,
+        upload_succeeded: bool = False,
+    ) -> None:
+        with self._lock:
+            self.dashboard_publish_in_progress = False
+            self.last_dashboard_publish = when or datetime.now(timezone.utc)
+            self.dashboard_publish_count += 1
+            self.last_dashboard_publish_duration_seconds = duration_seconds
+            if render_duration_seconds is not None:
+                self.last_dashboard_render_duration_seconds = render_duration_seconds
+            if upload_duration_seconds is not None:
+                self.r2_upload_count += 1
+                self.last_r2_upload_duration_seconds = upload_duration_seconds
+                if not upload_succeeded:
+                    self.r2_upload_failure_count += 1
+            if error:
+                self.dashboard_publish_error_count += 1
 
     def is_healthy(self) -> bool:
         """Healthy if we've had an alert scan within 2x its configured interval."""
@@ -143,6 +189,7 @@ class ScanStatus:
                 "available_entries_count": self.available_entries_count,
                 "available_sites_count": self.available_sites_count,
                 "last_scan_duration_seconds": self.last_scan_duration_seconds,
+                "last_alert_scan_duration_seconds": self.last_alert_scan_duration_seconds,
                 "last_scan": self.last_scan_time.isoformat() if self.last_scan_time else None,
                 "last_alert_scan": (
                     self.last_alert_scan.isoformat() if self.last_alert_scan else None
@@ -162,6 +209,21 @@ class ScanStatus:
                     self.bot_thread.is_alive() if self.bot_thread is not None else None
                 ),
                 "last_dashboard_scan_duration_seconds": (self.last_dashboard_scan_duration_seconds),
+                "last_dashboard_publish": (
+                    self.last_dashboard_publish.isoformat() if self.last_dashboard_publish else None
+                ),
+                "dashboard_publish_count": self.dashboard_publish_count,
+                "dashboard_publish_error_count": self.dashboard_publish_error_count,
+                "dashboard_publish_in_progress": self.dashboard_publish_in_progress,
+                "last_dashboard_publish_duration_seconds": (
+                    self.last_dashboard_publish_duration_seconds
+                ),
+                "last_dashboard_render_duration_seconds": (
+                    self.last_dashboard_render_duration_seconds
+                ),
+                "r2_upload_count": self.r2_upload_count,
+                "r2_upload_failure_count": self.r2_upload_failure_count,
+                "last_r2_upload_duration_seconds": self.last_r2_upload_duration_seconds,
                 "provider_throttles": [
                     {
                         "provider": throttle.provider,
@@ -205,6 +267,7 @@ class ScanStatus:
                     self.available_sites_count if self.results_complete else None
                 ),
                 last_scan_duration_seconds=self.last_scan_duration_seconds,
+                last_alert_scan_duration_seconds=self.last_alert_scan_duration_seconds,
                 last_scan_timestamp=_timestamp(self.last_scan_time),
                 last_alert_scan_timestamp=_timestamp(self.last_alert_scan),
                 alert_interval_minutes=self.alert_interval_minutes,
@@ -214,6 +277,19 @@ class ScanStatus:
                 dashboard_scan_error_count=self.dashboard_scan_error_count,
                 dashboard_scan_in_progress=self.dashboard_scan_in_progress,
                 last_dashboard_scan_duration_seconds=self.last_dashboard_scan_duration_seconds,
+                last_dashboard_publish_timestamp=_timestamp(self.last_dashboard_publish),
+                dashboard_publish_count=self.dashboard_publish_count,
+                dashboard_publish_error_count=self.dashboard_publish_error_count,
+                dashboard_publish_in_progress=self.dashboard_publish_in_progress,
+                last_dashboard_publish_duration_seconds=(
+                    self.last_dashboard_publish_duration_seconds
+                ),
+                last_dashboard_render_duration_seconds=(
+                    self.last_dashboard_render_duration_seconds
+                ),
+                r2_upload_count=self.r2_upload_count,
+                r2_upload_failure_count=self.r2_upload_failure_count,
+                last_r2_upload_duration_seconds=self.last_r2_upload_duration_seconds,
                 notifications_sent=self.notifications_sent,
                 notifications_failed=self.notifications_failed,
                 campgrounds=self.campgrounds,

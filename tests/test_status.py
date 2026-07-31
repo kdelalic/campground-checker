@@ -110,6 +110,22 @@ class TestScanStatusUpdate:
         assert d["notifications_sent"] == 3
         assert d["notifications_failed"] == 3
 
+    def test_dashboard_publish_status_records_upload_attempts(self):
+        status = ScanStatus()
+        status.start_dashboard_publish()
+        status.finish_dashboard_publish(
+            duration_seconds=2.0,
+            render_duration_seconds=0.5,
+            upload_duration_seconds=1.5,
+            upload_succeeded=True,
+        )
+
+        assert status.dashboard_publish_in_progress is False
+        assert status.dashboard_publish_count == 1
+        assert status.dashboard_publish_error_count == 0
+        assert status.r2_upload_count == 1
+        assert status.r2_upload_failure_count == 0
+
     def test_bot_liveness_reported_in_health_payload(self):
         status = ScanStatus()
         assert status.to_dict()["bot_polling_alive"] is None

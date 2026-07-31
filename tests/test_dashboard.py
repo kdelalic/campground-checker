@@ -573,8 +573,14 @@ def test_publisher_skips_unchanged_write_and_upload(tmp_path):
 
     assert first.written is True
     assert first.uploaded is True
+    assert first.render_duration_seconds is not None
+    assert first.upload_duration_seconds is not None
+    assert first.upload_attempted is True
     assert second.written is False
     assert second.uploaded is False
+    assert second.render_duration_seconds is None
+    assert second.upload_duration_seconds is None
+    assert second.upload_attempted is False
     assert uploader.calls == 1
 
 

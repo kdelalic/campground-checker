@@ -393,9 +393,10 @@ def run_forever(
     prev_keys = load_sent_keys(SENT_KEYS_FILE)
     scan_num = 0
 
-    dashboard_publisher = None
+    dashboard_publish_worker = None
     if dashboard_path:
         from .dashboard import DashboardPublisher, build_search_filter_view
+        from .publish_worker import DashboardPublishWorker
         from .upload import R2Uploader, get_r2_config
 
         r2_config = get_r2_config(args, raw_config)
@@ -403,6 +404,44 @@ def run_forever(
         if r2_config:
             r2_uploader = R2Uploader(r2_config)
         dashboard_publisher = DashboardPublisher(dashboard_path, r2_uploader)
+
+        def record_dashboard_publish(outcome) -> None:
+            if outcome.error is not None:
+                logger.error("Dashboard publication failed: %s", outcome.error)
+                scan_status.finish_dashboard_publish(
+                    duration_seconds=outcome.duration_seconds,
+                    error=True,
+                    when=outcome.completed_at,
+                )
+                return
+
+            result = outcome.result
+            upload_failed = result.upload_attempted and not result.uploaded
+            scan_status.finish_dashboard_publish(
+                duration_seconds=outcome.duration_seconds,
+                error=upload_failed,
+                when=outcome.completed_at,
+                render_duration_seconds=result.render_duration_seconds,
+                upload_duration_seconds=result.upload_duration_seconds,
+                upload_succeeded=result.uploaded,
+            )
+            if result.written:
+                logger.info("   Dashboard written to %s", dashboard_path)
+            else:
+                logger.debug("Dashboard availability unchanged; skipping rewrite")
+            if result.uploaded:
+                if result.public_url:
+                    logger.info("Dashboard uploaded to %s", result.public_url)
+                else:
+                    logger.info("Dashboard uploaded to R2")
+            elif upload_failed:
+                logger.warning("Dashboard publication completed, but the R2 upload failed")
+
+        dashboard_publish_worker = DashboardPublishWorker(
+            dashboard_publisher,
+            on_start=scan_status.start_dashboard_publish,
+            on_complete=record_dashboard_publish,
+        )
 
     dashboard_interval = _resolve_dashboard_interval(args, raw_config)
     # Schedule the first dashboard scan immediately, regardless of host uptime.
@@ -458,7 +497,9 @@ def run_forever(
                 else:
                     alert_keys, alert_found, alert_all = set(), [], []
 
-                scan_status.mark_alert_scan()
+                scan_status.mark_alert_scan(
+                    duration_seconds=max(0.0, monotonic() - scan_started),
+                )
 
                 # Notify and checkpoint alert keys before lower-priority dashboard
                 # work. The checkpoint is skipped when any message failed so an
@@ -542,29 +583,21 @@ def run_forever(
                     scan_status.finish_dashboard_scan(duration_seconds=0)
 
                 # --- Generate dashboard from merged results ---
-                if dashboard_publisher is not None and dashboard_snapshot_ready:
+                if dashboard_publish_worker is not None and dashboard_snapshot_ready:
                     merged = alert_all + cached_dashboard_results
                     # Recomputed per publish: a relative window rolls forward,
                     # so the rendered range changes without any config change.
                     window_start, window_end = compute_date_range(args)
-                    publish_result = dashboard_publisher.publish(
+                    replaced = dashboard_publish_worker.submit(
                         merged,
                         search_filter=build_search_filter_view(
                             day_filter, window_start, window_end, merged
                         ),
                     )
-                    if publish_result.written:
-                        logger.info("   Dashboard written to %s", dashboard_path)
-                    else:
-                        logger.debug("Dashboard availability unchanged; skipping rewrite")
-                    if publish_result.uploaded:
-                        if publish_result.public_url:
-                            logger.info(
-                                "Dashboard uploaded to %s",
-                                publish_result.public_url,
-                            )
-                        else:
-                            logger.info("Dashboard uploaded to R2")
+                    if replaced:
+                        logger.debug(
+                            "Replaced a pending dashboard publication with a newer snapshot"
+                        )
 
                 latest_results = alert_all + cached_dashboard_results
                 campground_metrics = [
@@ -642,6 +675,8 @@ def run_forever(
     except KeyboardInterrupt:
         logger.info("\U0001f3d5  Stopped.")
     finally:
+        if dashboard_publish_worker is not None:
+            dashboard_publish_worker.shutdown(wait=False)
         dashboard_executor.shutdown(wait=False, cancel_futures=True)
         shutdown_dispatcher(wait=False)
 

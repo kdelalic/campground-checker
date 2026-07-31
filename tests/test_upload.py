@@ -35,18 +35,27 @@ def test_reuses_boto_client_across_uploads(monkeypatch):
     assert first.success is True
     assert second.success is True
     assert first.public_url == "https://camp.example/dashboard.html"
+    client_config = factory_calls[0][1]["config"]
+    assert client_config.connect_timeout == 5
+    assert client_config.read_timeout == 15
+    assert client_config.retries["total_max_attempts"] == 2
 
 
-def test_failed_upload_is_reported():
+def test_failed_upload_is_reported_and_discards_client():
+    closed = []
+
     def fail(*args, **kwargs):
         raise RuntimeError("network unavailable")
 
     uploader = R2Uploader(
         make_config(),
-        client=SimpleNamespace(upload_file=fail),
+        client=SimpleNamespace(upload_file=fail, close=lambda: closed.append(True)),
     )
 
     result = uploader.upload("dashboard.html")
 
     assert result.success is False
     assert result.public_url is None
+    assert closed == [True]
+    assert uploader._client is None
+    assert uploader._client_initialized is False

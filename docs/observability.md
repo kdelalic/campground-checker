@@ -47,7 +47,8 @@ Process-wide metrics have no application-defined labels:
 | `campsite_checker_campgrounds_monitored` | Gauge | Configured campgrounds included in the latest completed cycle. |
 | `campsite_checker_campgrounds_available` | Gauge | Campgrounds with availability in the latest combined alert and dashboard results. Absent until the first complete snapshot. |
 | `campsite_checker_campsites_available` | Gauge | Available campsite-date combinations in the latest combined results. This is not a count of unique physical sites. Absent until the first complete snapshot. |
-| `campsite_checker_last_scan_duration_seconds` | Gauge | Wall-clock duration of the latest scan cycle. |
+| `campsite_checker_last_scan_duration_seconds` | Gauge | Wall-clock duration of the latest foreground alert cycle, excluding asynchronous dashboard publication. Retained for compatibility. |
+| `campsite_checker_last_alert_scan_duration_seconds` | Gauge | Wall-clock duration of the latest priority alert search, recorded before Telegram delivery and dashboard work. |
 | `campsite_checker_last_scan_timestamp_seconds` | Gauge | Unix timestamp when the latest scan cycle completed, or `0` before the first cycle. |
 | `campsite_checker_last_alert_scan_timestamp_seconds` | Gauge | Unix timestamp when the latest priority alert scan completed, or `0` before the first alert scan. |
 | `campsite_checker_alert_interval_seconds` | Gauge | Configured interval between alert scans. |
@@ -57,6 +58,15 @@ Process-wide metrics have no application-defined labels:
 | `campsite_checker_dashboard_scan_errors_total` | Counter | Background dashboard scans that ended with an error. |
 | `campsite_checker_dashboard_scan_in_progress` | Gauge | `1` while the background dashboard worker is scanning; otherwise `0`. |
 | `campsite_checker_last_dashboard_scan_duration_seconds` | Gauge | Duration of the latest completed background dashboard scan. |
+| `campsite_checker_last_dashboard_publish_timestamp_seconds` | Gauge | Unix timestamp of the latest completed asynchronous dashboard publication cycle. |
+| `campsite_checker_dashboard_publishes_total` | Counter | Completed asynchronous dashboard publication cycles, including no-op fingerprint checks. |
+| `campsite_checker_dashboard_publish_errors_total` | Counter | Publication cycles that failed to render or whose attempted R2 upload failed. |
+| `campsite_checker_dashboard_publish_in_progress` | Gauge | `1` while the isolated publisher is rendering or uploading; otherwise `0`. |
+| `campsite_checker_last_dashboard_publish_duration_seconds` | Gauge | Total render/upload duration of the latest publication cycle. |
+| `campsite_checker_last_dashboard_render_duration_seconds` | Gauge | Duration of the latest HTML render; retains the previous value when a fingerprint check skips rendering. |
+| `campsite_checker_r2_uploads_total` | Counter | Attempted Cloudflare R2 dashboard uploads. |
+| `campsite_checker_r2_upload_failures_total` | Counter | Failed Cloudflare R2 dashboard uploads. |
+| `campsite_checker_last_r2_upload_duration_seconds` | Gauge | Duration of the latest R2 upload attempt; retains the previous value when no upload is needed. |
 | `campsite_checker_notifications_sent_total` | Counter | Telegram alert messages delivered successfully. |
 | `campsite_checker_notifications_failed_total` | Counter | Telegram alert messages that failed to send. Failed sends defer the dedup checkpoint, so the availability is retried on the next scan instead of being lost. |
 

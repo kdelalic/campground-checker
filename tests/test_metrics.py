@@ -24,7 +24,7 @@ class TestPrometheusMetrics:
     def test_alert_scan_timestamp_metric(self):
         status = ScanStatus()
         completed_at = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
-        status.mark_alert_scan(completed_at)
+        status.mark_alert_scan(completed_at, duration_seconds=6.25)
 
         metrics = status.to_prometheus()
 
@@ -32,6 +32,7 @@ class TestPrometheusMetrics:
             f"campsite_checker_last_alert_scan_timestamp_seconds {completed_at.timestamp()}"
             in metrics
         )
+        assert "campsite_checker_last_alert_scan_duration_seconds 6.25" in metrics
 
     def test_dashboard_worker_lifecycle_metrics(self):
         status = ScanStatus()
@@ -55,6 +56,35 @@ class TestPrometheusMetrics:
         assert (
             f"campsite_checker_last_dashboard_scan_timestamp_seconds {completed_at.timestamp()}"
         ) in metrics
+
+    def test_dashboard_publisher_and_r2_metrics(self):
+        status = ScanStatus()
+        status.start_dashboard_publish()
+        assert "campsite_checker_dashboard_publish_in_progress 1" in status.to_prometheus()
+
+        completed_at = datetime(2026, 7, 26, 12, 6, tzinfo=timezone.utc)
+        status.finish_dashboard_publish(
+            duration_seconds=12.5,
+            error=True,
+            when=completed_at,
+            render_duration_seconds=0.4,
+            upload_duration_seconds=12.1,
+            upload_succeeded=False,
+        )
+        metrics = status.to_prometheus()
+
+        assert "campsite_checker_dashboard_publish_in_progress 0" in metrics
+        assert "campsite_checker_dashboard_publishes_total 1" in metrics
+        assert "campsite_checker_dashboard_publish_errors_total 1" in metrics
+        assert "campsite_checker_last_dashboard_publish_duration_seconds 12.5" in metrics
+        assert "campsite_checker_last_dashboard_render_duration_seconds 0.4" in metrics
+        assert "campsite_checker_r2_uploads_total 1" in metrics
+        assert "campsite_checker_r2_upload_failures_total 1" in metrics
+        assert "campsite_checker_last_r2_upload_duration_seconds 12.1" in metrics
+        assert (
+            f"campsite_checker_last_dashboard_publish_timestamp_seconds "
+            f"{completed_at.timestamp()}" in metrics
+        )
 
     def test_metrics_after_scan(self):
         status = ScanStatus()

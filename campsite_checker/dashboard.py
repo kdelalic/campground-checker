@@ -38,6 +38,12 @@ class DashboardPublishResult:
     written: bool
     uploaded: bool
     public_url: str | None = None
+    render_duration_seconds: float | None = None
+    upload_duration_seconds: float | None = None
+
+    @property
+    def upload_attempted(self) -> bool:
+        return self.upload_duration_seconds is not None
 
 
 class DashboardPublisher:
@@ -89,7 +95,9 @@ class DashboardPublisher:
             or not Path(self.output_path).exists()
             or self._is_stale(self._last_written_at, now)
         )
+        render_duration_seconds = None
         if written:
+            render_started = time.monotonic()
             generate_dashboard(
                 rendered_availabilities,
                 day_filter,
@@ -100,16 +108,20 @@ class DashboardPublisher:
                     int(self.freshness_interval_seconds * 2),
                 ),
             )
+            render_duration_seconds = time.monotonic() - render_started
             self.last_written_fingerprint = fingerprint
             self._last_written_at = now
 
         uploaded = False
         public_url = None
+        upload_duration_seconds = None
         if self.uploader is not None and (
             fingerprint != self.last_uploaded_fingerprint
             or self._is_stale(self._last_uploaded_at, now)
         ):
+            upload_started = time.monotonic()
             upload_result = self.uploader.upload(self.output_path)
+            upload_duration_seconds = time.monotonic() - upload_started
             if upload_result.success:
                 uploaded = True
                 public_url = upload_result.public_url
@@ -120,6 +132,8 @@ class DashboardPublisher:
             written=written,
             uploaded=uploaded,
             public_url=public_url,
+            render_duration_seconds=render_duration_seconds,
+            upload_duration_seconds=upload_duration_seconds,
         )
 
     def _retain_last_successful(

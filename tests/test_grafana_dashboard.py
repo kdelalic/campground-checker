@@ -213,18 +213,32 @@ def test_dashboard_visualizes_background_worker_metrics():
     assert panels["Alert Cycle Duration"]["type"] == "timeseries"
 
     worker = panels["Dashboard Worker"]
-    duration = panels["Dashboard Scan Duration"]
-    activity = panels["Dashboard Scan Throughput and Errors"]
+    duration = panels["Dashboard Work Duration"]
+    activity = panels["Dashboard Throughput and Errors"]
     assert worker["type"] == "stat"
     assert duration["type"] == "timeseries"
     assert activity["type"] == "timeseries"
     assert "campsite_checker_dashboard_scan_in_progress" in worker["targets"][0]["expr"]
-    assert "campsite_checker_last_dashboard_scan_duration_seconds" in duration["targets"][0]["expr"]
+    assert "campsite_checker_dashboard_publish_in_progress" in worker["targets"][0]["expr"]
+    duration_queries = {target["expr"] for target in duration["targets"]}
+    assert any(
+        "campsite_checker_last_dashboard_scan_duration_seconds" in query
+        for query in duration_queries
+    )
+    assert any(
+        "campsite_checker_last_dashboard_publish_duration_seconds" in query
+        for query in duration_queries
+    )
+    assert any(
+        "campsite_checker_last_r2_upload_duration_seconds" in query for query in duration_queries
+    )
     activity_queries = {target["expr"] for target in activity["targets"]}
     assert any("campsite_checker_dashboard_scans_total" in query for query in activity_queries)
     assert any(
         "campsite_checker_dashboard_scan_errors_total" in query for query in activity_queries
     )
+    assert any("campsite_checker_dashboard_publishes_total" in query for query in activity_queries)
+    assert any("campsite_checker_r2_upload_failures_total" in query for query in activity_queries)
 
     age_panel = panels["Last Dashboard Scan Age"]
     thresholds = age_panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
