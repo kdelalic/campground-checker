@@ -66,6 +66,11 @@ campsites:
       longitude: -119.95154
       alert: false
       enabled: true
+    - campground_id: 234015 # Pinnacles National Park, CA - Pinnacles Campground
+      latitude: 36.489845
+      longitude: -121.148968
+      alert: false
+      enabled: true
 
   ReserveCalifornia:
     - campground_id: 786 # Emerald Bay SP - Upper Eagle Point (sites 1-33)
