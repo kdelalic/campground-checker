@@ -1,7 +1,8 @@
 {#
-  Self-contained availability dashboard. The CSS and JS are inlined verbatim
-  from sibling static assets: the page is uploaded to object storage as a
-  single file, so it must never reference an external asset.
+  Self-contained availability dashboard. The application and map runtime CSS
+  and JS are inlined verbatim from sibling static assets: the page is uploaded
+  to object storage as a single file. Only live map data and style resources
+  load externally.
 #}
 {% macro render_card(card) -%}
 <article class="{{ card.css_class }}" id="{{ card.id }}" data-state="{{ card.state }}" data-name="{{ card.name|lower }}" data-openings="{{ card.total }}">
@@ -59,7 +60,7 @@
 <title>Campground checker</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20x='50'%20y='.9em'%20font-size='90'%20text-anchor='middle'%20font-family='Apple%20Color%20Emoji,%20Segoe%20UI%20Emoji,%20sans-serif'%3E%F0%9F%8F%95%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <style>
-{% if map_cards %}{{ leaflet_css|safe }}
+{% if map_cards %}{{ maplibre_css|safe }}
 {% endif %}
 {{ css|safe }}
 </style>
@@ -159,8 +160,8 @@
 <span id="map-result-count" class="result-count" aria-live="polite">{{ map_cards|length }} campground{% if map_cards|length != 1 %}s{% endif %} mapped</span>
 </div>
 <div class="map-panel">
-<div id="campground-map" role="region" aria-label="Interactive map of campground locations" aria-describedby="map-description" data-tile-url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"></div>
-<p id="map-description" class="map-description">Select a marker for campground status and a link to its results.</p>
+<div id="campground-map" role="region" aria-label="Interactive map of campground locations" aria-describedby="map-description" data-style-url="https://tiles.openfreemap.org/styles/liberty"></div>
+<p id="map-description" class="map-description">Select a marker for campground status and a link to its results. Use two fingers on touch screens, or hold Command or Ctrl while scrolling, to move the map.</p>
 <p id="map-empty" class="map-empty" role="status" hidden>No mapped campgrounds match these filters.</p>
 <ul id="map-marker-data" class="sr-only">
 {% for card in map_cards %}
@@ -215,7 +216,7 @@
 </main>
 </div>
 {% if map_cards %}<script>
-{{ leaflet_js|safe }}
+{{ maplibre_js|safe }}
 </script>
 {% endif %}
 <script>

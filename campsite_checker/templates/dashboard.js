@@ -51,10 +51,42 @@ document.addEventListener("DOMContentLoaded", () => {
     ]),
   );
   const allowedStatuses = new Set(["actionable", "available", "failed", "all"]);
+  // The base style and these overrides form the campground map's editable
+  // visual theme. Keep this list focused on geographic context rather than
+  // availability state, which belongs to the markers below.
+  const mapStylePaint = {
+    background: { "background-color": "#f4eddf" },
+    park: {
+      "fill-color": "#b9d3b2",
+      "fill-opacity": 0.72,
+      "fill-outline-color": "#91b58c",
+    },
+    park_outline: { "line-color": "#a7c49f", "line-opacity": 0.72 },
+    landuse_residential: { "fill-color": "#ebe3d6", "fill-opacity": 0.58 },
+    landcover_wood: { "fill-color": "#a6c69e", "fill-opacity": 0.46 },
+    landcover_grass: { "fill-color": "#c9d9aa", "fill-opacity": 0.4 },
+    landcover_ice: { "fill-color": "#e3eff0" },
+    landuse_pitch: { "fill-color": "#b7d6a9" },
+    water: { "fill-color": "#9fcbd5" },
+    landcover_sand: { "fill-color": "#e6d4a5" },
+    building: { "fill-color": "#d5cab9", "fill-outline-color": "#c4b6a3" },
+    road_minor: { "line-color": "#fffaf0" },
+    road_secondary_tertiary: { "line-color": "#f0d9ae" },
+    road_trunk_primary: { "line-color": "#e8bd83" },
+    road_motorway: { "line-color": "#d98b5f" },
+  };
+  const hiddenMapStyleLayers = new Set([
+    "waterway_tunnel",
+    "waterway_river",
+    "waterway_other",
+    "boundary_2",
+    "boundary_3",
+    "boundary_disputed",
+  ]);
   const urlParams = new URLSearchParams(window.location.search);
   let activeDate = null;
   let campgroundMap = null;
-  let mapMarkerLayer = null;
+  let mapMarkers = [];
   let visibleMapEntries = [];
   let mapResizeFrame = null;
 
@@ -205,26 +237,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function fitMapToEntries(entries) {
     if (!campgroundMap || entries.length === 0) return;
-    const points = entries.map((entry) => [entry.latitude, entry.longitude]);
+    const points = entries.map((entry) => [entry.longitude, entry.latitude]);
     if (points.length === 1) {
-      campgroundMap.setView(points[0], 13, { animate: false });
+      campgroundMap.jumpTo({ center: points[0], zoom: 13 });
       return;
     }
-    campgroundMap.fitBounds(points, {
-      animate: false,
-      padding: [42, 42],
+    const bounds = points.reduce(
+      (currentBounds, point) => currentBounds.extend(point),
+      new window.maplibregl.LngLatBounds(points[0], points[0]),
+    );
+    campgroundMap.fitBounds(bounds, {
+      duration: 0,
+      padding: 42,
       maxZoom: 14,
     });
   }
 
   function syncMapMarkers() {
-    if (!campgroundMap || !mapMarkerLayer || !window.L) return;
+    if (!campgroundMap || !window.maplibregl) return;
     visibleMapEntries = mapEntries.filter((entry) => {
       const card = document.getElementById(entry.cardId);
       return card && card.dataset.mapVisible === "true";
     });
 
-    mapMarkerLayer.clearLayers();
+    mapMarkers.forEach((marker) => marker.remove());
+    mapMarkers = [];
     const groups = new Map();
     visibleMapEntries.forEach((entry) => {
       // Provider coordinates occasionally repeat for multiple campground
@@ -241,26 +278,31 @@ document.addEventListener("DOMContentLoaded", () => {
       const title = entries.length === 1
         ? `${entries[0].name}: ${mapEntryStatus(entries[0])}`
         : `${entries.length} campgrounds at this location`;
-      const icon = window.L.divIcon({
-        className: "map-marker-container",
-        html: `<span class="map-marker-dot map-marker-${state}">${count}</span>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-        popupAnchor: [0, -11],
+      const markerElement = document.createElement("button");
+      markerElement.className = "map-marker-container";
+      markerElement.type = "button";
+      markerElement.title = title;
+      markerElement.setAttribute("aria-label", title);
+      const markerDot = document.createElement("span");
+      markerDot.className = `map-marker-dot map-marker-${state}`;
+      markerDot.textContent = count;
+      markerElement.append(markerDot);
+
+      const popup = new window.maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: true,
+        maxWidth: "310px",
+        offset: 18,
+      }).setDOMContent(popupContent(entries));
+      const marker = new window.maplibregl.Marker({
+        element: markerElement,
+        anchor: "center",
       });
-      const marker = window.L.marker(
-        [entries[0].latitude, entries[0].longitude],
-        { icon, keyboard: true, title },
-      );
-      marker.bindPopup(popupContent(entries), { maxWidth: 310 });
-      marker.on("add", () => {
-        const markerElement = marker.getElement();
-        if (markerElement) {
-          markerElement.setAttribute("aria-label", title);
-          markerElement.setAttribute("role", "button");
-        }
-      });
-      marker.addTo(mapMarkerLayer);
+      marker
+        .setLngLat([entries[0].longitude, entries[0].latitude])
+        .setPopup(popup)
+        .addTo(campgroundMap);
+      mapMarkers.push(marker);
     });
 
     if (mapResultCount) {
@@ -273,29 +315,51 @@ document.addEventListener("DOMContentLoaded", () => {
     if (mapEmpty) mapEmpty.hidden = visibleMapEntries.length > 0;
 
     window.requestAnimationFrame(() => {
-      campgroundMap.invalidateSize({ animate: false, pan: false });
+      campgroundMap.resize();
       fitMapToEntries(visibleMapEntries);
     });
   }
 
   function initializeMap() {
-    if (!mapElement || !window.L || mapEntries.length === 0) return;
-    campgroundMap = window.L.map(mapElement, {
+    if (!mapElement || !window.maplibregl || mapEntries.length === 0) return;
+    campgroundMap = new window.maplibregl.Map({
+      container: mapElement,
+      style: mapElement.getAttribute("data-style-url"),
+      center: [0, 0],
+      zoom: 2,
       minZoom: 2,
       maxZoom: 18,
+      cooperativeGestures: true,
+      attributionControl: false,
+    });
+    campgroundMap.addControl(
+      new window.maplibregl.NavigationControl({ showCompass: false }),
+      "top-left",
+    );
+    campgroundMap.addControl(
+      new window.maplibregl.AttributionControl({ compact: true }),
+      "bottom-right",
+    );
+    campgroundMap.on("style.load", () => {
+      Object.entries(mapStylePaint).forEach(([layerId, properties]) => {
+        if (!campgroundMap.getLayer(layerId)) return;
+        Object.entries(properties).forEach(([property, value]) => {
+          campgroundMap.setPaintProperty(layerId, property, value);
+        });
+      });
+      hiddenMapStyleLayers.forEach((layerId) => {
+        if (campgroundMap.getLayer(layerId)) {
+          campgroundMap.setLayoutProperty(layerId, "visibility", "none");
+        }
+      });
     });
     fitMapToEntries(mapEntries);
-    window.L.tileLayer(mapElement.getAttribute("data-tile-url"), {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 19,
-    }).addTo(campgroundMap);
-    mapMarkerLayer = window.L.layerGroup().addTo(campgroundMap);
 
     if (window.ResizeObserver) {
       const observer = new ResizeObserver(() => {
         if (mapResizeFrame !== null) window.cancelAnimationFrame(mapResizeFrame);
         mapResizeFrame = window.requestAnimationFrame(() => {
-          campgroundMap.invalidateSize({ animate: false, pan: false });
+          campgroundMap.resize();
           fitMapToEntries(visibleMapEntries);
           mapResizeFrame = null;
         });

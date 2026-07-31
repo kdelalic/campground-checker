@@ -304,9 +304,9 @@ class TestCampgroundMap:
         assert 'data-latitude="37.7361111"' in content
         assert 'data-longitude="-119.5625"' in content
         assert 'data-state="available"' in content
-        assert "Leaflet 1.9.4" in content
-        assert "https://tile.openstreetmap.org/{z}/{x}/{y}.png" in content
-        assert "OpenStreetMap</a> contributors" in content
+        assert "MapLibre GL JS" in content
+        assert "https://tiles.openfreemap.org/styles/liberty" in content
+        assert "cooperativeGestures: true" in content
 
     def test_empty_and_failed_campgrounds_still_have_markers(self):
         empty = process_filtered_results(
@@ -343,8 +343,8 @@ class TestCampgroundMap:
         )
 
         assert 'id="campground-map"' not in content
-        assert "Leaflet 1.9.4" not in content
-        assert "https://tile.openstreetmap.org" not in content
+        assert "MapLibre GL JS" not in content
+        assert "https://tiles.openfreemap.org" not in content
 
     def test_map_zoom_and_responsive_bounds_are_explicit(self):
         content = render(
@@ -360,12 +360,12 @@ class TestCampgroundMap:
             ]
         )
 
-        assert "campgroundMap.setView(points[0], 13" in content
-        assert "campgroundMap.fitBounds(points" in content
-        assert "padding: [42, 42]" in content
+        assert "campgroundMap.jumpTo({ center: points[0], zoom: 13 })" in content
+        assert "campgroundMap.fitBounds(bounds" in content
+        assert "padding: 42" in content
         assert "maxZoom: 14" in content
         assert "new ResizeObserver" in content
-        assert "campgroundMap.invalidateSize" in content
+        assert "campgroundMap.resize()" in content
 
     def test_map_markers_follow_the_existing_filters(self):
         content = render(
@@ -411,6 +411,26 @@ class TestCampgroundMap:
         assert 'role="region" aria-label="Interactive map of campground locations"' in content
         assert '<a href="#site-0">North Pines</a> — No availability' in content
         assert 'aria-label="Map marker legend"' in content
+        assert "Use two fingers on touch screens" in content
+
+    def test_map_uses_quiet_editable_vector_style(self):
+        availability = process_filtered_results(
+            {"name": "North Pines", "latitude": 37.74, "longitude": -119.56},
+            [],
+        )
+
+        content = render([availability])
+
+        assert '"waterway_tunnel"' in content
+        assert '"waterway_river"' in content
+        assert '"waterway_other"' in content
+        assert '"boundary_2"' in content
+        assert '"boundary_3"' in content
+        assert '"boundary_disputed"' in content
+        assert '"fill-color": "#9fcbd5"' in content
+        assert '"fill-color": "#b9d3b2"' in content
+        assert "setPaintProperty(layerId, property, value)" in content
+        assert 'setLayoutProperty(layerId, "visibility", "none")' in content
 
 
 class TestTemplateAssets:
@@ -440,9 +460,9 @@ class TestTemplateAssets:
             "dashboard.html.j2",
             "dashboard.css",
             "dashboard.js",
-            "vendor/leaflet-1.9.4.css",
-            "vendor/leaflet-1.9.4.js",
-            "vendor/LEAFLET-LICENSE.txt",
+            "vendor/maplibre-gl-5.24.0.css",
+            "vendor/maplibre-gl-5.24.0.js",
+            "vendor/MAPLIBRE-LICENSE.txt",
         ):
             assert templates.joinpath(name).is_file(), name
 
@@ -468,6 +488,14 @@ class TestTemplateAssets:
         ) in css
         # Compact mobile spacing must not shrink the actionable date target.
         assert ".calendar-table th, .calendar-table td { height: 43px; }" in css
+
+    def test_map_zoom_controls_have_theme_aware_contrast(self):
+        css = read_asset("dashboard.css")
+
+        assert ".maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon::before" in css
+        assert ".maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon::before" in css
+        assert "background: var(--ink);" in css
+        assert "box-shadow: inset 0 0 0 3px var(--tent);" in css
 
     def test_quick_nav_keeps_full_campground_names_visible(self):
         css = read_asset("dashboard.css")

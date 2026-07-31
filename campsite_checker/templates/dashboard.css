@@ -464,7 +464,7 @@ h1 {
 #campground-map {
   width: 100%;
   height: clamp(330px, 48vw, 470px);
-  background: var(--canvas-deep);
+  background: #dfe9df;
 }
 .map-description {
   padding: 9px 12px;
@@ -520,46 +520,87 @@ h1 {
   font-size: 0.75rem;
 }
 
-/* Leaflet is vendored and inlined; these rules keep its controls and popups
-   aligned with the dashboard palette without changing familiar map behavior. */
-.leaflet-container {
+/* MapLibre is vendored and inlined; these rules keep its controls, cooperative
+   gesture message, and popups aligned with the dashboard palette. */
+.maplibregl-map {
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 0.78rem;
 }
-.leaflet-bar {
+.maplibregl-ctrl-group {
   overflow: hidden;
   border: 1px solid var(--line-strong) !important;
   border-radius: var(--radius-sm);
-  box-shadow: none;
+  background: var(--paper);
+  box-shadow: none !important;
 }
-.leaflet-bar a,
-.leaflet-bar a:hover {
+.maplibregl-ctrl-group button {
   width: 38px;
   height: 38px;
-  border-bottom-color: var(--line);
+  border-bottom-color: var(--line-strong);
   background: var(--paper);
   color: var(--ink);
-  line-height: 38px;
 }
-.leaflet-bar a:hover { background: var(--paper-muted); }
-.leaflet-control-attribution {
+.maplibregl-ctrl-group button:hover { background: var(--paper-muted); }
+.maplibregl-ctrl-group button:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--tent);
+  outline: 0;
+}
+.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon,
+.maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon {
+  position: relative;
+  background-image: none;
+  opacity: 1;
+}
+.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon::before,
+.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon::after,
+.maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 2px;
+  background: var(--ink);
+  content: "";
+  transform: translate(-50%, -50%);
+}
+.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon::before,
+.maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon::before {
+  width: 15px;
+  height: 2px;
+}
+.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon::after {
+  width: 2px;
+  height: 15px;
+}
+.maplibregl-ctrl-attrib {
   padding: 2px 5px;
   background: rgb(255 248 233 / 90%) !important;
   color: #4b433b;
   font-size: 0.62rem;
 }
-.leaflet-control-attribution a { color: #203a2b; }
-.leaflet-popup-content-wrapper,
-.leaflet-popup-tip {
+.maplibregl-ctrl-attrib a { color: #203a2b; }
+.maplibregl-popup-content {
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink);
   box-shadow: none;
 }
-.leaflet-popup-content-wrapper { border-radius: var(--radius-sm); }
-.leaflet-popup-content { min-width: 190px; margin: 12px 14px; }
-.leaflet-popup-close-button { color: var(--ink-soft) !important; }
+.maplibregl-popup-content { min-width: 190px; padding: 12px 14px; }
+.maplibregl-popup-tip { border-top-color: var(--paper) !important; }
+.maplibregl-popup-close-button { color: var(--ink-soft); font-size: 1.25rem; }
+.maplibregl-cooperative-gesture-screen {
+  background: rgb(34 48 42 / 78%);
+  color: #fff8e9;
+}
+.maplibregl-cooperative-gesture-screen .maplibregl-cooperative-gesture-screen-message {
+  max-width: min(88%, 420px);
+  padding: 10px 13px;
+  border: 1px solid rgb(255 248 233 / 30%);
+  border-radius: var(--radius-sm);
+  background: rgb(34 48 42 / 92%);
+  font: 700 0.78rem/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
 .map-popup-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
 .map-popup-item + .map-popup-item { padding-top: 9px; border-top: 1px solid var(--line); }
 .map-popup-link {
@@ -576,8 +617,18 @@ h1 {
   font-size: 0.69rem;
 }
 .map-marker-container {
+  display: block;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
   background: transparent;
+  cursor: pointer;
+}
+.map-marker-container:focus-visible { outline: none; }
+.map-marker-container:focus-visible .map-marker-dot {
+  outline: 3px solid var(--tent);
+  outline-offset: 3px;
 }
 .map-marker-dot {
   display: grid;
@@ -995,12 +1046,13 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   .calendar-available button:hover { background: #315b40; }
   .calendar-count { color: #45331f; }
   .legend-searched { background: #68766b; }
-  .leaflet-tile-pane { filter: brightness(0.78) saturate(0.72) contrast(1.08); }
-  .leaflet-control-attribution {
+  #campground-map { background: #24312d; }
+  .maplibregl-canvas { filter: brightness(0.72) saturate(0.95) contrast(1.08); }
+  .maplibregl-ctrl-attrib {
     background: rgb(40 53 50 / 92%) !important;
     color: #ded3c2;
   }
-  .leaflet-control-attribution a { color: var(--pine-deep); }
+  .maplibregl-ctrl-attrib a { color: var(--pine-deep); }
   .quick-nav li { border-color: #4b5c52; }
   .quick-nav a,
   .site-list a,

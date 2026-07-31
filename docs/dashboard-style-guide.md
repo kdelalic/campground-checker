@@ -231,8 +231,15 @@ The map is a geographic index of campground-level status, not a campsite map.
 - Popup campground names link to the corresponding result card.
 - Keep the accessible marker-data list in the document. Result cards remain
   the authoritative non-map representation.
-- Use the official HTTPS OpenStreetMap tile URL, show visible attribution, rely
-  on normal browser caching, and never add prefetch or offline downloads.
+- Use the OpenFreeMap Liberty vector style with visible attribution, customized
+  to the dashboard's warm land, blue water, pine park/forest, and restrained
+  road palette. Keep water fills and useful place labels, but suppress the
+  `waterway_tunnel`, `waterway_river`, `waterway_other`, `boundary_2`,
+  `boundary_3`, and `boundary_disputed` style layers for a quieter geographic
+  index. Rely on normal browser caching and never add prefetch or offline
+  downloads.
+- Require two-finger map gestures on touch screens and Command/Ctrl plus scroll
+  on desktop so normal page scrolling is not trapped by the map.
 
 ### Actions and links
 
@@ -300,8 +307,9 @@ information. Reflow it.
 ## Implementation constraints
 
 The dashboard is a single HTML artifact. Application CSS/JavaScript and the
-vendored Leaflet runtime are inlined during Jinja rendering. OpenStreetMap
-tiles are the only permitted external image requests. Do not add:
+vendored MapLibre runtime are inlined during Jinja rendering. OpenFreeMap map
+styles, vector/raster tiles, glyphs, and sprites are the only permitted
+external asset requests. Do not add:
 
 - external fonts, icon libraries, or non-map image requests;
 - a frontend build step or framework;
@@ -360,7 +368,7 @@ remove it.
 - [ ] Keyboard focus and screen-reader labels still work.
 - [ ] Light mode, dark mode, `820px`, and `620px` layouts are considered.
 - [ ] The page does not overflow horizontally.
-- [ ] The dashboard remains one HTML artifact; only map tiles load externally.
+- [ ] The dashboard remains one HTML artifact; only live map resources load externally.
 - [ ] Focused dashboard tests cover new behavior or protected markup.
 - [ ] Formatting, linting, and the full test suite pass:
 

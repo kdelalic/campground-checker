@@ -665,8 +665,8 @@ def build_dashboard_html(
         .render(
             css=read_asset("dashboard.css"),
             js=read_asset("dashboard.js"),
-            leaflet_css=read_asset("vendor/leaflet-1.9.4.css"),
-            leaflet_js=read_asset("vendor/leaflet-1.9.4.js"),
+            maplibre_css=read_asset("vendor/maplibre-gl-5.24.0.css"),
+            maplibre_js=read_asset("vendor/maplibre-gl-5.24.0.js"),
             refresh_seconds=refresh_seconds,
             refresh_label=refresh_label,
             stale_after_seconds=stale_after_seconds,
