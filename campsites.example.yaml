@@ -8,7 +8,8 @@
 # Campsites are grouped by provider under the 'campsites' key.
 # Campground names are fetched automatically from the booking service.
 #
-# Providers: RecreationDotGov | Yellowstone | GoingToCamp | ReserveCalifornia
+# Providers:
+#   RecreationDotGov | Yellowstone | GoingToCamp | ReserveCalifornia | ReserveAmerica
 #
 # Required (at least one of):
 #   campground_id   - The booking-service campground/facility ID
@@ -109,6 +110,15 @@ campsites:
 
   ReserveCalifornia:
     - campground_id: 608
+      nights: 1
+
+  # ── ReserveAmerica ─────────────────────────────────────────────────────────
+  # The booking URL contains both values:
+  #   /explore/campground/{contract_code}/{campground_id}/...
+
+  ReserveAmerica:
+    - campground_id: 110004
+      contract_code: EB
       nights: 1
 
   # ── GoingToCamp (Canadian Provincial Parks) ─────────────────────────────────

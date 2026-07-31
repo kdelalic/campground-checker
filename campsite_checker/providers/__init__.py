@@ -14,6 +14,7 @@ from .recreation_gov import (
     IdentityCachedRecreationDotGov,
     NativeSearchRecreationDotGov,
 )
+from .reserve_america import NativeSearchReserveAmerica
 from .reserve_california import (
     NativeSearchReserveCalifornia,
     TimeoutReserveCalifornia,
@@ -30,6 +31,7 @@ PROVIDER_MAP: dict[str, type] = {
     "Yellowstone": SearchYellowstone,
     "GoingToCamp": SearchGoingToCamp,
     "ReserveCalifornia": NativeSearchReserveCalifornia,
+    "ReserveAmerica": NativeSearchReserveAmerica,
 }
 
 # Provider classes used for out-of-search metadata lookups (bot name resolution),
@@ -44,4 +46,5 @@ PROVIDER_DISPLAY: dict[str, str] = {
     "Yellowstone": "yellowstone",
     "GoingToCamp": "goingtocamping.com",
     "ReserveCalifornia": "reservecalifornia",
+    "ReserveAmerica": "reserveamerica",
 }

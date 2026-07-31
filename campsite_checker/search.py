@@ -80,6 +80,12 @@ def _supports_request_priority(search_class: type) -> bool:
     return "request_priority" in inspect.signature(search_class.__init__).parameters
 
 
+@lru_cache(maxsize=None)
+def _supports_contract_code(search_class: type) -> bool:
+    """Whether a searcher accepts ReserveAmerica's contract identifier."""
+    return "contract_code" in inspect.signature(search_class.__init__).parameters
+
+
 def _batch_key(entry: dict, args) -> tuple | None:
     """Return a compatibility key, or None when an entry must run alone."""
     campground_id = entry.get("campground_id")
@@ -92,6 +98,7 @@ def _batch_key(entry: dict, args) -> tuple | None:
         effective_nights(entry, args),
         _effective_weekends_only(entry, args),
         _hashable_ids(entry.get("recreation_area")),
+        entry.get("contract_code"),
     )
 
 
@@ -163,6 +170,9 @@ def build_searcher(
         # Alert requests outrank dashboard requests inside the provider's
         # shared request gate, not just in the dispatcher queue.
         kwargs["request_priority"] = priority
+
+    if _supports_contract_code(search_class) and entry.get("contract_code"):
+        kwargs["contract_code"] = entry["contract_code"]
 
     if entry.get("campground_id"):
         kwargs["campgrounds"] = _as_list(entry["campground_id"])

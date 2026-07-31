@@ -229,6 +229,11 @@ def load_config(path: str) -> tuple[list[dict], dict]:
                 f"Error in '{label}': unknown provider '{provider}'. "
                 f"Valid providers: {', '.join(PROVIDER_MAP)}"
             )
+        if provider == "ReserveAmerica":
+            contract_code = entry.get("contract_code")
+            if not isinstance(contract_code, str) or not contract_code.strip():
+                sys.exit(f"Error in '{label}': ReserveAmerica entries require a contract_code")
+            entry["contract_code"] = contract_code.strip().upper()
         alert = entry.get("alert")
         if alert is not None and not isinstance(alert, bool):
             sys.exit(f"Error in '{label}': alert must be true or false")

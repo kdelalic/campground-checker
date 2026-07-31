@@ -173,3 +173,11 @@ campsites:
       longitude: -122.445841032
       alert: false
       enabled: true
+
+  ReserveAmerica:
+    - campground_id: 110004 # Anthony Chabot
+      contract_code: EB
+      latitude: 37.73528
+      longitude: -122.09611
+      alert: false
+      enabled: true

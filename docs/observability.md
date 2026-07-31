@@ -96,7 +96,7 @@ All four per-campground metrics use the same labels:
 | Label | Description |
 | --- | --- |
 | `config_index` | Position of the entry in `campsites.yaml` (stable across alert-flag changes), keeping otherwise duplicate configured entries as distinct Prometheus series. |
-| `provider` | Camply provider, such as `RecreationDotGov` or `ReserveCalifornia`. |
+| `provider` | Provider key, such as `RecreationDotGov`, `ReserveCalifornia`, or `ReserveAmerica`. |
 | `campground_id` | Configured campground ID, or an empty string when unused. Lists are comma-separated. |
 | `recreation_area` | Configured recreation-area ID, or an empty string when unused. Lists are comma-separated. |
 | `campsite_id` | Optional configured site filter, not the IDs of every currently available site. |

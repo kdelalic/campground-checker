@@ -27,7 +27,10 @@ The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and
 
 The first six are baked into the image's `CMD` as CLI flags, so overriding them requires setting the environment variable on the container.
 
-Trading batch size against worker count is the main scan-latency lever: camply issues one request per campground per month sequentially within a batch, so smaller batches with more workers cut dashboard scan wall-clock. Dial back toward the image defaults if provider throttle cooldowns start firing.
+Trading batch size against worker count is the main scan-latency lever: provider
+requests run sequentially within a batch, so smaller batches with more workers
+cut dashboard scan wall-clock. Dial back toward the image defaults if provider
+throttle cooldowns start firing.
 
 `CAMPLY_CACHE_DIR` matters because camply would otherwise write the cache into site-packages, which the unprivileged user cannot do. Outside Docker it defaults to `.camply-cache/`.
 

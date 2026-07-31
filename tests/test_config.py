@@ -379,6 +379,36 @@ campsites:
         with pytest.raises(SystemExit):
             load_config(str(path))
 
+    def test_reserve_america_requires_contract_code(self, tmp_path):
+        path = tmp_path / "campsites.yaml"
+        path.write_text(
+            """
+campsites:
+  ReserveAmerica:
+    - campground_id: 110004
+"""
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            load_config(str(path))
+
+        assert "require a contract_code" in str(exc_info.value)
+
+    def test_reserve_america_normalizes_contract_code(self, tmp_path):
+        path = tmp_path / "campsites.yaml"
+        path.write_text(
+            """
+campsites:
+  ReserveAmerica:
+    - campground_id: 110004
+      contract_code: " eb "
+"""
+        )
+
+        entries, _ = load_config(str(path))
+
+        assert entries[0]["contract_code"] == "EB"
+
     def test_criteria_parsed(self, tmp_path):
         config_text = """
 campsites:

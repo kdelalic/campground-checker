@@ -104,3 +104,5 @@ camply recreation-areas --provider GoingToCamp --search "algonquin"
 ```
 
 For Recreation.gov, the campground page URL also contains `facilityId=XXXXX`.
+For ReserveAmerica, use the contract and facility components in a booking URL:
+`/explore/<name>/<contract_code>/<campground_id>/...`.

@@ -11,6 +11,7 @@ from campsite_checker.providers.recreation_gov import NativeSearchRecreationDotG
 from campsite_checker.search import (
     SearchOutcome,
     _requires_recreation_area,
+    _supports_contract_code,
     _supports_request_priority,
     build_search_batches,
     build_searcher,
@@ -84,6 +85,24 @@ class TestBuildSearchBatches:
             {
                 "provider": "GoingToCamp",
                 "recreation_area": 20,
+                "campground_id": 2,
+            },
+        ]
+
+        batches = build_search_batches(entries, make_args(batch_size=4))
+
+        assert len(batches) == 2
+
+    def test_reserve_america_contracts_remain_separate(self):
+        entries = [
+            {
+                "provider": "ReserveAmerica",
+                "contract_code": "EB",
+                "campground_id": 1,
+            },
+            {
+                "provider": "ReserveAmerica",
+                "contract_code": "OR",
                 "campground_id": 2,
             },
         ]
@@ -225,6 +244,20 @@ class NativeStyleSearch:
         self.kwargs = kwargs
 
 
+class ContractStyleSearch:
+    def __init__(
+        self,
+        search_window,
+        weekends_only,
+        nights,
+        campgrounds=None,
+        *,
+        contract_code,
+    ):
+        self.campgrounds = campgrounds
+        self.contract_code = contract_code
+
+
 class CamplyStyleSearch:
     """Stand-in for a camply provider: rejects an unknown kwarg."""
 
@@ -261,6 +294,28 @@ class TestRequestPriorityForwarding:
 
         assert searcher.campgrounds == [1]
 
+    def test_contract_code_reaches_supporting_constructor(self, monkeypatch):
+        monkeypatch.setitem(PROVIDER_MAP, "Fake", ContractStyleSearch)
+
+        searcher = build_searcher(
+            {"provider": "Fake", "campground_id": 1, "contract_code": "EB"},
+            make_window(),
+            make_args(),
+        )
+
+        assert searcher.contract_code == "EB"
+
+    def test_contract_code_is_not_passed_to_camply_style_constructor(self, monkeypatch):
+        monkeypatch.setitem(PROVIDER_MAP, "Fake", CamplyStyleSearch)
+
+        searcher = build_searcher(
+            {"provider": "Fake", "campground_id": 1, "contract_code": "EB"},
+            make_window(),
+            make_args(),
+        )
+
+        assert searcher.campgrounds == [1]
+
     def test_native_recreation_client_declares_request_priority(self):
         assert _supports_request_priority(NativeSearchRecreationDotGov) is True
         assert _supports_request_priority(CamplyStyleSearch) is False
@@ -279,6 +334,7 @@ class TestRequestPriorityForwarding:
             "Yellowstone": (False, False),
             "GoingToCamp": (True, False),
             "ReserveCalifornia": (False, True),
+            "ReserveAmerica": (False, True),
         }
         actual = {
             name: (
@@ -289,6 +345,20 @@ class TestRequestPriorityForwarding:
         }
 
         assert actual == expected
+
+    def test_only_reserve_america_declares_contract_code(self):
+        actual = {
+            name: _supports_contract_code(search_class)
+            for name, search_class in PROVIDER_MAP.items()
+        }
+
+        assert actual == {
+            "RecreationDotGov": False,
+            "Yellowstone": False,
+            "GoingToCamp": False,
+            "ReserveCalifornia": False,
+            "ReserveAmerica": True,
+        }
 
 
 def test_constructor_introspection_is_cached():

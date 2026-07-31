@@ -1,7 +1,8 @@
 # campsite-checker
 
-Check campsite availability across Recreation.gov with a native API client, plus
-Yellowstone, California State Parks, and GoingToCamp through [camply](https://github.com/juftin/camply).
+Check campsite availability across Recreation.gov, ReserveCalifornia, and
+ReserveAmerica with native clients, plus Yellowstone and GoingToCamp through
+[camply](https://github.com/juftin/camply).
 
 ## Setup
 
@@ -119,7 +120,10 @@ with `THROTTLE_BASE_DELAY` and `THROTTLE_MAX_DELAY` (seconds).
 Resolved Recreation.gov facility identities (campground name and recreation
 area) are cached for 24 hours, which removes one RIDB API round trip per
 campground from every scan's searcher construction; transient lookup failures
-are never cached and are retried on the next scan. Dashboard files and
+are never cached and are retried on the next scan. ReserveAmerica searches read
+the public, server-rendered 14-day availability grid and pace page requests at
+one per second; they do not use account credentials or a private API key.
+Dashboard files and
 R2 objects are only updated when semantic availability changes, plus a
 once-per-hour freshness republish so the page's "Last updated" timestamp stays
 distinguishable from a stopped checker. Rendering and R2 uploads run on an
@@ -209,6 +213,15 @@ camply campgrounds --provider Yellowstone
 
 ```bash
 camply campgrounds --provider ReserveCalifornia --search "emerald bay"
+```
+
+**ReserveAmerica:** The booking URL contains the contract and campground IDs.
+For example, `/explore/anthony-chabot/EB/110004/...` maps to:
+
+```yaml
+ReserveAmerica:
+  - campground_id: 110004
+    contract_code: EB
 ```
 
 **GoingToCamp (Canadian parks):**

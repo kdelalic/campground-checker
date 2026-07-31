@@ -13,6 +13,7 @@ from campsite_checker.providers.recreation_gov import (
     IdentityCachedRecreationDotGov,
     NativeSearchRecreationDotGov,
 )
+from campsite_checker.providers.reserve_america import NativeSearchReserveAmerica
 from campsite_checker.providers.reserve_california import (
     NativeSearchReserveCalifornia,
     TimeoutReserveCalifornia,
@@ -25,6 +26,7 @@ class TestProviderMap:
         assert "Yellowstone" in PROVIDER_MAP
         assert "GoingToCamp" in PROVIDER_MAP
         assert "ReserveCalifornia" in PROVIDER_MAP
+        assert "ReserveAmerica" in PROVIDER_MAP
 
     def test_all_providers_have_display_names(self):
         for key in PROVIDER_MAP:
@@ -49,6 +51,9 @@ class TestProviderMapWiring:
         assert PROVIDER_MAP["ReserveCalifornia"] is NativeSearchReserveCalifornia
         assert not issubclass(NativeSearchReserveCalifornia, SearchReserveCalifornia)
         assert NativeSearchReserveCalifornia.provider_class is TimeoutReserveCalifornia
+
+    def test_reserve_america_uses_native_search_class(self):
+        assert PROVIDER_MAP["ReserveAmerica"] is NativeSearchReserveAmerica
 
     def test_metadata_provider_classes_share_hardening(self):
         assert METADATA_PROVIDER_CLASS["RecreationDotGov"] is IdentityCachedRecreationDotGov
