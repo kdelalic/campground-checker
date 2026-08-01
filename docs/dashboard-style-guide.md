@@ -63,28 +63,28 @@ green, canvas red-orange, warm yellow, and cream. CSS custom properties in
 
 | Token | Light | Dark | Role |
 | --- | --- | --- | --- |
-| `--canvas` | `#edf1d6` | `#101812` | Page background |
-| `--paper` | `#fffaf0` | `#1b281d` | Primary surfaces |
-| `--paper-muted` | `#f4f0d9` | `#243426` | Secondary surfaces |
-| `--ink` | `#252b1d` | `#fff2d4` | Primary text |
-| `--ink-soft` | `#5b624a` | `#c6cbaa` | Secondary text |
-| `--line` | `#c9cba6` | `#405440` | Standard borders |
-| `--line-strong` | `#a9ad7f` | `#63745a` | Controls and emphasis |
-| `--twilight` | `#164525` | `#0b3219` | Masthead |
-| `--twilight-deep` | `#0b3218` | `#061f10` | Strong masthead edge |
-| `--pine` | `#2f7d32` | `#85b947` | Availability |
-| `--pine-deep` | `#185824` | `#a8d460` | Links and strong green |
+| `--canvas` | `#dce8b8` | `#2d3628` | Page background |
+| `--paper` | `#fffaf0` | `#343129` | Primary surfaces |
+| `--paper-muted` | `#f6ecd8` | `#3d392f` | Secondary surfaces |
+| `--ink` | `#2d2a22` | `#fff2d4` | Primary text |
+| `--ink-soft` | `#676050` | `#d1c7ad` | Secondary text |
+| `--line` | `#d8c6a8` | `#5e5647` | Standard borders |
+| `--line-strong` | `#bca27c` | `#7d7058` | Controls and emphasis |
+| `--twilight` | `#384831` | `#32452f` | Masthead |
+| `--twilight-deep` | `#283620` | `#233321` | Strong masthead edge |
+| `--pine` | `#2f7d32` | `#8fbd54` | Availability |
+| `--pine-deep` | `#185824` | `#b1d474` | Links and strong green |
 | `--pine-soft` | `#dceccf` | `rgb(89 150 50 / 22%)` | Green tint |
 | `--tent` | `#d13d27` | `#d6472c` | Primary actions and selection |
 | `--tent-deep` | `#a9281d` | `#ff7a45` | Orange hover and emphasis |
 | `--tent-soft` | `#fde0cf` | `rgb(229 72 44 / 20%)` | Orange tint |
 | `--sun` | `#f6cc4f` | `#f3c84b` | Counts and warnings |
 | `--sun-soft` | `#fff0b5` | `rgb(243 200 75 / 16%)` | Warning surface |
-| `--bark` | `#6b4d29` | `#d5b56f` | Utility labels |
+| `--bark` | `#6b4d29` | `#e0c27d` | Utility labels |
 
 Use color by meaning:
 
-- Deep evergreen is the masthead color, not a general-purpose card color.
+- Pine-charcoal is the masthead color, not a general-purpose card color.
 - Pine means current availability or a supporting booking link.
 - Tent orange marks the primary booking action, focus, or active selection.
 - Warm yellow holds compact counts and warning emphasis.
@@ -95,6 +95,11 @@ Use color by meaning:
 
 Dark mode should preserve these semantic roles rather than invert every light
 value mechanically.
+
+Keep the palette balanced: a grassy canvas establishes the outdoor base while
+neutral paper keeps content surfaces calm. Reserve stronger pine for
+availability, red-orange for actions and selection, and yellow for compact
+counts and warnings.
 
 ## Typography
 

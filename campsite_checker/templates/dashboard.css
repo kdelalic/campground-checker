@@ -1,16 +1,16 @@
 :root {
   color-scheme: light dark;
-  --canvas: #edf1d6;
-  --canvas-deep: #dde5b9;
+  --canvas: #dce8b8;
+  --canvas-deep: #c7d892;
   --paper: #fffaf0;
-  --paper-muted: #f4f0d9;
-  --ink: #252b1d;
-  --ink-soft: #5b624a;
-  --line: #c9cba6;
-  --line-strong: #a9ad7f;
-  --twilight: #164525;
-  --twilight-soft: #286239;
-  --twilight-deep: #0b3218;
+  --paper-muted: #f6ecd8;
+  --ink: #2d2a22;
+  --ink-soft: #676050;
+  --line: #d8c6a8;
+  --line-strong: #bca27c;
+  --twilight: #384831;
+  --twilight-soft: #566649;
+  --twilight-deep: #283620;
   --pine: #2f7d32;
   --pine-deep: #185824;
   --pine-soft: #dceccf;
@@ -151,15 +151,15 @@ input:focus-visible {
 .text-button {
   min-height: 30px;
   padding: 4px 9px;
-  border: 1px solid rgb(255 250 240 / 35%);
+  border: 1px solid rgb(255 122 69 / 72%);
   border-radius: 6px;
-  background: transparent;
+  background: rgb(209 61 39 / 14%);
   color: #fffaf0;
   cursor: pointer;
   font-size: 0.72rem;
   font-weight: 740;
 }
-.text-button:hover { background: rgb(255 250 240 / 11%); }
+.text-button:hover { background: rgb(209 61 39 / 26%); }
 
 h1,
 .section-title,
@@ -189,6 +189,8 @@ h1 {
   flex-direction: column;
 }
 .snapshot-stat:not(:last-child) { border-right: 1px solid rgb(255 250 240 / 20%); }
+.snapshot-stat:first-child { background: rgb(47 125 50 / 12%); }
+.snapshot-stat:nth-child(2) { background: rgb(209 61 39 / 11%); }
 .snapshot-stat-warning { background: rgb(246 204 79 / 11%); }
 .snapshot-label {
   color: #d2dfcf;
@@ -1007,26 +1009,26 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --canvas: #101812;
-    --canvas-deep: #0a110c;
-    --paper: #1b281d;
-    --paper-muted: #243426;
+    --canvas: #2d3628;
+    --canvas-deep: #222a20;
+    --paper: #343129;
+    --paper-muted: #3d392f;
     --ink: #fff2d4;
-    --ink-soft: #c6cbaa;
-    --line: #405440;
-    --line-strong: #63745a;
-    --twilight: #0b3219;
-    --twilight-soft: #154a28;
-    --twilight-deep: #061f10;
-    --pine: #85b947;
-    --pine-deep: #a8d460;
+    --ink-soft: #d1c7ad;
+    --line: #5e5647;
+    --line-strong: #7d7058;
+    --twilight: #32452f;
+    --twilight-soft: #496246;
+    --twilight-deep: #233321;
+    --pine: #8fbd54;
+    --pine-deep: #b1d474;
     --pine-soft: rgb(89 150 50 / 22%);
     --tent: #d6472c;
     --tent-deep: #ff7a45;
     --tent-soft: rgb(229 72 44 / 20%);
     --sun: #f3c84b;
     --sun-soft: rgb(243 200 75 / 16%);
-    --bark: #d5b56f;
+    --bark: #e0c27d;
     --shadow-flat: 0 4px 0 rgb(0 0 0 / 18%);
   }
   .calendar-controls select,
@@ -1034,35 +1036,35 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   .search-control input,
   .calendar-controls button { color-scheme: dark; }
   .calendar-searched-empty > span {
-    border-color: #425240;
-    background: #243426;
-    color: #aeb794;
+    border-color: #625b49;
+    background: #3d392f;
+    color: #bfb59d;
   }
   .calendar-available button {
-    border-color: #6a9b3f;
-    background: #39783b;
+    border-color: #78a84f;
+    background: #417a3c;
     color: #fffaf0;
   }
-  .calendar-available button:hover { background: #2b612f; }
+  .calendar-available button:hover { background: #346633; }
   .calendar-count { color: #493514; }
-  .map-marker-available { color: #142411; }
-  .legend-searched { background: #63745a; }
-  #campground-map { background: #1b291d; }
-  .maplibregl-canvas { filter: brightness(0.64) saturate(1.08) contrast(1.1); }
+  .map-marker-available { color: #17240f; }
+  .legend-searched { background: #7d7058; }
+  #campground-map { background: #2d402f; }
+  .maplibregl-canvas { filter: brightness(0.78) saturate(1.04) contrast(1.06); }
   .maplibregl-ctrl-attrib {
-    background: rgb(27 40 29 / 94%) !important;
-    color: #ded9be;
+    background: rgb(52 49 41 / 94%) !important;
+    color: #e8e2c8;
   }
   .maplibregl-ctrl-attrib a { color: var(--pine-deep); }
-  .quick-nav li { border-color: #455b43; }
+  .quick-nav li { border-color: #675f4e; }
   .quick-nav a,
   .site-list a,
   details.date-detail summary { color: var(--pine-deep); }
-  .card-failed { border-color: #8d5a35; background: #352b1d; }
-  .card-status { border-bottom-color: #6e5430; color: #f2ce75; }
-  td { border-bottom-color: #3b4d3a; color: #e4dec3; }
-  .site-count-nights { border-color: #70613b; background: #403a22; color: #efd889; }
-  .site-count-none { border-color: #50634d; }
+  .card-failed { border-color: #9a7142; background: #493d28; }
+  .card-status { border-bottom-color: #80653b; color: #f5d77e; }
+  td { border-bottom-color: #5b5445; color: #eee7cc; }
+  .site-count-nights { border-color: #827344; background: #514a2c; color: #f4dc8b; }
+  .site-count-none { border-color: #716957; }
   .site-count-failed { border-color: #8b563f; }
   .book-link { border-color: #9f2c1e; background: #c93b25; color: #fffaf0; }
   .book-link:hover { background: #a82e20; }
