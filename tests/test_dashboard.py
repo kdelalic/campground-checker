@@ -427,8 +427,8 @@ class TestCampgroundMap:
         assert '"boundary_2"' in content
         assert '"boundary_3"' in content
         assert '"boundary_disputed"' in content
-        assert '"fill-color": "#9fcbd5"' in content
-        assert '"fill-color": "#b9d3b2"' in content
+        assert '"fill-color": "#87bec0"' in content
+        assert '"fill-color": "#bdd67f"' in content
         assert "setPaintProperty(layerId, property, value)" in content
         assert 'setLayoutProperty(layerId, "visibility", "none")' in content
 

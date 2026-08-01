@@ -57,34 +57,34 @@ Copy rules:
 
 ## Color
 
-The palette takes its cues from the 🏕️ emoji: twilight blue, pine green, tent
-orange, warm yellow, and cream. CSS custom properties in `dashboard.css` are
-the canonical values.
+The palette takes its cues from the 🏕️ emoji: deep evergreen, lively grass
+green, canvas red-orange, warm yellow, and cream. CSS custom properties in
+`dashboard.css` are the canonical values.
 
 | Token | Light | Dark | Role |
 | --- | --- | --- | --- |
-| `--canvas` | `#f2e5cf` | `#1d2928` | Page background |
-| `--paper` | `#fff8e9` | `#283532` | Primary surfaces |
-| `--paper-muted` | `#f5ead6` | `#303e39` | Secondary surfaces |
-| `--ink` | `#332d27` | `#f3e8d3` | Primary text |
-| `--ink-soft` | `#6d6257` | `#c0b4a1` | Secondary text |
-| `--line` | `#d3bfa2` | `#4d5c52` | Standard borders |
-| `--line-strong` | `#bda486` | `#68766b` | Controls and emphasis |
-| `--twilight` | `#2d4056` | `#283d50` | Masthead |
-| `--twilight-deep` | `#223244` | `#172936` | Strong masthead edge |
-| `--pine` | `#31563f` | `#91b796` | Availability |
-| `--pine-deep` | `#203a2b` | `#b5d0b5` | Links and strong green |
-| `--pine-soft` | `#e1e9dc` | `rgb(101 151 111 / 18%)` | Green tint |
-| `--tent` | `#cf6735` | `#c86736` | Primary actions and selection |
-| `--tent-deep` | `#a94e28` | `#e58955` | Orange hover and emphasis |
-| `--tent-soft` | `#f5dfcc` | `rgb(207 103 53 / 17%)` | Orange tint |
-| `--sun` | `#f0c66a` | `#e6bd62` | Counts and warnings |
-| `--sun-soft` | `#f8ebc8` | `rgb(230 189 98 / 14%)` | Warning surface |
-| `--bark` | `#765b43` | `#d0b497` | Utility labels |
+| `--canvas` | `#edf1d6` | `#101812` | Page background |
+| `--paper` | `#fffaf0` | `#1b281d` | Primary surfaces |
+| `--paper-muted` | `#f4f0d9` | `#243426` | Secondary surfaces |
+| `--ink` | `#252b1d` | `#fff2d4` | Primary text |
+| `--ink-soft` | `#5b624a` | `#c6cbaa` | Secondary text |
+| `--line` | `#c9cba6` | `#405440` | Standard borders |
+| `--line-strong` | `#a9ad7f` | `#63745a` | Controls and emphasis |
+| `--twilight` | `#164525` | `#0b3219` | Masthead |
+| `--twilight-deep` | `#0b3218` | `#061f10` | Strong masthead edge |
+| `--pine` | `#2f7d32` | `#85b947` | Availability |
+| `--pine-deep` | `#185824` | `#a8d460` | Links and strong green |
+| `--pine-soft` | `#dceccf` | `rgb(89 150 50 / 22%)` | Green tint |
+| `--tent` | `#d13d27` | `#d6472c` | Primary actions and selection |
+| `--tent-deep` | `#a9281d` | `#ff7a45` | Orange hover and emphasis |
+| `--tent-soft` | `#fde0cf` | `rgb(229 72 44 / 20%)` | Orange tint |
+| `--sun` | `#f6cc4f` | `#f3c84b` | Counts and warnings |
+| `--sun-soft` | `#fff0b5` | `rgb(243 200 75 / 16%)` | Warning surface |
+| `--bark` | `#6b4d29` | `#d5b56f` | Utility labels |
 
 Use color by meaning:
 
-- Twilight is the masthead color, not a general-purpose card color.
+- Deep evergreen is the masthead color, not a general-purpose card color.
 - Pine means current availability or a supporting booking link.
 - Tent orange marks the primary booking action, focus, or active selection.
 - Warm yellow holds compact counts and warning emphasis.
