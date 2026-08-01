@@ -246,9 +246,3 @@ campsites:
       longitude: -122.09611
       alert: false
       enabled: true
-    - campground_id: 110750 # Dumbarton Quarry Campground on the Bay
-      contract_code: EB
-      latitude: 37.5310861
-      longitude: -122.0730528
-      alert: false
-      enabled: true
