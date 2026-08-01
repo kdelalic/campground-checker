@@ -14,6 +14,26 @@ campsites:
       longitude: -122.4888889
       alert: true
       enabled: true
+    - campground_id: 10172170 # Presidio of San Francisco, CA - Rob Hill Group Campground
+      latitude: 37.7961731
+      longitude: -122.475593
+      alert: false
+      enabled: true
+    - campground_id: 272229 # Golden Gate National Recreation Area, CA - Bicentennial Campground
+      latitude: 37.8247128
+      longitude: -122.5266818
+      alert: false
+      enabled: true
+    - campground_id: 258815 # Golden Gate National Recreation Area, CA - Hawk Campground
+      latitude: 37.854186
+      longitude: -122.5203053
+      alert: false
+      enabled: true
+    - campground_id: 10067346 # Golden Gate National Recreation Area, CA - Haypress Campground
+      latitude: 37.8609524
+      longitude: -122.5452793
+      alert: false
+      enabled: true
     - campground_id: 232447 # Yosemite National Park, CA - Upper Pines Campground
       latitude: 37.7361111
       longitude: -119.5625
@@ -73,6 +93,46 @@ campsites:
       enabled: true
 
   ReserveCalifornia:
+    - campground_id: 406 # Angel Island SP - East Bay (sites 1-3)
+      latitude: 37.8643
+      longitude: -122.4256
+      alert: false
+      enabled: true
+    - campground_id: 407 # Angel Island SP - West Garrison (site 10 & kayak site)
+      latitude: 37.8613
+      longitude: -122.4407
+      alert: false
+      enabled: true
+    - campground_id: 408 # Angel Island SP - Ridge (sites 4-6)
+      latitude: 37.857
+      longitude: -122.4387
+      alert: false
+      enabled: true
+    - campground_id: 409 # Angel Island SP - Sunrise (sites 7-9)
+      latitude: 37.861389
+      longitude: -122.425278
+      alert: false
+      enabled: true
+    - campground_id: 590 # Mount Tamalpais SP - Steep Ravine environmental sites (E1-E7)
+      latitude: 37.8822774
+      longitude: -122.6269693
+      alert: false
+      enabled: true
+    - campground_id: 437 # China Camp SP - Back Ranch Meadows Campground (sites 1-30)
+      latitude: 38.001715
+      longitude: -122.4626132
+      alert: false
+      enabled: true
+    - campground_id: 585 # Mount Diablo SP - Live Oak Campground
+      latitude: 37.853165
+      longitude: -121.931913
+      alert: false
+      enabled: true
+    - campground_id: 592 # Mount Diablo SP - Juniper Campground
+      latitude: 37.87858
+      longitude: -121.93378
+      alert: false
+      enabled: true
     - campground_id: 786 # Emerald Bay SP - Upper Eagle Point (sites 1-33)
       latitude: 38.9549924331999
       longitude: -120.082480519
@@ -184,5 +244,11 @@ campsites:
       contract_code: EB
       latitude: 37.73528
       longitude: -122.09611
+      alert: false
+      enabled: true
+    - campground_id: 110750 # Dumbarton Quarry Campground on the Bay
+      contract_code: EB
+      latitude: 37.5310861
+      longitude: -122.0730528
       alert: false
       enabled: true
