@@ -44,6 +44,17 @@
 #   days: [Friday, Saturday]
 #   nights: 2
 #
+# To apply several stay options to every entry, use defaults.criteria instead
+# of defaults.days/defaults.nights. An entry-level criteria, days, or nights
+# setting overrides this global schedule for that entry:
+#
+# defaults:
+#   criteria:
+#     - days: [Friday]
+#       nights: 1
+#     - days: [Friday]
+#       nights: 2
+#
 # Telegram notifications (optional):
 #   telegram.bot_token  - Telegram bot token from @BotFather
 #   telegram.chat_id    - Your Telegram chat/user ID

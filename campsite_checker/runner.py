@@ -54,6 +54,15 @@ logger = logging.getLogger(__name__)
 MIN_DASHBOARD_IDLE_SECONDS = 60.0
 
 
+def _combined_task_day_filter(
+    search_tasks: list[tuple[int, dict, set[int] | None]],
+) -> set[int] | None:
+    """Summarize the actual arrival weekdays searched by a task set."""
+    if any(task_filter is None for _index, _entry, task_filter in search_tasks):
+        return None
+    return {day for _index, _entry, task_filter in search_tasks for day in task_filter or set()}
+
+
 def _resident_memory_mb() -> float | None:
     """Return current RSS on Linux or peak RSS on other Unix platforms."""
     try:
@@ -130,6 +139,7 @@ def print_scan_header(
     start_dt: datetime,
     end_dt: datetime,
     day_filter: set[int] | None,
+    nights: list[int] | None = None,
     scan_num: int | None = None,
     scan_type: str | None = None,
 ) -> None:
@@ -149,12 +159,17 @@ def print_scan_header(
         parts.append(scan_type)
     prefix = f"[{' / '.join(parts)}] " if parts else ""
     timestamp = f" — {datetime.now().strftime('%H:%M:%S')}" if scan_num is not None else ""
+    stay_label = ""
+    if nights:
+        values = "/".join(str(value) for value in nights)
+        stay_label = f" ({values} {'night' if nights == [1] else 'nights'})"
 
     logger.info(
-        "\U0001f3d5  %sChecking %d campgrounds for %s availability%s",
+        "\U0001f3d5  %sChecking %d campgrounds for %s availability%s%s",
         prefix,
         len(entries),
         day_label,
+        stay_label,
         timestamp,
     )
     logger.info("   %s \u2192 %s (%d dates)", start_dt.date(), end_dt.date(), n_dates)
@@ -179,11 +194,20 @@ def run_once(
     start_dt, end_dt = compute_date_range(args)
     search_window = SearchWindow(start_date=start_dt, end_date=end_dt)
 
-    print_scan_header(entries, start_dt, end_dt, day_filter, scan_num, scan_type=scan_type)
-
     # Expand entries with criteria into individual search tasks
     search_tasks = expand_search_tasks(entries, day_filter)
     task_entries = [entry for _, entry, _ in search_tasks]
+    scan_day_filter = _combined_task_day_filter(search_tasks)
+    scan_nights = sorted({effective_nights(entry, args) for entry in task_entries})
+    print_scan_header(
+        entries,
+        start_dt,
+        end_dt,
+        scan_day_filter,
+        scan_nights,
+        scan_num,
+        scan_type=scan_type,
+    )
 
     # Record the stay lengths actually searched so the dashboard can label each
     # card. Neither the `--nights` override nor a `criteria` block is visible
@@ -256,7 +280,7 @@ def run_once(
             all_with_results,
             None,
             dashboard_path,
-            build_search_filter_view(day_filter, start_dt, end_dt, all_with_results),
+            build_search_filter_view(scan_day_filter, start_dt, end_dt, all_with_results),
         )
         logger.info("   Dashboard written to %s", dashboard_path)
 
@@ -588,10 +612,16 @@ def run_forever(
                     # Recomputed per publish: a relative window rolls forward,
                     # so the rendered range changes without any config change.
                     window_start, window_end = compute_date_range(args)
+                    publish_day_filter = _combined_task_day_filter(
+                        expand_search_tasks(
+                            [availability.entry for availability in merged],
+                            day_filter,
+                        )
+                    )
                     replaced = dashboard_publish_worker.submit(
                         merged,
                         search_filter=build_search_filter_view(
-                            day_filter, window_start, window_end, merged
+                            publish_day_filter, window_start, window_end, merged
                         ),
                     )
                     if replaced:

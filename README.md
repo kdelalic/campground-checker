@@ -56,6 +56,20 @@ one stay length is configured, its Stay filter narrows campground cards,
 calendar counts, result totals, and map markers together. The selection is
 kept in the page URL so it survives refreshes and can be shared.
 
+Use `defaults.criteria` to apply the same combinations to every campground:
+
+```yaml
+defaults:
+  criteria:
+    - days: [Friday]
+      nights: 1
+    - days: [Friday]
+      nights: 2
+```
+
+An entry with its own `criteria`, `days`, or `nights` schedule overrides these
+global criteria.
+
 ## Usage
 
 ```bash

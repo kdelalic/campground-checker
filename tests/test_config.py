@@ -368,6 +368,86 @@ campsites:
         entries, _ = load_config(str(path))
         assert entries[0]["nights"] == 3
 
+    def test_defaults_criteria_applied_to_every_entry(self, tmp_path):
+        path = tmp_path / "campsites.yaml"
+        path.write_text(
+            """
+defaults:
+  criteria:
+    - days: [Friday]
+      nights: 1
+    - days: [Friday]
+      nights: 2
+campsites:
+  RecreationDotGov:
+    - campground_id: 111
+    - campground_id: 222
+"""
+        )
+
+        entries, config = load_config(str(path))
+
+        assert [entry["_criteria"] for entry in entries] == [
+            [
+                {"_day_filter": {4}, "nights": 1},
+                {"_day_filter": {4}, "nights": 2},
+            ],
+            [
+                {"_day_filter": {4}, "nights": 1},
+                {"_day_filter": {4}, "nights": 2},
+            ],
+        ]
+        assert entries[0]["_criteria"] is not entries[1]["_criteria"]
+        assert config["_default_day_filter"] == {4}
+
+    def test_entry_schedule_overrides_defaults_criteria(self, tmp_path):
+        path = tmp_path / "campsites.yaml"
+        path.write_text(
+            """
+defaults:
+  criteria:
+    - days: [Friday]
+      nights: 1
+    - days: [Friday]
+      nights: 2
+campsites:
+  RecreationDotGov:
+    - campground_id: 111
+      days: [Saturday]
+      nights: 3
+"""
+        )
+
+        entries, _ = load_config(str(path))
+
+        assert entries[0]["_criteria"] is None
+        assert entries[0]["_day_filter"] == {5}
+        assert entries[0]["nights"] == 3
+
+    @pytest.mark.parametrize(
+        "defaults",
+        [
+            "criteria: [{days: [Friday], nights: 1}]\n  days: [Friday]",
+            "criteria: [{days: [Friday], nights: 1}]\n  nights: 1",
+            "criteria: [{nights: 1}]",
+            "criteria: [{days: [Friday]}]",
+        ],
+    )
+    def test_invalid_defaults_criteria_exit(self, tmp_path, defaults):
+        path = tmp_path / "campsites.yaml"
+        path.write_text(
+            f"""
+defaults:
+  {defaults}
+campsites:
+  RecreationDotGov:
+    - campground_id: 111
+"""
+        )
+
+        with pytest.raises(SystemExit):
+            load_config(str(path))
+
     def test_unknown_provider_exits(self, tmp_path):
         config_text = """
 campsites:

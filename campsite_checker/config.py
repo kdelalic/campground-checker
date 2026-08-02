@@ -13,6 +13,31 @@ class DateWindowExhausted(Exception):
     """Raised when the computed search window is empty (e.g. a fixed --end has passed)."""
 
 
+def _parse_criteria(criteria_raw, label: str) -> list[dict]:
+    """Validate and normalize a criteria list from defaults or one entry."""
+    if not isinstance(criteria_raw, list) or len(criteria_raw) == 0:
+        sys.exit(f"Error in '{label}': 'criteria' must be a non-empty list")
+
+    parsed_criteria = []
+    for index, criterion in enumerate(criteria_raw):
+        criterion_label = f"{label}, criterion #{index + 1}"
+        if not isinstance(criterion, dict):
+            sys.exit(f"Error in '{criterion_label}': must be a mapping")
+
+        criterion_days = criterion.get("days")
+        criterion_day_filter = None
+        if criterion_days is not None:
+            if not isinstance(criterion_days, list):
+                sys.exit(f"Error in '{criterion_label}': 'days' must be a list of weekday names")
+            criterion_day_filter = parse_day_names(criterion_days)
+
+        criterion_nights = criterion.get("nights")
+        if criterion_nights is not None and not isinstance(criterion_nights, int):
+            sys.exit(f"Error in '{criterion_label}': 'nights' must be an integer")
+        parsed_criteria.append({"_day_filter": criterion_day_filter, "nights": criterion_nights})
+    return parsed_criteria
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Check campsite availability using camply.",
@@ -211,8 +236,26 @@ def load_config(path: str) -> tuple[list[dict], dict]:
     if default_nights is not None and not isinstance(default_nights, int):
         sys.exit("Error: defaults.nights must be an integer")
     default_days = defaults.get("days")
+    default_criteria_raw = defaults.get("criteria")
+    if default_criteria_raw is not None and (
+        default_days is not None or default_nights is not None
+    ):
+        sys.exit(
+            "Error: defaults.criteria cannot be combined with defaults.days or defaults.nights"
+        )
+    default_criteria = None
     default_day_filter = None
-    if default_days is not None:
+    if default_criteria_raw is not None:
+        default_criteria = _parse_criteria(default_criteria_raw, "defaults")
+        if any(
+            criterion["_day_filter"] is None or criterion["nights"] is None
+            for criterion in default_criteria
+        ):
+            sys.exit("Error: each defaults.criteria item must specify both days and nights")
+        default_day_filter = set().union(
+            *(criterion["_day_filter"] for criterion in default_criteria)
+        )
+    elif default_days is not None:
         if not isinstance(default_days, list):
             sys.exit("Error: defaults.days must be a list of weekday names")
         default_day_filter = parse_day_names(default_days)
@@ -263,26 +306,9 @@ def load_config(path: str) -> tuple[list[dict], dict]:
             sys.exit(f"Error in '{label}': 'criteria' and 'days' are mutually exclusive")
 
         if criteria_raw is not None:
-            if not isinstance(criteria_raw, list) or len(criteria_raw) == 0:
-                sys.exit(f"Error in '{label}': 'criteria' must be a non-empty list")
-            parsed_criteria = []
-            for j, crit in enumerate(criteria_raw):
-                if not isinstance(crit, dict):
-                    sys.exit(f"Error in '{label}', criterion #{j + 1}: must be a mapping")
-                crit_days = crit.get("days")
-                crit_day_filter = None
-                if crit_days is not None:
-                    if not isinstance(crit_days, list):
-                        sys.exit(
-                            f"Error in '{label}', criterion #{j + 1}: "
-                            "'days' must be a list of weekday names"
-                        )
-                    crit_day_filter = parse_day_names(crit_days)
-                crit_nights = crit.get("nights")
-                if crit_nights is not None and not isinstance(crit_nights, int):
-                    sys.exit(f"Error in '{label}', criterion #{j + 1}: 'nights' must be an integer")
-                parsed_criteria.append({"_day_filter": crit_day_filter, "nights": crit_nights})
-            entry["_criteria"] = parsed_criteria
+            entry["_criteria"] = _parse_criteria(criteria_raw, label)
+        elif default_criteria is not None and "days" not in entry and "nights" not in entry:
+            entry["_criteria"] = [dict(criterion) for criterion in default_criteria]
         else:
             entry["_criteria"] = None
             if days_raw is not None:

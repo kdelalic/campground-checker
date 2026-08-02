@@ -1,13 +1,16 @@
 """Tests for polling, persistence, and garbage-collection helpers."""
 
+import logging
 import threading
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 from campsite_checker.runner import (
     _advance_poll_deadline,
+    _combined_task_day_filter,
     _maybe_collect_garbage,
+    print_scan_header,
     run_forever,
 )
 from campsite_checker.state import load_sent_keys
@@ -46,6 +49,34 @@ def test_poll_deadline_stays_anchored_and_skips_overruns():
     assert _advance_poll_deadline(100.0, 60.0, now=120.0) == 160.0
     assert _advance_poll_deadline(100.0, 60.0, now=161.0) == 220.0
     assert _advance_poll_deadline(100.0, 60.0, now=281.0) == 340.0
+
+
+def test_combined_task_day_filter_reports_actual_criteria_days():
+    tasks = [
+        (0, {"nights": 1}, {4}),
+        (0, {"nights": 2}, {4}),
+        (1, {"nights": 1}, {5}),
+    ]
+
+    assert _combined_task_day_filter(tasks) == {4, 5}
+    assert _combined_task_day_filter([(0, {}, None)]) is None
+
+
+def test_scan_header_reports_effective_days_and_stays(caplog):
+    caplog.set_level(logging.INFO, logger="campsite_checker.runner")
+
+    print_scan_header(
+        [{}, {}],
+        datetime(2026, 8, 1),
+        datetime(2026, 8, 15),
+        {4},
+        [1, 2],
+        scan_num=3,
+        scan_type="alert",
+    )
+
+    assert "Checking 2 campgrounds for Friday availability (1/2 nights)" in caplog.text
+    assert "(2 dates)" in caplog.text
 
 
 def _forever_args():
