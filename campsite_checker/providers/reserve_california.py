@@ -34,6 +34,7 @@ from ..request_gate import (
     PROVIDER_REQUEST_METRICS,
     ProviderRequestMetrics,
     RequestGate,
+    SingleFlightTTLCache,
     pause_gate_on_rate_limit,
 )
 
@@ -52,6 +53,7 @@ DEFAULT_READ_TIMEOUT_SECONDS = 10
 DEFAULT_REQUEST_TIMEOUT = (DEFAULT_CONNECT_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS)
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+AVAILABILITY_RESPONSE_TTL_SECONDS = 30
 
 # The grid endpoint caps every response at 21 days of slices, whatever EndDate
 # asks for, and honours shorter ranges exactly. Camply's search loops over
@@ -73,16 +75,18 @@ MAX_CONCURRENT_REQUESTS = 3
 # does not turn into an unbounded increase in request rate.
 REQUESTS_PER_SECOND = 4
 
-# Alert requests get fewer rate-limit retries than dashboard requests: a
-# rate-limited alert scan re-runs within `--alert-interval` anyway, so it is
-# better to return late-but-fresh on the next cycle than to stack multiple
-# provider pauses onto one latency-sensitive scan.
+# Alert requests do not retry a 429: the scan re-runs within
+# `--alert-interval`, so failing promptly is better than holding the foreground
+# scan through a provider pause. Dashboard requests retain bounded retries.
 DEFAULT_MAX_RATE_LIMIT_RETRIES = 2
-ALERT_MAX_RATE_LIMIT_RETRIES = 1
+ALERT_MAX_RATE_LIMIT_RETRIES = 0
 
 RESERVE_CALIFORNIA_REQUEST_GATE = RequestGate(
     max_concurrent=MAX_CONCURRENT_REQUESTS,
     requests_per_second=REQUESTS_PER_SECOND,
+)
+RESERVE_CALIFORNIA_RESPONSE_CACHE = SingleFlightTTLCache(
+    ttl_seconds=AVAILABILITY_RESPONSE_TTL_SECONDS,
 )
 
 # Camply's UseDirect providers default their offline metadata cache to a
@@ -193,7 +197,10 @@ class TimeoutReserveCalifornia(ReserveCalifornia):
     ):
         if retry_response_codes is None:
             retry_response_codes = self.FIVE_HUNDRED_STATUS_CODES
-        with self.request_gate.slot(self.request_priority):
+        with self.request_gate.slot(
+            self.request_priority,
+            fail_when_deferred=self.request_priority == PRIORITY_ALERT_REQUEST,
+        ):
             response = self.session.request(
                 method=method,
                 url=url,
@@ -284,6 +291,7 @@ class NativeSearchReserveCalifornia:
         sleep: Callable[[float], None] = time.sleep,
         request_gate: RequestGate | None = None,
         request_metrics: ProviderRequestMetrics | None = None,
+        response_cache: SingleFlightTTLCache | None = None,
         request_priority: int = PRIORITY_ALERT_REQUEST,
         provider: TimeoutReserveCalifornia | None = None,
         **_kwargs,
@@ -301,6 +309,9 @@ class NativeSearchReserveCalifornia:
         self._sleep = sleep
         self._request_gate = request_gate or RESERVE_CALIFORNIA_REQUEST_GATE
         self._request_metrics = request_metrics or PROVIDER_REQUEST_METRICS
+        self._response_cache = (
+            response_cache if response_cache is not None else RESERVE_CALIFORNIA_RESPONSE_CACHE
+        )
         self.request_priority = request_priority
         self._max_rate_limit_retries = (
             ALERT_MAX_RATE_LIMIT_RETRIES
@@ -355,6 +366,18 @@ class NativeSearchReserveCalifornia:
             raise
 
     def _request_window(self, facility_id: int | str, start: date, end: date) -> dict:
+        key = (
+            self.request_priority,
+            str(facility_id),
+            start.isoformat(),
+            end.isoformat(),
+        )
+        return self._response_cache.get_or_fetch(
+            key,
+            lambda: self._fetch_window(facility_id, start, end),
+        )
+
+    def _fetch_window(self, facility_id: int | str, start: date, end: date) -> dict:
         """Fetch one availability window, mirroring camply's request body."""
         payload = {
             "StartDate": start.strftime(UseDirectConfig.DATE_FORMAT),
@@ -370,9 +393,12 @@ class NativeSearchReserveCalifornia:
         gate_paced = False
 
         for attempt in range(DEFAULT_MAX_ATTEMPTS):
-            self._request_metrics.record_attempt(self.provider_name)
             try:
-                with self._request_gate.slot(self.request_priority):
+                with self._request_gate.slot(
+                    self.request_priority,
+                    fail_when_deferred=self.request_priority == PRIORITY_ALERT_REQUEST,
+                ):
+                    self._request_metrics.record_attempt(self.provider_name)
                     response = self.session.post(
                         GRID_URL,
                         data=body,

@@ -3,13 +3,18 @@
 import threading
 import time
 
+import pytest
 import requests
 
 from campsite_checker.request_gate import (
     PRIORITY_ALERT_REQUEST,
+    RequestDeferredError,
     RequestGate,
+    SharedFetchError,
+    SingleFlightTTLCache,
     pause_gate_on_rate_limit,
 )
+from campsite_checker.throttle import detect_rate_limit
 
 PRIORITY_ALERT = PRIORITY_ALERT_REQUEST
 PRIORITY_DASHBOARD = 1
@@ -94,6 +99,110 @@ def test_defer_applies_to_a_gate_with_no_configured_rate():
         pass
 
     assert clock.sleeps == [30]
+
+
+def test_latency_sensitive_request_fails_fast_during_a_deferral():
+    clock = FakeClock()
+    gate = RequestGate(max_concurrent=2, clock=clock, sleep=clock.sleep)
+    gate.defer(30)
+
+    with pytest.raises(RequestDeferredError) as exc_info:
+        with gate.slot(PRIORITY_ALERT, fail_when_deferred=True):
+            pass
+
+    assert exc_info.value.seconds == 30
+    assert clock.sleeps == []
+    assert gate.pending_priorities == ()
+
+
+class TestSingleFlightTTLCache:
+    def test_completed_value_is_reused_until_expiry(self):
+        clock = FakeClock()
+        cache = SingleFlightTTLCache(ttl_seconds=30, clock=clock)
+        calls = []
+
+        assert cache.get_or_fetch("key", lambda: calls.append(1) or {"value": 1}) == {"value": 1}
+        assert cache.get_or_fetch("key", lambda: calls.append(2) or {"value": 2}) == {"value": 1}
+        clock.now += 31
+        assert cache.get_or_fetch("key", lambda: calls.append(3) or {"value": 3}) == {"value": 3}
+        assert calls == [1, 3]
+
+    def test_concurrent_identical_fetches_are_coalesced(self):
+        cache = SingleFlightTTLCache()
+        started = threading.Event()
+        release = threading.Event()
+        calls = []
+        values = []
+
+        def fetch():
+            calls.append(1)
+            started.set()
+            assert release.wait(5.0)
+            return {"value": 1}
+
+        def run():
+            values.append(cache.get_or_fetch("key", fetch))
+
+        owner = threading.Thread(target=run)
+        owner.start()
+        assert started.wait(5.0)
+        follower = threading.Thread(target=run)
+        follower.start()
+        assert _wait_for(follower.is_alive)
+        release.set()
+        owner.join(5.0)
+        follower.join(5.0)
+
+        assert calls == [1]
+        assert values == [{"value": 1}, {"value": 1}]
+
+    def test_failed_fetch_is_not_cached(self):
+        cache = SingleFlightTTLCache()
+        calls = []
+
+        def fail():
+            calls.append(1)
+            raise ValueError("no response")
+
+        for _ in range(2):
+            with pytest.raises(ValueError, match="no response"):
+                cache.get_or_fetch("key", fail)
+
+        assert calls == [1, 1]
+        assert len(cache) == 0
+
+    def test_shared_failure_is_classified_only_by_the_fetch_owner(self):
+        cache = SingleFlightTTLCache()
+        started = threading.Event()
+        release = threading.Event()
+        calls = []
+        errors = []
+
+        def fetch():
+            calls.append(1)
+            started.set()
+            assert release.wait(5.0)
+            raise RuntimeError("429 Too Many Requests")
+
+        def run():
+            try:
+                cache.get_or_fetch("key", fetch)
+            except Exception as exc:
+                errors.append(exc)
+
+        owner = threading.Thread(target=run)
+        owner.start()
+        assert started.wait(5.0)
+        follower = threading.Thread(target=run)
+        follower.start()
+        assert _wait_for(follower.is_alive)
+        release.set()
+        owner.join(5.0)
+        follower.join(5.0)
+
+        assert calls == [1]
+        assert {type(error) for error in errors} == {RuntimeError, SharedFetchError}
+        assert sum(detect_rate_limit(error).rate_limited for error in errors) == 1
 
 
 def test_queued_alert_request_starts_before_older_dashboard_request():

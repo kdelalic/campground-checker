@@ -13,11 +13,12 @@ from camply.providers import RecreationDotGov
 from campsite_checker.providers.recreation_gov import (
     DEFAULT_REQUEST_TIMEOUT,
     FACILITY_IDENTITY_CACHE,
+    REC_GOV_RESPONSE_CACHE,
     FacilityIdentityCache,
     IdentityCachedRecreationDotGov,
     NativeSearchRecreationDotGov,
 )
-from campsite_checker.request_gate import ProviderRequestMetrics
+from campsite_checker.request_gate import ProviderRequestMetrics, SingleFlightTTLCache
 from campsite_checker.results import process_results
 from campsite_checker.throttle import detect_rate_limit
 
@@ -45,8 +46,10 @@ def make_facility(
 @pytest.fixture(autouse=True)
 def clear_identity_cache():
     FACILITY_IDENTITY_CACHE.clear()
+    REC_GOV_RESPONSE_CACHE.clear()
     yield
     FACILITY_IDENTITY_CACHE.clear()
+    REC_GOV_RESPONSE_CACHE.clear()
 
 
 class FakeResponse:
@@ -90,10 +93,12 @@ class ImmediateGate:
     def __init__(self):
         self.priorities = []
         self.deferrals = []
+        self.fail_when_deferred = []
 
     @contextmanager
-    def slot(self, priority=PRIORITY_ALERT):
+    def slot(self, priority=PRIORITY_ALERT, *, fail_when_deferred=False):
         self.priorities.append(priority)
+        self.fail_when_deferred.append(fail_when_deferred)
         yield self
 
     def defer(self, seconds):
@@ -113,6 +118,7 @@ def make_search(
     metrics=None,
     campsites=None,
     request_gate=None,
+    response_cache=None,
     request_priority=PRIORITY_ALERT,
 ):
     monkeypatch.setattr(
@@ -132,6 +138,7 @@ def make_search(
         sleep=lambda _seconds: None,
         request_gate=request_gate or ImmediateGate(),
         request_metrics=metrics or ProviderRequestMetrics(),
+        response_cache=(response_cache if response_cache is not None else SingleFlightTTLCache()),
         request_priority=request_priority,
     )
 
@@ -236,16 +243,13 @@ def test_429_defers_gate_by_retry_after_then_retries_successfully(monkeypatch):
     assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (2, 1, 0)
 
 
-def test_alert_requests_give_up_after_a_single_rate_limit_retry(monkeypatch):
-    """An alert scan re-runs within its interval, so it must not stack pauses."""
+def test_alert_requests_do_not_wait_for_a_rate_limit_retry(monkeypatch):
+    """An alert scan re-runs within its interval, so it must return promptly."""
     metrics = ProviderRequestMetrics()
     gate = ImmediateGate()
     search = make_search(
         monkeypatch,
-        session=QueueSession(
-            FakeResponse(status_code=429),
-            FakeResponse(status_code=429),
-        ),
+        session=QueueSession(FakeResponse(status_code=429)),
         metrics=metrics,
         request_gate=gate,
         request_priority=PRIORITY_ALERT,
@@ -256,9 +260,55 @@ def test_alert_requests_give_up_after_a_single_rate_limit_retry(monkeypatch):
 
     detection = detect_rate_limit(exc_info.value)
     assert detection.rate_limited is True
-    assert gate.deferrals == [30, 30]
+    assert gate.deferrals == [30]
+    assert gate.fail_when_deferred == [True]
     snapshot = metrics.snapshot()[0]
-    assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (2, 1, 1)
+    assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (1, 0, 1)
+
+
+def test_equivalent_stay_criteria_share_one_month_fetch(monkeypatch):
+    cache = SingleFlightTTLCache()
+    first_session = QueueSession(FakeResponse(payload={"campsites": {}}))
+    second_session = QueueSession()
+    one_night = make_search(
+        monkeypatch,
+        session=first_session,
+        nights=1,
+        response_cache=cache,
+    )
+    two_nights = make_search(
+        monkeypatch,
+        session=second_session,
+        nights=2,
+        response_cache=cache,
+    )
+
+    assert one_night._request_month(232447, date(2099, 8, 1)) == {"campsites": {}}
+    assert two_nights._request_month(232447, date(2099, 8, 1)) == {"campsites": {}}
+    assert len(first_session.calls) == 1
+    assert second_session.calls == []
+
+
+def test_alerts_do_not_reuse_dashboard_response_cache_entries(monkeypatch):
+    cache = SingleFlightTTLCache()
+    alert_session = QueueSession(FakeResponse(payload={"source": "alert"}))
+    dashboard_session = QueueSession(FakeResponse(payload={"source": "dashboard"}))
+    alert = make_search(
+        monkeypatch,
+        session=alert_session,
+        response_cache=cache,
+        request_priority=PRIORITY_ALERT,
+    )
+    dashboard = make_search(
+        monkeypatch,
+        session=dashboard_session,
+        response_cache=cache,
+        request_priority=PRIORITY_DASHBOARD,
+    )
+
+    assert alert._request_month(232447, date(2099, 8, 1)) == {"source": "alert"}
+    assert dashboard._request_month(232447, date(2099, 8, 1)) == {"source": "dashboard"}
+    assert len(alert_session.calls) == len(dashboard_session.calls) == 1
 
 
 def test_dashboard_requests_retry_rate_limits_twice_before_failing(monkeypatch):

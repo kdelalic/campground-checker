@@ -23,6 +23,7 @@ from ..request_gate import (
     PROVIDER_REQUEST_METRICS,
     ProviderRequestMetrics,
     RequestGate,
+    SingleFlightTTLCache,
     pause_gate_on_rate_limit,
 )
 
@@ -39,6 +40,7 @@ DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
 REQUESTS_PER_SECOND = 1
 MAX_CONCURRENT_REQUESTS = 2
+AVAILABILITY_RESPONSE_TTL_SECONDS = 30
 
 # A 429 is retryable here because `_pause_gate_if_rate_limited` has already
 # deferred the shared gate by `Retry-After` (or 30s) before we get to decide.
@@ -46,12 +48,11 @@ MAX_CONCURRENT_REQUESTS = 2
 # ready again instead of re-issuing immediately, so the backoff is the
 # provider's own rather than a fixed local delay.
 #
-# Alert requests get fewer of these than dashboard requests: a rate-limited
-# alert scan re-runs within `--alert-interval` anyway, so it is better to
-# return late-but-fresh on the next cycle than to stack multiple provider
-# pauses onto one latency-sensitive scan.
+# Alert requests do not retry a 429: the scan re-runs within
+# `--alert-interval`, so failing promptly is better than holding the foreground
+# scan through a provider pause. Dashboard requests retain bounded retries.
 DEFAULT_MAX_RATE_LIMIT_RETRIES = 2
-ALERT_MAX_RATE_LIMIT_RETRIES = 1
+ALERT_MAX_RATE_LIMIT_RETRIES = 0
 
 # These are Camply's current values, copied deliberately so unknown future
 # statuses continue to surface as potentially bookable instead of silently
@@ -156,6 +157,9 @@ REC_GOV_REQUEST_GATE = RequestGate(
     max_concurrent=MAX_CONCURRENT_REQUESTS,
     requests_per_second=REQUESTS_PER_SECOND,
 )
+REC_GOV_RESPONSE_CACHE = SingleFlightTTLCache(
+    ttl_seconds=AVAILABILITY_RESPONSE_TTL_SECONDS,
+)
 
 
 def _as_list(value) -> list:
@@ -191,6 +195,7 @@ class NativeSearchRecreationDotGov:
         sleep: Callable[[float], None] = time.sleep,
         request_gate: RequestGate | None = None,
         request_metrics: ProviderRequestMetrics | None = None,
+        response_cache: SingleFlightTTLCache | None = None,
         request_priority: int = PRIORITY_ALERT_REQUEST,
         **_kwargs,
     ):
@@ -207,6 +212,9 @@ class NativeSearchRecreationDotGov:
         self._sleep = sleep
         self._request_gate = request_gate or REC_GOV_REQUEST_GATE
         self._request_metrics = request_metrics or PROVIDER_REQUEST_METRICS
+        self._response_cache = (
+            response_cache if response_cache is not None else REC_GOV_RESPONSE_CACHE
+        )
         self.request_priority = request_priority
         self._max_rate_limit_retries = (
             ALERT_MAX_RATE_LIMIT_RETRIES
@@ -242,6 +250,13 @@ class NativeSearchRecreationDotGov:
             raise
 
     def _request_month(self, facility_id: int | str, month: date) -> dict:
+        key = (self.request_priority, str(facility_id), month.isoformat())
+        return self._response_cache.get_or_fetch(
+            key,
+            lambda: self._fetch_month(facility_id, month),
+        )
+
+    def _fetch_month(self, facility_id: int | str, month: date) -> dict:
         url = AVAILABILITY_URL.format(facility_id=facility_id)
         params = {"start_date": month.strftime("%Y-%m-01T00:00:00.000Z")}
         last_error: Exception | None = None
@@ -249,9 +264,12 @@ class NativeSearchRecreationDotGov:
         gate_paced = False
 
         for attempt in range(DEFAULT_MAX_ATTEMPTS):
-            self._request_metrics.record_attempt(self.provider_name)
             try:
-                with self._request_gate.slot(self.request_priority):
+                with self._request_gate.slot(
+                    self.request_priority,
+                    fail_when_deferred=self.request_priority == PRIORITY_ALERT_REQUEST,
+                ):
+                    self._request_metrics.record_attempt(self.provider_name)
                     response = self.session.get(
                         url,
                         params=params,

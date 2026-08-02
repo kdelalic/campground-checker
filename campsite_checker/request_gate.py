@@ -16,9 +16,10 @@ import heapq
 import logging
 import threading
 import time
+from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Hashable, TypeVar, cast
 
 from .throttle import detect_rate_limit
 
@@ -28,6 +29,112 @@ logger = logging.getLogger(__name__)
 # dispatcher into the provider layer.
 PRIORITY_ALERT_REQUEST = 0
 DEFAULT_RATE_LIMIT_PAUSE_SECONDS = 30.0
+_T = TypeVar("_T")
+
+
+class RequestDeferredError(Exception):
+    """Raised when latency-sensitive work refuses to wait out a gate pause."""
+
+    def __init__(self, seconds: float):
+        super().__init__(f"provider request temporarily paused ({seconds:.0f}s remaining)")
+        self.seconds = seconds
+
+
+class SharedFetchError(Exception):
+    """A coalesced follower failed because the fetch owner raised an error.
+
+    The owner's original exception remains the single source of provider
+    throttle classification. Reclassifying the same shared 429 in every
+    follower would inflate rate-limit counters and exponential backoff.
+    """
+
+    def __init__(self):
+        super().__init__("coalesced provider fetch failed; retry on the next scan")
+
+
+@dataclass(slots=True)
+class _InFlightFetch:
+    event: threading.Event
+    value: object | None = None
+    error: BaseException | None = None
+
+
+class SingleFlightTTLCache:
+    """Bounded response cache that coalesces concurrent identical fetches.
+
+    Provider clients use a cache shorter than the alert interval, so criteria
+    from the same scan can share raw availability without carrying a snapshot
+    into the next alert cycle. Failed fetches are never cached.
+    """
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = 30.0,
+        max_entries: int = 2048,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be greater than zero")
+        if max_entries < 1:
+            raise ValueError("max_entries must be at least one")
+        self.ttl_seconds = float(ttl_seconds)
+        self.max_entries = int(max_entries)
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._entries: OrderedDict[Hashable, tuple[float, object]] = OrderedDict()
+        self._in_flight: dict[Hashable, _InFlightFetch] = {}
+
+    def get_or_fetch(self, key: Hashable, fetch: Callable[[], _T]) -> _T:
+        """Return a fresh value, with one caller owning an uncached fetch."""
+        with self._lock:
+            cached = self._entries.get(key)
+            if cached is not None:
+                expires_at, value = cached
+                if expires_at > self._clock():
+                    self._entries.move_to_end(key)
+                    return cast(_T, value)
+                del self._entries[key]
+
+            in_flight = self._in_flight.get(key)
+            owner = in_flight is None
+            if owner:
+                in_flight = _InFlightFetch(event=threading.Event())
+                self._in_flight[key] = in_flight
+
+        if not owner:
+            in_flight.event.wait()
+            if in_flight.error is not None:
+                raise SharedFetchError
+            return cast(_T, in_flight.value)
+
+        try:
+            value = fetch()
+        except BaseException as exc:
+            with self._lock:
+                in_flight.error = exc
+                self._in_flight.pop(key, None)
+                in_flight.event.set()
+            raise
+
+        with self._lock:
+            in_flight.value = value
+            self._entries[key] = (self._clock() + self.ttl_seconds, value)
+            self._entries.move_to_end(key)
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+            self._in_flight.pop(key, None)
+            in_flight.event.set()
+        return value
+
+    def clear(self) -> None:
+        """Discard completed entries without interrupting active fetches."""
+        with self._lock:
+            self._entries.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._entries)
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +232,7 @@ class RequestGate:
         self._active = 0
         self._seq = 0
         self._next_start = 0.0
+        self._deferred_until = 0.0
 
     @property
     def deprioritized_slots(self) -> int:
@@ -154,12 +262,19 @@ class RequestGate:
     def defer(self, seconds: float) -> None:
         """Pause every future request start for at least ``seconds``."""
         with self._cond:
-            self._next_start = max(self._next_start, self._clock() + max(0.0, seconds))
+            deferred_until = self._clock() + max(0.0, seconds)
+            self._deferred_until = max(self._deferred_until, deferred_until)
+            self._next_start = max(self._next_start, deferred_until)
             self._cond.notify_all()
 
     @contextmanager
-    def slot(self, priority: int = PRIORITY_ALERT_REQUEST):
-        self._acquire(priority)
+    def slot(
+        self,
+        priority: int = PRIORITY_ALERT_REQUEST,
+        *,
+        fail_when_deferred: bool = False,
+    ):
+        self._acquire(priority, fail_when_deferred=fail_when_deferred)
         try:
             yield self
         finally:
@@ -173,7 +288,7 @@ class RequestGate:
         self._release(PRIORITY_ALERT_REQUEST)
         return False
 
-    def _acquire(self, priority: int) -> None:
+    def _acquire(self, priority: int, *, fail_when_deferred: bool = False) -> None:
         with self._cond:
             ticket = (priority, self._seq)
             self._seq += 1
@@ -182,6 +297,12 @@ class RequestGate:
         try:
             while True:
                 with self._cond:
+                    deferred_seconds = max(0.0, self._deferred_until - self._clock())
+                    if fail_when_deferred and deferred_seconds:
+                        self._waiting.remove(ticket)
+                        heapq.heapify(self._waiting)
+                        self._cond.notify_all()
+                        raise RequestDeferredError(deferred_seconds)
                     if self._waiting[0] == ticket and self._can_start_locked(priority):
                         delay = max(0.0, self._next_start - self._clock())
                         if not delay:

@@ -23,11 +23,12 @@ from campsite_checker.providers.reserve_california import (
     MAX_GRID_WINDOW_DAYS,
     METADATA_MAX_AGE_SECONDS,
     RESERVE_CALIFORNIA_REQUEST_GATE,
+    RESERVE_CALIFORNIA_RESPONSE_CACHE,
     NativeSearchReserveCalifornia,
     TimeoutReserveCalifornia,
     provider_class_for_priority,
 )
-from campsite_checker.request_gate import ProviderRequestMetrics
+from campsite_checker.request_gate import ProviderRequestMetrics, SingleFlightTTLCache
 from campsite_checker.results import process_results
 from campsite_checker.throttle import detect_rate_limit
 
@@ -36,16 +37,25 @@ PRIORITY_ALERT = 0
 PRIORITY_DASHBOARD = 1
 
 
+@pytest.fixture(autouse=True)
+def clear_response_cache():
+    RESERVE_CALIFORNIA_RESPONSE_CACHE.clear()
+    yield
+    RESERVE_CALIFORNIA_RESPONSE_CACHE.clear()
+
+
 class ImmediateGate:
     """Records slot priorities and deferrals without any real waiting."""
 
     def __init__(self):
         self.priorities = []
         self.deferrals = []
+        self.fail_when_deferred = []
 
     @contextmanager
-    def slot(self, priority=PRIORITY_ALERT):
+    def slot(self, priority=PRIORITY_ALERT, *, fail_when_deferred=False):
         self.priorities.append(priority)
+        self.fail_when_deferred.append(fail_when_deferred)
         yield self
 
     def defer(self, seconds):
@@ -357,6 +367,7 @@ def make_search(
     metrics=None,
     campsites=None,
     request_gate=None,
+    response_cache=None,
     request_priority=PRIORITY_ALERT,
 ):
     return NativeSearchReserveCalifornia(
@@ -370,6 +381,7 @@ def make_search(
         sleep=lambda _seconds: None,
         request_gate=request_gate or ImmediateGate(),
         request_metrics=metrics or ProviderRequestMetrics(),
+        response_cache=(response_cache if response_cache is not None else SingleFlightTTLCache()),
         request_priority=request_priority,
         provider=FakeIdentityProvider(),
     )
@@ -589,15 +601,12 @@ class TestRequestRetries:
         snapshot = metrics.snapshot()[0]
         assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (2, 1, 0)
 
-    def test_alert_requests_give_up_after_a_single_rate_limit_retry(self):
-        """An alert scan re-runs within its interval, so it must not stack pauses."""
+    def test_alert_requests_do_not_wait_for_a_rate_limit_retry(self):
+        """An alert scan re-runs within its interval, so it must return promptly."""
         metrics = ProviderRequestMetrics()
         gate = ImmediateGate()
         search = make_search(
-            session=QueueSession(
-                FakeResponse(status_code=429),
-                FakeResponse(status_code=429),
-            ),
+            session=QueueSession(FakeResponse(status_code=429)),
             metrics=metrics,
             request_gate=gate,
             request_priority=PRIORITY_ALERT,
@@ -607,9 +616,53 @@ class TestRequestRetries:
             search._request_window(786, date(2099, 8, 1), date(2099, 8, 21))
 
         assert detect_rate_limit(exc_info.value).rate_limited is True
-        assert gate.deferrals == [30, 30]
+        assert gate.deferrals == [30]
+        assert gate.fail_when_deferred == [True]
         snapshot = metrics.snapshot()[0]
-        assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (2, 1, 1)
+        assert (snapshot.attempts, snapshot.retries, snapshot.failures) == (1, 0, 1)
+
+    def test_equivalent_stay_criteria_share_one_grid_fetch(self):
+        cache = SingleFlightTTLCache()
+        first_session = QueueSession(FakeResponse(payload={"Facility": {}}))
+        second_session = QueueSession()
+        one_night = make_search(
+            session=first_session,
+            nights=1,
+            response_cache=cache,
+        )
+        two_nights = make_search(
+            session=second_session,
+            nights=2,
+            response_cache=cache,
+        )
+        start = date(2099, 8, 1)
+        end = date(2099, 8, 21)
+
+        assert one_night._request_window(786, start, end) == {"Facility": {}}
+        assert two_nights._request_window(786, start, end) == {"Facility": {}}
+        assert len(first_session.calls) == 1
+        assert second_session.calls == []
+
+    def test_alerts_do_not_reuse_dashboard_response_cache_entries(self):
+        cache = SingleFlightTTLCache()
+        alert_session = QueueSession(FakeResponse(payload={"source": "alert"}))
+        dashboard_session = QueueSession(FakeResponse(payload={"source": "dashboard"}))
+        alert = make_search(
+            session=alert_session,
+            response_cache=cache,
+            request_priority=PRIORITY_ALERT,
+        )
+        dashboard = make_search(
+            session=dashboard_session,
+            response_cache=cache,
+            request_priority=PRIORITY_DASHBOARD,
+        )
+        start = date(2099, 8, 1)
+        end = date(2099, 8, 21)
+
+        assert alert._request_window(786, start, end) == {"source": "alert"}
+        assert dashboard._request_window(786, start, end) == {"source": "dashboard"}
+        assert len(alert_session.calls) == len(dashboard_session.calls) == 1
 
     def test_dashboard_requests_retry_rate_limits_twice_before_failing(self):
         metrics = ProviderRequestMetrics()
