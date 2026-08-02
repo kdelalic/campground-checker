@@ -36,6 +36,26 @@ dashboard uses provider result coordinates when available.
 
 See [campsites.example.yaml](campsites.example.yaml) for all options and providers.
 
+One campground can search several arrival-day and stay-length combinations.
+For example, to check both a Friday-night stay and a Friday-plus-Saturday stay:
+
+```yaml
+campsites:
+  RecreationDotGov:
+    - campground_id: 232491
+      alert: true
+      criteria:
+        - days: [Friday]
+          nights: 1
+        - days: [Friday]
+          nights: 2
+```
+
+The dashboard groups matches by arrival date and stay length. When more than
+one stay length is configured, its Stay filter narrows campground cards,
+calendar counts, result totals, and map markers together. The selection is
+kept in the page URL so it survives refreshes and can be shared.
+
 ## Usage
 
 ```bash

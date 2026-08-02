@@ -233,11 +233,22 @@ class SiteView:
 
 
 @dataclass(frozen=True, slots=True)
+class StayView:
+    nights: int
+    label: str
+    range_label: str
+    count: int
+    sites: tuple[SiteView, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class DateRowView:
     iso: str
     label: str
     count: int
-    sites: tuple[SiteView, ...]
+    stays: tuple[StayView, ...]
+    nights_data: str
+    night_counts_data: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,6 +270,7 @@ class CardView:
     stale_timestamp_iso: str = ""
     latitude: float | None = None
     longitude: float | None = None
+    search_nights_data: str = ""
 
     @property
     def css_class(self) -> str:
@@ -291,6 +303,7 @@ class CalendarCell:
     # Rendered into the cell so the date-filter banner can name the selected
     # day without the static JS asset having to format dates itself.
     short_label: str = ""
+    night_counts_data: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,6 +415,7 @@ def build_calendar_months(
     start: date | None = None,
     end: date | None = None,
     day_filter: frozenset[int] | set[int] | None = None,
+    availability_by_nights: dict[date, dict[int, int]] | None = None,
 ) -> list[CalendarMonth]:
     """Lay out the complete searched range, including dates with no results."""
     if start is None and not all_availabilities:
@@ -426,6 +440,7 @@ def build_calendar_months(
                 if d.month != curr_month:
                     cells.append(CalendarCell(kind="empty"))
                 elif count > 0:
+                    night_counts = (availability_by_nights or {}).get(d, {})
                     cells.append(
                         CalendarCell(
                             kind="available",
@@ -434,6 +449,10 @@ def build_calendar_months(
                             count=count,
                             label=f"{d.strftime('%B %-d, %Y')} — {count} site(s) available",
                             short_label=d.strftime("%a, %b %-d"),
+                            night_counts_data=",".join(
+                                f"{nights}:{night_count}"
+                                for nights, night_count in sorted(night_counts.items())
+                            ),
                         )
                     )
                 elif min_date <= d <= max_date and (
@@ -467,20 +486,6 @@ def build_calendar_months(
     return months
 
 
-def group_sites_by_date(
-    campsites: tuple[AvailableCampsite, ...],
-) -> dict[date, list[AvailableCampsite]]:
-    """Group already-deduplicated campsites by their booking date."""
-    grouped: dict[date, list[AvailableCampsite]] = defaultdict(list)
-    for site in campsites:
-        grouped[site.booking_date.date()].append(site)
-    for sites in grouped.values():
-        sites.sort(
-            key=lambda s: (str(getattr(s, "campsite_site_name", "") or ""), str(s.campsite_id))
-        )
-    return grouped
-
-
 def build_site_views(sites: list[AvailableCampsite]) -> tuple[SiteView, ...]:
     views = []
     for site in sites:
@@ -494,6 +499,33 @@ def build_site_views(sites: list[AvailableCampsite]) -> tuple[SiteView, ...]:
             )
         )
     return tuple(views)
+
+
+def build_stay_views(
+    booking_date: date,
+    options: dict[int, tuple[AvailableCampsite, ...]],
+) -> tuple[StayView, ...]:
+    """Build duration-specific options for one arrival date."""
+    stays = []
+    for nights, sites in sorted(options.items()):
+        sorted_sites = sorted(
+            sites,
+            key=lambda site: (
+                str(getattr(site, "campsite_site_name", "") or ""),
+                str(site.campsite_id),
+            ),
+        )
+        checkout = booking_date + timedelta(days=nights)
+        stays.append(
+            StayView(
+                nights=nights,
+                label=f"{nights} night" if nights == 1 else f"{nights} nights",
+                range_label=f"{booking_date.strftime('%a')} → {checkout.strftime('%a')}",
+                count=len({site.campsite_id for site in sorted_sites}),
+                sites=build_site_views(sorted_sites),
+            )
+        )
+    return tuple(stays)
 
 
 def get_map_coordinates(availability: ProcessedAvailability) -> tuple[float, float] | None:
@@ -560,18 +592,26 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
             stale_timestamp_iso=stale_timestamp_iso,
             latitude=latitude,
             longitude=longitude,
+            search_nights_data=",".join(str(nights) for nights in entry_nights(entry)),
         )
 
-    sites_by_date = group_sites_by_date(availability.campsites)
-    rows = tuple(
-        DateRowView(
-            iso=d.isoformat(),
-            label=d.strftime("%a, %b %-d"),
-            count=len(availability.campsite_ids_by_date[d]),
-            sites=build_site_views(sites_by_date.get(d, [])),
+    rows = []
+    for booking_date in sorted(availability.campsite_ids_by_date):
+        stays = build_stay_views(
+            booking_date,
+            availability.stay_options_by_date.get(booking_date, {}),
         )
-        for d in sorted(availability.campsite_ids_by_date)
-    )
+        rows.append(
+            DateRowView(
+                iso=booking_date.isoformat(),
+                label=booking_date.strftime("%a, %b %-d"),
+                count=len(availability.campsite_ids_by_date[booking_date]),
+                stays=stays,
+                nights_data=",".join(str(stay.nights) for stay in stays),
+                night_counts_data=",".join(f"{stay.nights}:{stay.count}" for stay in stays),
+            )
+        )
+    rows = tuple(rows)
     return CardView(
         id=card_id,
         name=name,
@@ -591,6 +631,7 @@ def build_card_view(availability: ProcessedAvailability, card_id: str) -> CardVi
         stale_timestamp_iso=stale_timestamp_iso,
         latitude=latitude,
         longitude=longitude,
+        search_nights_data=",".join(str(nights) for nights in entry_nights(entry)),
     )
 
 
@@ -646,12 +687,18 @@ def build_dashboard_html(
     map_cards = [card for card in cards if card.latitude is not None and card.longitude is not None]
 
     all_availabilities: dict[date, int] = defaultdict(int)
+    availability_by_nights: dict[date, dict[int, int]] = defaultdict(lambda: defaultdict(int))
     for availability in availabilities:
         # Retained last-known-good rows are shown inside their failed card but
         # never painted green in the calendar or counted as current results.
         if availability.available and availability.last_successful_at is None:
             for booking_date, campsite_ids in availability.campsite_ids_by_date.items():
                 all_availabilities[booking_date] += len(campsite_ids)
+            for booking_date, options in availability.stay_options_by_date.items():
+                for nights, sites in options.items():
+                    availability_by_nights[booking_date][nights] += len(
+                        {site.campsite_id for site in sites}
+                    )
 
     stats = None
     if cards:
@@ -693,8 +740,23 @@ def build_dashboard_html(
                 calendar_start,
                 calendar_end,
                 calendar_day_filter,
+                availability_by_nights,
             ),
             cards=cards,
+            stay_lengths=sorted(
+                {
+                    nights
+                    for availability in availabilities
+                    for nights in (
+                        entry_nights(availability.entry)
+                        + [
+                            option_nights
+                            for options in availability.stay_options_by_date.values()
+                            for option_nights in options
+                        ]
+                    )
+                }
+            ),
             map_cards=map_cards,
             available_cards=[card for card in cards if card.state == "available"],
             failed_cards=[card for card in cards if card.state == "failed"],

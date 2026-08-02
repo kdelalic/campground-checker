@@ -24,7 +24,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const dateFilterLabel = document.getElementById("date-filter-label");
   const searchInput = document.getElementById("campground-search");
   const statusFilter = document.getElementById("status-filter");
+  const stayFilter = document.getElementById("stay-filter");
   const emptyResults = document.getElementById("empty-results");
+  const emptyResultCount = document.getElementById("empty-result-count");
+  const emptyResultUnit = document.getElementById("empty-result-unit");
   const mapElement = document.getElementById("campground-map");
   const mapResultCount = document.getElementById("map-result-count");
   const mapEmpty = document.getElementById("map-empty");
@@ -94,6 +97,24 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${value} ${value === 1 ? singular : pluralForm}`;
   }
 
+  function parseNightCounts(value) {
+    const counts = new Map();
+    (value || "").split(",").forEach((part) => {
+      const [nights, count] = part.split(":");
+      if (nights && count) counts.set(nights, parseInt(count, 10));
+    });
+    return counts;
+  }
+
+  function selectedStay() {
+    return stayFilter ? stayFilter.value : "any";
+  }
+
+  function stayLabel(stay) {
+    if (stay === "any") return "";
+    return `${stay}-night ${stay === "1" ? "stay" : "stays"}`;
+  }
+
   function updateSnapshot(values = {}) {
     Object.entries(snapshotFields).forEach(([name, element]) => {
       if (element) element.textContent = values[name] ?? defaultSnapshotText[name];
@@ -150,6 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const params = new URLSearchParams(window.location.search);
     const query = searchInput ? searchInput.value.trim() : "";
     const status = statusFilter ? statusFilter.value : "actionable";
+    const stay = selectedStay();
     const month = currentMonthValue();
     if (activeDate) params.set("date", activeDate);
     else params.delete("date");
@@ -157,6 +179,8 @@ document.addEventListener("DOMContentLoaded", () => {
     else params.delete("q");
     if (status !== "actionable") params.set("status", status);
     else params.delete("status");
+    if (stay !== "any") params.set("nights", stay);
+    else params.delete("nights");
     if (month) params.set("month", month);
     else params.delete("month");
     const nextUrl = `${window.location.pathname}${params.toString() ? `?${params}` : ""}${window.location.hash}`;
@@ -205,7 +229,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function mapEntryStatus(entry) {
-    if (entry.state === "available") return entry.availability;
+    if (entry.state === "available") {
+      const card = document.getElementById(entry.cardId);
+      const badge = card ? card.querySelector(".site-count-availability") : null;
+      return badge ? badge.textContent : entry.availability;
+    }
     if (entry.state === "failed") return "Failed or stale scan";
     return "No availability";
   }
@@ -371,6 +399,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyFilters({ sync = true } = {}) {
     const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
     const status = statusFilter ? statusFilter.value : "actionable";
+    const stay = selectedStay();
+    const hasStayFilter = stay !== "any";
     let visibleCards = 0;
     let visibleOpenings = 0;
     let visibleEmptyCards = 0;
@@ -379,20 +409,34 @@ document.addEventListener("DOMContentLoaded", () => {
       const cardState = card.getAttribute("data-state") || "";
       const nameMatches = (card.getAttribute("data-name") || "").includes(query);
       const stateMatches = statusMatches(cardState, status, query);
-      let dateMatches = !activeDate;
+      const searchedNights = (card.getAttribute("data-search-nights") || "").split(",");
+      const searchedStayMatches = !hasStayFilter || searchedNights.includes(stay);
+      let resultMatches = !activeDate && !hasStayFilter;
       let dateOpenings = 0;
 
       card.querySelectorAll("tbody tr").forEach((row) => {
-        const rowMatches = !activeDate || row.getAttribute("data-date") === activeDate;
+        const dateMatches = !activeDate || row.getAttribute("data-date") === activeDate;
+        const rowNights = (row.getAttribute("data-nights") || "").split(",");
+        const stayMatches = !hasStayFilter || rowNights.includes(stay);
+        const rowMatches = dateMatches && stayMatches;
         row.hidden = !rowMatches;
+        row.querySelectorAll(".stay-option, .available-badge[data-nights]").forEach((option) => {
+          option.hidden = hasStayFilter && option.getAttribute("data-nights") !== stay;
+        });
         if (rowMatches) {
-          dateMatches = true;
-          dateOpenings += parseInt(row.getAttribute("data-count") || "0", 10);
+          resultMatches = true;
+          const nightCounts = parseNightCounts(row.getAttribute("data-night-counts"));
+          dateOpenings += hasStayFilter
+            ? nightCounts.get(stay) || 0
+            : parseInt(row.getAttribute("data-count") || "0", 10);
         }
       });
-      if (activeDate && cardState !== "available") dateMatches = false;
+      if (!card.querySelector("tbody tr")) {
+        resultMatches = !activeDate && searchedStayMatches;
+      }
+      if (activeDate && cardState !== "available") resultMatches = false;
 
-      const visible = nameMatches && stateMatches && dateMatches;
+      const visible = nameMatches && stateMatches && resultMatches;
       // Empty cards stay rendered inside their closed disclosure in the
       // default view so "Show checked campgrounds" remains useful.
       const visibleInsideDisclosure = (
@@ -400,6 +444,7 @@ document.addEventListener("DOMContentLoaded", () => {
         && status === "actionable"
         && !query
         && !activeDate
+        && searchedStayMatches
       );
       card.hidden = !(visible || visibleInsideDisclosure);
       // Confirmed-empty cards remain part of the default collapsed results,
@@ -412,8 +457,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!availabilityBadge.dataset.defaultText) {
           availabilityBadge.dataset.defaultText = availabilityBadge.textContent;
         }
-        availabilityBadge.textContent = activeDate && visible
-          ? `${plural(dateOpenings, "opening", "openings")} on this date`
+        const filtered = activeDate || hasStayFilter;
+        const context = [
+          activeDate ? "on this date" : "",
+          hasStayFilter ? `for ${stayLabel(stay)}` : "",
+        ].filter(Boolean).join(" ");
+        availabilityBadge.textContent = filtered && visible
+          ? `${plural(dateOpenings, "opening", "openings")} ${context}`
           : availabilityBadge.dataset.defaultText;
       }
 
@@ -424,7 +474,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const navCount = navItem.querySelector(".nav-count");
         if (navCount) {
           if (!navCount.dataset.defaultText) navCount.dataset.defaultText = navCount.textContent;
-          if (activeDate && visible && cardState === "available") {
+          if ((activeDate || hasStayFilter) && visible && cardState === "available") {
             navCount.textContent = dateOpenings;
           } else {
             navCount.textContent = navCount.dataset.defaultText;
@@ -434,17 +484,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (visible) {
         visibleCards += 1;
-        visibleOpenings += activeDate
+        visibleOpenings += activeDate || hasStayFilter
           ? dateOpenings
           : parseInt(card.getAttribute("data-openings") || "0", 10);
-        if (cardState === "empty") visibleEmptyCards += 1;
       }
+      if ((visible || visibleInsideDisclosure) && cardState === "empty") visibleEmptyCards += 1;
     });
 
     availButtons.forEach((button) => {
+      const nightCounts = parseNightCounts(button.getAttribute("data-night-counts"));
+      const count = hasStayFilter
+        ? nightCounts.get(stay) || 0
+        : parseInt(button.getAttribute("data-count") || "0", 10);
+      const countElement = button.querySelector(".calendar-count");
+      if (countElement) countElement.textContent = String(count);
+      button.disabled = hasStayFilter && count === 0;
       const selected = button.getAttribute("data-date") === activeDate;
       button.classList.toggle("selected-date", selected);
       button.setAttribute("aria-pressed", selected ? "true" : "false");
+      button.setAttribute(
+        "aria-label",
+        `${button.getAttribute("data-label")} — ${plural(count, "site", "sites")} available${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`,
+      );
     });
 
     const selectedButton = availButtons.find(
@@ -470,6 +531,10 @@ document.addEventListener("DOMContentLoaded", () => {
       emptyResults.hidden = !showEmptySummary;
       if (status === "all" || query) emptyResults.open = visibleEmptyCards > 0;
     }
+    if (emptyResultCount) emptyResultCount.textContent = String(visibleEmptyCards);
+    if (emptyResultUnit) {
+      emptyResultUnit.textContent = visibleEmptyCards === 1 ? "campground" : "campgrounds";
+    }
 
     syncMapMarkers();
     if (resultCount) resultCount.textContent = `${plural(visibleCards, "campground", "campgrounds")} shown`;
@@ -482,29 +547,29 @@ document.addEventListener("DOMContentLoaded", () => {
         primaryLabel: "Campgrounds",
         primaryValue: String(visibleCards),
         primarySuffix: "",
-        primaryDetail: `open on ${selectedDateLabel}`,
+        primaryDetail: `open on ${selectedDateLabel}${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`,
         secondaryLabel: "Open sites",
         secondaryValue: String(visibleOpenings),
-        secondaryDetail: "across the selected date",
+        secondaryDetail: hasStayFilter ? `matching ${stayLabel(stay)}` : "across the selected date",
       });
-    } else if (query || status !== "actionable") {
+    } else if (query || status !== "actionable" || hasStayFilter) {
       updateSnapshot({
         primaryLabel: "Campgrounds",
         primaryValue: String(visibleCards),
         primarySuffix: "",
-        primaryDetail: "match the current filters",
+        primaryDetail: hasStayFilter ? `offer ${stayLabel(stay)}` : "match the current filters",
         secondaryLabel: "Open sites",
         secondaryValue: String(visibleOpenings),
-        secondaryDetail: "across visible results",
+        secondaryDetail: hasStayFilter ? `matching ${stayLabel(stay)}` : "across visible results",
       });
     } else {
       updateSnapshot();
     }
     if (statLine) {
       if (activeDate) {
-        statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"} on ${selectedDateLabel}`;
-      } else if (query || status !== "actionable") {
-        statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} shown · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"}`;
+        statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"} on ${selectedDateLabel}${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`;
+      } else if (query || status !== "actionable" || hasStayFilter) {
+        statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} shown · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"}${hasStayFilter ? ` matching ${stayLabel(stay)}` : ""}`;
       } else {
         statLine.innerHTML = defaultStatHtml;
       }
@@ -552,6 +617,25 @@ document.addEventListener("DOMContentLoaded", () => {
     statusFilter.value = allowedStatuses.has(storedStatus) ? storedStatus : "actionable";
     statusFilter.addEventListener("change", () => applyFilters());
   }
+  if (stayFilter) {
+    const storedStay = urlParams.get("nights");
+    const validStay = Array.from(stayFilter.options).some(
+      (option) => option.value === storedStay,
+    );
+    stayFilter.value = validStay ? storedStay : "any";
+    stayFilter.addEventListener("change", () => {
+      if (activeDate) {
+        const selectedButton = availButtons.find(
+          (button) => button.getAttribute("data-date") === activeDate,
+        );
+        const selectedCount = selectedButton
+          ? parseNightCounts(selectedButton.getAttribute("data-night-counts")).get(selectedStay()) || 0
+          : 0;
+        if (selectedStay() !== "any" && selectedCount === 0) activeDate = null;
+      }
+      applyFilters();
+    });
+  }
   if (emptyResults) {
     emptyResults.addEventListener("toggle", () => {
       const label = emptyResults.querySelector(".empty-toggle-label");
@@ -565,7 +649,12 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(updateFreshness, 60 * 1000);
   const storedDate = urlParams.get("date");
   const storedDateExists = availButtons.some(
-    (button) => button.getAttribute("data-date") === storedDate,
+    (button) => {
+      if (button.getAttribute("data-date") !== storedDate) return false;
+      const stay = selectedStay();
+      return stay === "any"
+        || (parseNightCounts(button.getAttribute("data-night-counts")).get(stay) || 0) > 0;
+    },
   );
   filterByDate(storedDateExists ? storedDate : null, false);
 
