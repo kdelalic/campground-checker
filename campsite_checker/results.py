@@ -46,6 +46,11 @@ class ProcessedAvailability:
     facility_name: str
     booking_url: str
     campsite_ids_by_date: dict[date, frozenset[int | str]]
+    # Every confirmed stay option, grouped by arrival date and requested
+    # length. ``campsites`` remains deduplicated by (site, date) for existing
+    # notification/count semantics; this richer view lets the dashboard show
+    # that the same site supports, for example, both one- and two-night stays.
+    stay_options_by_date: dict[date, dict[int, tuple[AvailableCampsite, ...]]]
     notification_keys: frozenset[NotificationKey]
     total_sites: int
     search_succeeded: bool = True
@@ -82,12 +87,23 @@ def availability_fingerprint(
             ]
             for booking_date, campsite_ids in sorted(availability.campsite_ids_by_date.items())
         ]
+        stay_options = [
+            [
+                booking_date.isoformat(),
+                [
+                    [nights, sorted((site.campsite_id for site in sites), key=str)]
+                    for nights, sites in sorted(options.items())
+                ],
+            ]
+            for booking_date, options in sorted(availability.stay_options_by_date.items())
+        ]
         payload.append(
             {
                 "entry": entry_identity,
                 "facility_name": availability.facility_name,
                 "booking_url": availability.booking_url,
                 "dates": dates,
+                "stay_options": stay_options,
                 # A failure -> success transition renders differently even when
                 # the (empty) date set is identical, so it must rewrite the page.
                 "search_succeeded": availability.search_succeeded,
@@ -177,10 +193,19 @@ def process_filtered_results(
 ) -> ProcessedAvailability:
     """Deduplicate and normalize results that have already been filtered."""
     seen: set[tuple[int | str, date]] = set()
+    stay_seen: set[tuple[int | str, date, int]] = set()
     unique: list[AvailableCampsite] = []
     by_date: dict[date, set[int | str]] = defaultdict(set)
+    stay_options: dict[date, dict[int, list[AvailableCampsite]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     for result in results:
         booking_date = result.booking_date.date()
+        nights = int(getattr(result, "booking_nights", None) or entry.get("nights", 1))
+        stay_key = (result.campsite_id, booking_date, nights)
+        if stay_key not in stay_seen:
+            stay_seen.add(stay_key)
+            stay_options[booking_date][nights].append(result)
         key = (result.campsite_id, booking_date)
         if key not in seen:
             seen.add(key)
@@ -191,6 +216,10 @@ def process_filtered_results(
     url = get_booking_url(unique)
 
     frozen_by_date = {booking_date: frozenset(ids) for booking_date, ids in by_date.items()}
+    frozen_stay_options = {
+        booking_date: {nights: tuple(sites) for nights, sites in sorted(options.items())}
+        for booking_date, options in sorted(stay_options.items())
+    }
     notification_keys = frozenset(make_notification_key(entry, name, result) for result in unique)
     return ProcessedAvailability(
         entry=entry,
@@ -198,6 +227,7 @@ def process_filtered_results(
         facility_name=name,
         booking_url=url,
         campsite_ids_by_date=frozen_by_date,
+        stay_options_by_date=frozen_stay_options,
         notification_keys=notification_keys,
         total_sites=len(unique),
         search_succeeded=search_succeeded,

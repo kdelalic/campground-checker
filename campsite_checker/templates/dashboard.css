@@ -301,6 +301,7 @@ h1 {
 }
 .calendar-controls select,
 .status-control select,
+.stay-control select,
 .search-control input {
   min-height: 43px;
   padding: 9px 11px;
@@ -315,6 +316,7 @@ h1 {
 .calendar-controls select { flex: 1 1 180px; min-width: 0; cursor: pointer; }
 .calendar-controls select:focus,
 .status-control select:focus,
+.stay-control select:focus,
 .search-control input:focus {
   border-color: var(--tent);
   box-shadow: 0 0 0 3px rgb(209 61 39 / 15%);
@@ -422,6 +424,13 @@ h1 {
 .calendar-available button.selected-date {
   border-color: var(--tent);
   box-shadow: inset 0 0 0 2px var(--tent);
+}
+.calendar-available button:disabled {
+  border-color: var(--line-strong);
+  background: var(--paper-muted);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 .calendar-count {
   display: inline-grid;
@@ -660,7 +669,7 @@ h1 {
 }
 .results-toolbar {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(205px, auto);
+  grid-template-columns: minmax(240px, 1fr) minmax(205px, auto) minmax(160px, auto);
   gap: 12px;
   padding: 11px;
   margin: 0 0 12px;
@@ -669,7 +678,8 @@ h1 {
   background: var(--paper-muted);
 }
 .search-control,
-.status-control {
+.status-control,
+.stay-control {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -679,6 +689,7 @@ h1 {
 }
 .search-control input { min-width: 0; width: 100%; }
 .status-control select { min-width: 182px; cursor: pointer; }
+.stay-control select { min-width: 150px; cursor: pointer; }
 
 .quick-nav {
   display: grid;
@@ -835,6 +846,32 @@ details.date-detail summary {
   list-style-position: outside;
 }
 details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
+.stay-options { margin-top: 10px; }
+.stay-option + .stay-option {
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.stay-option-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+}
+.stay-option-heading > span:first-child {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.stay-option-heading small { color: var(--ink-soft); font-size: 0.7rem; }
+.stay-option-count {
+  flex: 0 0 auto;
+  color: var(--pine);
+  font-size: 0.7rem;
+  font-weight: 780;
+}
 .site-list { margin: 9px 0 0; padding: 0 0 0 3px; list-style: none; }
 .site-list li {
   display: flex;
@@ -866,6 +903,12 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   font-size: 0.78rem;
   font-weight: 780;
   white-space: nowrap;
+}
+.stay-count-list {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 4px;
 }
 .book-action {
   display: flex;
@@ -979,8 +1022,8 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   .map-description { font-size: 0.69rem; }
   .map-legend { align-items: flex-start; justify-content: flex-start; gap: 7px 14px; }
   .results-toolbar { grid-template-columns: 1fr; }
-  .search-control, .status-control { align-items: stretch; flex-direction: column; gap: 4px; }
-  .status-control select { width: 100%; }
+  .search-control, .status-control, .stay-control { align-items: stretch; flex-direction: column; gap: 4px; }
+  .status-control select, .stay-control select { width: 100%; }
   .quick-nav { grid-template-columns: 1fr; gap: 7px; }
   .quick-nav h3 { margin-top: 0; }
   .quick-nav ul { grid-template-columns: minmax(0, 1fr); }
@@ -992,6 +1035,8 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   .table-container { padding: 3px 8px 9px; }
   th, td { padding: 9px 7px; font-size: 0.78rem; }
   .site-list li { align-items: flex-start; flex-direction: column; gap: 5px; padding: 7px 0; }
+  .stay-option-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .stay-count-list { align-items: flex-start; }
   .site-book-link { min-height: 35px; }
   .book-action { padding: 12px 14px 14px; }
   .book-link { width: 100%; min-height: 43px; text-align: center; }
@@ -1033,6 +1078,7 @@ details.date-detail summary::marker { color: var(--tent); font-size: 0.75em; }
   }
   .calendar-controls select,
   .status-control select,
+  .stay-control select,
   .search-control input,
   .calendar-controls button { color-scheme: dark; }
   .calendar-searched-empty > span {

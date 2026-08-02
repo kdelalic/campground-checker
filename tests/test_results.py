@@ -217,6 +217,24 @@ class TestProcessedAvailability:
 
         assert [result.campsite_id for result in processed.campsites] == [1]
 
+    def test_preserves_distinct_stay_lengths_without_double_counting_sites(self):
+        arrival = datetime(2026, 7, 3)
+        results = [
+            make_campsite(campsite_id=1, booking_date=arrival, booking_nights=1),
+            make_campsite(campsite_id=1, booking_date=arrival, booking_nights=2),
+            make_campsite(campsite_id=2, booking_date=arrival, booking_nights=1),
+        ]
+
+        processed = process_filtered_results({}, results)
+
+        assert processed.total_sites == 2
+        assert len(processed.campsites) == 2
+        options = processed.stay_options_by_date[date(2026, 7, 3)]
+        assert [site.campsite_id for site in options[1]] == [1, 2]
+        assert [site.campsite_id for site in options[2]] == [1]
+        # A longer stay for the same site/date remains the same notification.
+        assert len(processed.notification_keys) == 2
+
     def test_fingerprint_changes_only_with_semantic_state(self):
         entry = {"provider": "RecreationDotGov", "campground_id": 100}
         first = process_results(entry, [make_campsite(campsite_id=1)], None)
@@ -238,6 +256,17 @@ class TestProcessedAvailability:
         assert availability_fingerprint([failed]) == availability_fingerprint(
             [process_filtered_results(entry, [], search_succeeded=False)]
         )
+
+    def test_fingerprint_tracks_stay_length_options(self):
+        entry = {"provider": "RecreationDotGov", "campground_id": 100}
+        one_night = process_filtered_results(
+            entry, [make_campsite(campsite_id=1, booking_nights=1)]
+        )
+        two_nights = process_filtered_results(
+            entry, [make_campsite(campsite_id=1, booking_nights=2)]
+        )
+
+        assert availability_fingerprint([one_night]) != availability_fingerprint([two_nights])
 
     def test_fingerprint_tracks_map_coordinates(self):
         first = process_filtered_results(

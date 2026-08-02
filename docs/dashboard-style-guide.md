@@ -283,6 +283,7 @@ The layout has two maintained breakpoints:
 - Masthead and freshness information stack.
 - Summary values become two columns, with the third spanning both.
 - Search criteria stack into labeled rows.
+- Campground search, status, and stay-length filters stack to full-width controls.
 - Search and status controls become one column.
 - Calendar spacing and date cells become more compact.
 - The map uses a fixed compact height and its legend wraps below it.

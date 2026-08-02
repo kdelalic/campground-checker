@@ -226,6 +226,82 @@ class TestPerSiteDetail:
         assert "&lt;script&gt;x&lt;/script&gt;" in content
         assert "A &amp; B" in content
 
+    def test_multiple_stay_lengths_are_grouped_under_the_arrival_date(self):
+        arrival = datetime(2026, 7, 3)
+        availability = process_filtered_results(
+            {"name": "Kirby Cove", "_searched_nights": [1, 2]},
+            [
+                make_campsite(
+                    campsite_id=1,
+                    campsite_site_name="A1",
+                    booking_date=arrival,
+                    booking_nights=1,
+                ),
+                make_campsite(
+                    campsite_id=1,
+                    campsite_site_name="A1",
+                    booking_date=arrival,
+                    booking_nights=2,
+                ),
+                make_campsite(
+                    campsite_id=2,
+                    campsite_site_name="B2",
+                    booking_date=arrival,
+                    booking_nights=1,
+                ),
+            ],
+        )
+
+        content = render([availability])
+
+        assert 'data-date="2026-07-03" data-count="2" data-nights="1,2"' in content
+        assert '<section class="stay-option" data-nights="1">' in content
+        assert '<section class="stay-option" data-nights="2">' in content
+        assert "<strong>1 night</strong><small>Fri → Sat</small>" in content
+        assert "<strong>2 nights</strong><small>Fri → Sun</small>" in content
+        assert "2 sites · 1 night" in content
+        assert "1 site · 2 nights" in content
+
+
+class TestStayFilter:
+    @staticmethod
+    def availability():
+        arrival = datetime(2026, 7, 3)
+        return process_filtered_results(
+            {"name": "Kirby Cove", "_searched_nights": [1, 2]},
+            [
+                make_campsite(campsite_id=1, booking_date=arrival, booking_nights=1),
+                make_campsite(campsite_id=1, booking_date=arrival, booking_nights=2),
+                make_campsite(campsite_id=2, booking_date=arrival, booking_nights=1),
+            ],
+        )
+
+    def test_control_and_filter_metadata_are_rendered(self):
+        content = render([self.availability()])
+
+        assert 'id="stay-filter"' in content
+        assert '<option value="any">Any searched stay</option>' in content
+        assert '<option value="1">1 night</option>' in content
+        assert '<option value="2">2 nights</option>' in content
+        assert 'data-search-nights="1,2"' in content
+        assert 'data-night-counts="1:2,2:1"' in content
+
+    def test_filter_updates_rows_calendar_url_counts_and_map(self):
+        content = render([self.availability()])
+
+        assert 'params.set("nights", stay)' in content
+        assert 'urlParams.get("nights")' in content
+        assert 'row.getAttribute("data-night-counts")' in content
+        assert 'option.getAttribute("data-nights") !== stay' in content
+        assert 'button.getAttribute("data-night-counts")' in content
+        assert "button.disabled = hasStayFilter && count === 0" in content
+        assert "card.dataset.mapVisible = visible || visibleInsideDisclosure" in content
+
+    def test_single_stay_length_does_not_add_a_redundant_control(self):
+        content = render([process_filtered_results({}, [make_campsite(booking_nights=1)])])
+
+        assert 'id="stay-filter"' not in content
+
 
 class TestRefreshAndAccessibility:
     def test_page_refreshes_itself_only_while_visible(self):
@@ -527,6 +603,15 @@ class TestViewModels:
         assert [(cell.iso, cell.count) for cell in available] == [("2026-08-02", 3)]
         # Days from the neighbouring months render as blanks, not as 0-count days.
         assert any(cell.kind == "empty" for cell in cells)
+
+    def test_calendar_carries_counts_for_each_stay_length(self):
+        (month,) = build_calendar_months(
+            {date(2026, 8, 2): 4},
+            availability_by_nights={date(2026, 8, 2): {1: 4, 2: 2}},
+        )
+        available = [cell for week in month.weeks for cell in week if cell.kind == "available"]
+
+        assert available[0].night_counts_data == "1:4,2:2"
 
     def test_calendar_is_empty_without_availability(self):
         assert build_calendar_months({}) == []

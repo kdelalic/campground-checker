@@ -18,6 +18,10 @@
 # Optional:
 #   campsite_id     - Specific site ID (int or list) to narrow the search
 #   nights          - Minimum consecutive nights required. Default: 1
+#   days            - Arrival weekdays for this campground, e.g. [Friday]
+#   criteria        - Alternate arrival-day/stay-length combinations. Each
+#                     item accepts days and nights. Cannot be combined with
+#                     the entry-level days option.
 #   weekends_only   - true/false. Default: false
 #   alert           - true/false. Default: false
 #                     Set to true to enable Telegram alerts for this campground.
@@ -96,7 +100,11 @@ campsites:
     - campground_id: 234429
       campsite_id: 7834              # Pin to one specific site
       alert: true                    # Enable Telegram alerts for this campground
-      nights: 1
+      criteria:                      # Search both Friday stay options
+        - days: [Friday]
+          nights: 1                  # Friday night, Saturday checkout
+        - days: [Friday]
+          nights: 2                  # Friday + Saturday nights, Sunday checkout
 
   # ── Yellowstone ─────────────────────────────────────────────────────────────
   # Find IDs with: camply campgrounds --provider Yellowstone
