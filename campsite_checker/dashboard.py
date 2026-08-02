@@ -447,7 +447,10 @@ def build_calendar_months(
                             day=d.day,
                             iso=d.isoformat(),
                             count=count,
-                            label=f"{d.strftime('%B %-d, %Y')} — {count} site(s) available",
+                            label=(
+                                f"{d.strftime('%B %-d, %Y')} — "
+                                f"{count} site(s) available for arrival"
+                            ),
                             short_label=d.strftime("%a, %b %-d"),
                             night_counts_data=",".join(
                                 f"{nights}:{night_count}"
@@ -463,7 +466,9 @@ def build_calendar_months(
                             kind="searched",
                             day=d.day,
                             iso=d.isoformat(),
-                            label=f"{d.strftime('%B %-d, %Y')} — searched, no availability",
+                            label=(
+                                f"{d.strftime('%B %-d, %Y')} — arrival checked, no availability"
+                            ),
                         )
                     )
                 else:

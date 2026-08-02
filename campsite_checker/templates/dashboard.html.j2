@@ -30,8 +30,8 @@
 {% if card.rows %}
 <div class="table-container">
 <table>
-<caption class="sr-only">Available dates and campsites for {{ card.name }}</caption>
-<thead><tr><th scope="col">Date</th><th scope="col">Availability</th></tr></thead>
+<caption class="sr-only">Available arrival dates and campsites for {{ card.name }}</caption>
+<thead><tr><th scope="col">Arrival date</th><th scope="col">Availability</th></tr></thead>
 <tbody>
 {% for row in card.rows %}
 <tr data-date="{{ row.iso }}" data-count="{{ row.count }}" data-nights="{{ row.nights_data }}" data-night-counts="{{ row.night_counts_data }}">
@@ -112,7 +112,7 @@
 {% endif %}
 {% if search_filter %}
 <div class="hero-meta">
-<p class="filter-line" title="The criteria this scan searched with"><span class="filter-line-label">Search scope</span><span class="filter-chip"><small>Days</small><strong>{{ search_filter.days }}</strong></span>{% if search_filter.nights %}<span class="filter-chip"><small>Stay</small><strong>{{ search_filter.nights }}</strong></span>{% endif %}<span class="filter-chip"><small>Window</small><strong>{{ search_filter.date_range }}</strong></span><span class="filter-chip"><small>Dates checked</small><strong>{{ search_filter.dates }} date(s)</strong></span></p>
+<p class="filter-line" title="The criteria this scan searched with"><span class="filter-line-label">Search scope</span><span class="filter-chip"><small>Arrival days</small><strong>{{ search_filter.days }}</strong></span>{% if search_filter.nights %}<span class="filter-chip"><small>Stay</small><strong>{{ search_filter.nights }}</strong></span>{% endif %}<span class="filter-chip"><small>Window</small><strong>{{ search_filter.date_range }}</strong></span><span class="filter-chip"><small>Arrivals checked</small><strong>{{ search_filter.dates }} date(s)</strong></span></p>
 </div>
 {% endif %}
 </header>
@@ -121,7 +121,7 @@
 {% if months %}
 <section class="calendar-container" aria-labelledby="calendar-heading">
 <div class="section-heading">
-<h2 id="calendar-heading" class="section-title">Availability calendar</h2>
+<h2 id="calendar-heading" class="section-title">Arrival dates</h2>
 </div>
 <div class="calendar-panel">
 <div class="calendar-controls">
@@ -129,12 +129,12 @@
 <label class="sr-only" for="month-selector">Calendar month</label>
 <select id="month-selector">{% for month in months %}<option value="{{ month.id }}" data-month="{{ month.year_month }}">{{ month.label }}</option>{% endfor %}</select>
 <button id="next-month-btn" class="nav-btn" type="button" aria-label="Next month" disabled>&rarr;</button>
-<span id="date-filter" class="date-filter" aria-live="polite" hidden>Showing <strong id="date-filter-label"></strong><button id="clear-date-filter" type="button" title="Show all dates" aria-label="Clear date filter">&times;</button></span>
+<span id="date-filter" class="date-filter" aria-live="polite" hidden>Arriving <strong id="date-filter-label"></strong><button id="clear-date-filter" type="button" title="Show all arrival dates" aria-label="Clear arrival date filter">&times;</button></span>
 </div>
 {% for month in months %}
 <div class="calendar-month" id="{{ month.id }}" data-month="{{ month.year_month }}"{% if not loop.first %} hidden{% endif %}>
 <table class="calendar-table">
-<caption class="sr-only">{{ month.label }} campsite availability</caption>
+<caption class="sr-only">{{ month.label }} campsite arrival availability</caption>
 <thead><tr><th scope="col">Su</th><th scope="col">Mo</th><th scope="col">Tu</th><th scope="col">We</th><th scope="col">Th</th><th scope="col">Fr</th><th scope="col">Sa</th></tr></thead>
 <tbody>
 {% for week in month.weeks %}
@@ -155,7 +155,7 @@
 </div>
 {% endfor %}
 </div>
-<div class="calendar-legend" aria-label="Calendar legend"><span><i class="legend-swatch legend-available"></i>Available <small>count shown</small></span><span><i class="legend-swatch legend-searched"></i>Searched, none found</span><span><i class="legend-swatch legend-not-searched"></i>Not searched</span></div>
+<div class="calendar-legend" aria-label="Arrival calendar legend"><span><i class="legend-swatch legend-available"></i>Arrival available <small>count shown</small></span><span><i class="legend-swatch legend-searched"></i>Arrival checked, none found</span><span><i class="legend-swatch legend-not-searched"></i>Not checked for arrival</span></div>
 </section>
 {% endif %}
 

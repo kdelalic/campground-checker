@@ -344,9 +344,18 @@ class TestRefreshAndAccessibility:
 
         assert '<td class="calendar-available"><button type="button"' in content
         assert 'aria-pressed="false"' in content
-        assert 'aria-label="July 4, 2026' in content
+        assert 'aria-label="July 4, 2026 — 1 site(s) available for arrival"' in content
         assert 'button.addEventListener("click"' in content
         assert 'button.setAttribute("aria-pressed", selected ? "true" : "false")' in content
+
+    def test_calendar_copy_identifies_dates_as_arrivals(self):
+        content = render([process_filtered_results({}, [make_campsite()])])
+
+        assert '<h2 id="calendar-heading" class="section-title">Arrival dates</h2>' in content
+        assert "Arrival available" in content
+        assert "Arrival checked, none found" in content
+        assert "Not checked for arrival" in content
+        assert "Availability calendar" not in content
 
     def test_page_stays_self_contained(self):
         content = render([process_filtered_results({}, [make_campsite()])])
@@ -794,6 +803,8 @@ class TestSearchFilterView:
 
         # The CSS is inlined, so match the rendered element, not the class name.
         assert '<p class="filter-line"' in content
+        assert "Arrival days" in content
+        assert "Arrivals checked" in content
         assert "Friday" in content
         assert "Aug 1, 2026 – Aug 29, 2026" in content
         assert "4 date(s)" in content

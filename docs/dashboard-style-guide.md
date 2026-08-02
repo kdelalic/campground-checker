@@ -39,7 +39,7 @@ verbs for controls.
 | `Open campgrounds` | `Your campsite watchlist` |
 | `Next opening` | `Your next adventure awaits` |
 | `Failed scans` | `Scan health: All clear` |
-| `Availability calendar` | A kicker, title, and explanatory paragraph saying the same thing |
+| `Arrival dates` | An ambiguous `Availability calendar` heading or explanatory paragraph |
 | `Refresh now` | `Stay up to date` |
 | `No campgrounds match these filters.` | Promotional or apologetic empty-state copy |
 
@@ -183,11 +183,12 @@ must remain stable.
   across the full cell width.
 - Use close, even gutters between dates. Preserve at least `43px` for actionable
   date cells on small screens even as the surrounding padding tightens.
-- Available dates use solid pine.
+- Available arrival dates use solid pine.
 - The count uses a small warm-yellow marker.
-- Searched dates with no result use muted paper.
-- Unsearched dates stay plain.
-- The selected date receives a tent-orange outline.
+- Arrival dates checked with no result use muted paper.
+- Dates not checked as arrivals stay plain, even when they are part of a
+  multi-night stay.
+- The selected arrival date receives a tent-orange outline.
 - The legend repeats these meanings in text.
 
 Calendar color must never be the only state signal. Each actionable date needs

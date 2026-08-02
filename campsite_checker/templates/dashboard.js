@@ -459,7 +459,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const filtered = activeDate || hasStayFilter;
         const context = [
-          activeDate ? "on this date" : "",
+          activeDate ? "on this arrival date" : "",
           hasStayFilter ? `for ${stayLabel(stay)}` : "",
         ].filter(Boolean).join(" ");
         availabilityBadge.textContent = filtered && visible
@@ -504,7 +504,7 @@ document.addEventListener("DOMContentLoaded", () => {
       button.setAttribute("aria-pressed", selected ? "true" : "false");
       button.setAttribute(
         "aria-label",
-        `${button.getAttribute("data-label")} — ${plural(count, "site", "sites")} available${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`,
+        `${button.getAttribute("data-label")} — ${plural(count, "site", "sites")} available for arrival${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`,
       );
     });
 
@@ -547,10 +547,10 @@ document.addEventListener("DOMContentLoaded", () => {
         primaryLabel: "Campgrounds",
         primaryValue: String(visibleCards),
         primarySuffix: "",
-        primaryDetail: `open on ${selectedDateLabel}${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`,
+        primaryDetail: `open for arrival on ${selectedDateLabel}${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`,
         secondaryLabel: "Open sites",
         secondaryValue: String(visibleOpenings),
-        secondaryDetail: hasStayFilter ? `matching ${stayLabel(stay)}` : "across the selected date",
+        secondaryDetail: hasStayFilter ? `matching ${stayLabel(stay)}` : "for the selected arrival date",
       });
     } else if (query || status !== "actionable" || hasStayFilter) {
       updateSnapshot({
@@ -567,7 +567,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (statLine) {
       if (activeDate) {
-        statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"} on ${selectedDateLabel}${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`;
+        statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"} for arrival on ${selectedDateLabel}${hasStayFilter ? ` for ${stayLabel(stay)}` : ""}`;
       } else if (query || status !== "actionable" || hasStayFilter) {
         statLine.innerHTML = `<strong>${visibleCards}</strong> ${visibleCards === 1 ? "campground" : "campgrounds"} shown · <strong>${visibleOpenings}</strong> ${visibleOpenings === 1 ? "opening" : "openings"}${hasStayFilter ? ` matching ${stayLabel(stay)}` : ""}`;
       } else {
