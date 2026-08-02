@@ -132,7 +132,7 @@ total scan time. Use those measurements together with error rates and memory
 usage when tuning the values for a deployment.
 
 The container searches alert-enabled campgrounds every minute, refreshes
-dashboard-only campgrounds every 10 minutes, and applies a one-second
+dashboard-only campgrounds every 30 minutes, and applies a one-second
 per-provider batch submission delay. These remain configurable with the
 `ALERT_INTERVAL`, `DASHBOARD_INTERVAL`, and `SEARCH_DELAY` environment variables.
 Recreation.gov availability is fetched by the native client rather than
