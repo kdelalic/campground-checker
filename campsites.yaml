@@ -1,6 +1,6 @@
 defaults:
   criteria:
-    - days: [Friday]
+    - days: [Friday, Saturday]
       nights: 1
     - days: [Friday]
       nights: 2
