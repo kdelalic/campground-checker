@@ -11,7 +11,7 @@ def test_slow_publication_does_not_block_submitter():
     release = threading.Event()
 
     class SlowPublisher:
-        def publish(self, availabilities, search_filter=None):
+        def publish(self, availabilities, search_filter=None, scan_schedule=None):
             started.set()
             assert release.wait(timeout=2)
             return SimpleNamespace(uploaded=True)
@@ -34,8 +34,8 @@ def test_pending_snapshots_are_coalesced_to_the_newest():
     calls = []
 
     class SlowPublisher:
-        def publish(self, availabilities, search_filter=None):
-            calls.append(list(availabilities))
+        def publish(self, availabilities, search_filter=None, scan_schedule=None):
+            calls.append((list(availabilities), scan_schedule))
             if len(calls) == 1:
                 started.set()
                 assert release.wait(timeout=2)
@@ -43,13 +43,16 @@ def test_pending_snapshots_are_coalesced_to_the_newest():
 
     worker = DashboardPublishWorker(SlowPublisher())
     try:
-        worker.submit(["first"])
+        worker.submit(["first"], scan_schedule="first schedule")
         assert started.wait(timeout=2)
-        assert worker.submit(["obsolete"]) is False
-        assert worker.submit(["latest"]) is True
+        assert worker.submit(["obsolete"], scan_schedule="obsolete schedule") is False
+        assert worker.submit(["latest"], scan_schedule="latest schedule") is True
         release.set()
         assert worker.wait_idle(timeout=2)
-        assert calls == [["first"], ["latest"]]
+        assert calls == [
+            (["first"], "first schedule"),
+            (["latest"], "latest schedule"),
+        ]
     finally:
         release.set()
         worker.shutdown(wait=True, timeout=2)
@@ -59,7 +62,7 @@ def test_worker_reports_failures_without_dying():
     outcomes = []
 
     class FailingPublisher:
-        def publish(self, availabilities, search_filter=None):
+        def publish(self, availabilities, search_filter=None, scan_schedule=None):
             raise RuntimeError("R2 unavailable")
 
     worker = DashboardPublishWorker(FailingPublisher(), on_complete=outcomes.append)

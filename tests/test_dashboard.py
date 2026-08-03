@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from campsite_checker.dashboard import (
     CardView,
     DashboardPublisher,
+    DashboardScanScheduleView,
     build_calendar_months,
     build_dashboard_cards,
     build_dashboard_html,
@@ -338,6 +339,33 @@ class TestRefreshAndAccessibility:
 
         assert 'document.querySelector(".freshness-card")' in content
         assert 'freshnessCard.classList.toggle("is-stale", isStale)' in content
+
+    def test_dashboard_scan_schedule_is_visible_and_localized(self):
+        content = build_dashboard_html(
+            [process_filtered_results({}, [make_campsite()])],
+            None,
+            refresh_seconds=300,
+            scan_schedule=DashboardScanScheduleView(
+                interval_minutes=10,
+                last_scan_at=datetime(2026, 8, 2, 23, 52, tzinfo=timezone.utc),
+                next_scan_at=datetime(2026, 8, 3, 0, 2, tzinfo=timezone.utc),
+            ),
+        )
+
+        assert "Latest dashboard scan" in content
+        assert 'data-timestamp="2026-08-02T23:52:00+00:00"' in content
+        assert "Every 10 minutes" in content
+        assert "Next ~" in content
+        assert 'id="next-scan" data-timestamp="2026-08-03T00:02:00+00:00"' in content
+        assert "Page refreshes every 5 minutes" in content
+        assert 'const nextScan = document.getElementById("next-scan")' in content
+        assert "formatClockTime(nextTimestamp)" in content
+
+    def test_single_run_dashboard_omits_polling_schedule(self):
+        content = render([process_filtered_results({}, [make_campsite()])])
+
+        assert "Latest scan" in content
+        assert 'id="next-scan"' not in content
 
     def test_calendar_days_are_keyboard_operable(self):
         content = render([process_filtered_results({}, [make_campsite()])])
@@ -719,8 +747,7 @@ def test_publisher_rewrites_when_a_failed_scan_recovers(tmp_path):
 
 
 def test_publisher_republishes_unchanged_content_once_stale(tmp_path):
-    """The page's "Last updated" is its only liveness signal, so unchanged
-    availability is still republished after the freshness interval."""
+    """The freshness backstop republishes an unchanged standalone dashboard."""
     output_path = tmp_path / "dashboard.html"
     clock_now = [0.0]
     uploader = FakeUploader([True, True])
@@ -742,6 +769,27 @@ def test_publisher_republishes_unchanged_content_once_stale(tmp_path):
     assert stale.written is True
     assert stale.uploaded is True
     assert uploader.calls == 2
+
+
+def test_publisher_rewrites_when_only_dashboard_schedule_advances(tmp_path):
+    output_path = tmp_path / "dashboard.html"
+    publisher = DashboardPublisher(str(output_path))
+    processed = process_results({}, [make_campsite(campsite_id=1)], None)
+    first_schedule = DashboardScanScheduleView(
+        interval_minutes=10,
+        last_scan_at=datetime(2026, 8, 2, 23, 52, tzinfo=timezone.utc),
+        next_scan_at=datetime(2026, 8, 3, 0, 2, tzinfo=timezone.utc),
+    )
+    second_schedule = DashboardScanScheduleView(
+        interval_minutes=10,
+        last_scan_at=datetime(2026, 8, 3, 0, 2, tzinfo=timezone.utc),
+        next_scan_at=datetime(2026, 8, 3, 0, 12, tzinfo=timezone.utc),
+    )
+
+    assert publisher.publish([processed], scan_schedule=first_schedule).written is True
+    assert publisher.publish([processed], scan_schedule=first_schedule).written is False
+    assert publisher.publish([processed], scan_schedule=second_schedule).written is True
+    assert 'data-timestamp="2026-08-03T00:02:00+00:00"' in output_path.read_text()
 
 
 class TestSearchFilterView:

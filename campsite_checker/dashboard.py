@@ -49,9 +49,9 @@ class DashboardPublishResult:
 class DashboardPublisher:
     """Write and upload a dashboard when availability changes or freshness lapses.
 
-    Skipping unchanged rewrites keeps R2 operations cheap, but the page's
-    "Last updated" timestamp is its only liveness signal, so a periodic
-    freshness republish keeps a quiet week distinguishable from a dead checker.
+    Polling dashboards republish when their schedule advances. Standalone
+    dashboards retain a periodic freshness backstop so a quiet week remains
+    distinguishable from a dead checker.
     """
 
     def __init__(
@@ -81,6 +81,7 @@ class DashboardPublisher:
         availabilities: list[ProcessedAvailability],
         day_filter: set[int] | None = None,
         search_filter: SearchFilterView | None = None,
+        scan_schedule: DashboardScanScheduleView | None = None,
     ) -> DashboardPublishResult:
         rendered_availabilities = self._retain_last_successful(availabilities)
         fingerprint = availability_fingerprint(rendered_availabilities)
@@ -89,6 +90,10 @@ class DashboardPublisher:
             # forward daily, so an unchanged availability set must still
             # republish when the range moves.
             fingerprint = f"{fingerprint}|{search_filter.fingerprint}"
+        if scan_schedule is not None:
+            # A completed dashboard sweep changes the freshness information
+            # even when availability itself is unchanged.
+            fingerprint = f"{fingerprint}|{scan_schedule.fingerprint}"
         now = self._clock()
         written = (
             fingerprint != self.last_written_fingerprint
@@ -105,8 +110,13 @@ class DashboardPublisher:
                 search_filter,
                 stale_after_seconds=max(
                     DEFAULT_REFRESH_SECONDS * 2,
-                    int(self.freshness_interval_seconds * 2),
+                    (
+                        scan_schedule.interval_minutes * 60 * 2
+                        if scan_schedule is not None
+                        else int(self.freshness_interval_seconds * 2)
+                    ),
                 ),
+                scan_schedule=scan_schedule,
             )
             render_duration_seconds = time.monotonic() - render_started
             self.last_written_fingerprint = fingerprint
@@ -320,6 +330,22 @@ class StatsView:
     total: int
     soonest: str
     failed: int
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardScanScheduleView:
+    """Dashboard-only scan cadence and the latest scheduler timestamps."""
+
+    interval_minutes: int
+    last_scan_at: datetime
+    next_scan_at: datetime
+
+    @property
+    def fingerprint(self) -> str:
+        return (
+            f"{self.interval_minutes}|{self.last_scan_at.isoformat()}"
+            f"|{self.next_scan_at.isoformat()}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -666,6 +692,13 @@ def build_dashboard_cards(availabilities: Iterable[ProcessedAvailability]) -> li
     return [replace(card, id=f"site-{index}") for index, card in enumerate(cards)]
 
 
+def _localized_timestamp(timestamp: datetime) -> datetime:
+    """Return an aware timestamp while preserving already-declared zones."""
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc).astimezone()
+    return timestamp
+
+
 def build_dashboard_html(
     entries_with_results: list[tuple[dict, list[AvailableCampsite]] | ProcessedAvailability],
     day_filter: set[int] | None,
@@ -673,13 +706,19 @@ def build_dashboard_html(
     refresh_seconds: int = DEFAULT_REFRESH_SECONDS,
     search_filter: SearchFilterView | None = None,
     stale_after_seconds: int = DEFAULT_STALE_AFTER_SECONDS,
+    scan_schedule: DashboardScanScheduleView | None = None,
 ) -> str:
     """Generate a complete self-contained HTML string."""
+    if scan_schedule is not None:
+        scan_schedule = replace(
+            scan_schedule,
+            last_scan_at=_localized_timestamp(scan_schedule.last_scan_at),
+            next_scan_at=_localized_timestamp(scan_schedule.next_scan_at),
+        )
+        scan_timestamp = scan_schedule.last_scan_at
     if scan_timestamp is None:
         scan_timestamp = datetime.now(timezone.utc).astimezone()
-    # Provide ISO format to be parsed by JS for local timezone conversion
-    if scan_timestamp.tzinfo is None:
-        scan_timestamp = scan_timestamp.replace(tzinfo=timezone.utc).astimezone()
+    scan_timestamp = _localized_timestamp(scan_timestamp)
 
     availabilities = [
         item
@@ -721,9 +760,18 @@ def build_dashboard_html(
     if refresh_seconds > 0:
         if refresh_seconds % 60 == 0:
             minutes = refresh_seconds // 60
-            refresh_label = f"Auto-refreshes every {minutes} minute{'s' if minutes != 1 else ''}"
+            refresh_label = f"Page refreshes every {minutes} minute{'s' if minutes != 1 else ''}"
         else:
-            refresh_label = f"Auto-refreshes every {refresh_seconds} seconds"
+            refresh_label = f"Page refreshes every {refresh_seconds} seconds"
+
+    scan_interval_label = ""
+    next_scan_iso = ""
+    next_scan_label = ""
+    if scan_schedule is not None:
+        minutes = scan_schedule.interval_minutes
+        scan_interval_label = f"Every {minutes} minute{'s' if minutes != 1 else ''}"
+        next_scan_iso = scan_schedule.next_scan_at.isoformat()
+        next_scan_label = scan_schedule.next_scan_at.strftime("%-I:%M %p")
 
     return (
         template_environment()
@@ -735,6 +783,10 @@ def build_dashboard_html(
             maplibre_js=read_asset("vendor/maplibre-gl-5.24.0.js"),
             refresh_seconds=refresh_seconds,
             refresh_label=refresh_label,
+            scan_schedule=scan_schedule,
+            scan_interval_label=scan_interval_label,
+            next_scan_iso=next_scan_iso,
+            next_scan_label=next_scan_label,
             stale_after_seconds=stale_after_seconds,
             timestamp_iso=scan_timestamp.isoformat(),
             timestamp_label=scan_timestamp.strftime("%b %-d, %Y at %-I:%M %p"),
@@ -782,6 +834,7 @@ def generate_dashboard(
     output_path: str,
     search_filter: SearchFilterView | None = None,
     stale_after_seconds: int = DEFAULT_STALE_AFTER_SECONDS,
+    scan_schedule: DashboardScanScheduleView | None = None,
 ) -> str:
     """Build HTML, write to disk, and immediately free the string."""
     content = build_dashboard_html(
@@ -789,6 +842,7 @@ def generate_dashboard(
         day_filter,
         search_filter=search_filter,
         stale_after_seconds=stale_after_seconds,
+        scan_schedule=scan_schedule,
     )
     write_dashboard(content, output_path)
     del content

@@ -33,6 +33,7 @@ class DashboardPublishOutcome:
 class _PublishRequest:
     availabilities: list[ProcessedAvailability]
     search_filter: Any | None
+    scan_schedule: Any | None
 
 
 class DashboardPublishWorker:
@@ -67,9 +68,10 @@ class DashboardPublishWorker:
         availabilities: list[ProcessedAvailability],
         *,
         search_filter: Any | None = None,
+        scan_schedule: Any | None = None,
     ) -> bool:
         """Queue the latest snapshot and return whether an older one was replaced."""
-        request = _PublishRequest(list(availabilities), search_filter)
+        request = _PublishRequest(list(availabilities), search_filter, scan_schedule)
         with self._cond:
             if self._shutdown:
                 raise RuntimeError("DashboardPublishWorker is shut down")
@@ -128,6 +130,7 @@ class DashboardPublishWorker:
                 result = self._publisher.publish(
                     request.availabilities,
                     search_filter=request.search_filter,
+                    scan_schedule=request.scan_schedule,
                 )
                 error = None
             except BaseException as exc:

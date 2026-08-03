@@ -17,7 +17,7 @@ The Dockerfile defaults to `python check_campsites.py --forever --dashboard` and
 | `ALERT_INTERVAL` | 1 | Minutes between alert-tier scans. |
 | `SEARCH_DELAY` | 1 | Seconds of per-provider batch submission pacing. |
 | `BATCH_SIZE` | 4 | Campgrounds per search batch. |
-| `DASHBOARD_INTERVAL` | 30 | Minutes between dashboard-only scans. |
+| `DASHBOARD_INTERVAL` | 10 | Minutes between dashboard-only scans. |
 | `GC_INTERVAL` | 12 | Scans between forced full garbage collections. |
 | `THROTTLE_BASE_DELAY` | 30 | Seconds of initial provider cooldown after a 429. |
 | `THROTTLE_MAX_DELAY` | 900 | Cap on the computed exponential cooldown, in seconds. |

@@ -79,8 +79,9 @@
 <div class="freshness-card">
 <span class="live-dot" aria-hidden="true"></span>
 <div class="freshness-copy">
-<span class="freshness-label">Latest scan</span>
+<span class="freshness-label">{% if scan_schedule %}Latest dashboard scan{% else %}Latest scan{% endif %}</span>
 <p class="timestamp"><span id="relative-age">just now</span> <span class="timestamp-exact"><span id="last-updated" data-timestamp="{{ timestamp_iso }}">{{ timestamp_label }}</span></span></p>
+{% if scan_schedule %}<p class="scan-schedule"><span>{{ scan_interval_label }}</span><span class="schedule-separator" aria-hidden="true">&middot;</span><span>Next ~<span id="next-scan" data-timestamp="{{ next_scan_iso }}">{{ next_scan_label }}</span></span></p>{% endif %}
 <div class="freshness-actions">
 {% if refresh_label %}<span class="refresh-status">{{ refresh_label }}</span>{% endif %}
 <button id="refresh-now" class="text-button" type="button">Refresh now</button>

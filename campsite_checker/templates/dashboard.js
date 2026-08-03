@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   const lastUpdated = document.getElementById("last-updated");
   const relativeAge = document.getElementById("relative-age");
+  const nextScan = document.getElementById("next-scan");
   const staleWarning = document.getElementById("stale-warning");
   const freshnessCard = document.querySelector(".freshness-card");
   const refreshNow = document.getElementById("refresh-now");
@@ -132,6 +133,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function formatClockTime(timestamp) {
+    return timestamp.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
   function formatAge(seconds) {
     if (seconds < 45) return "just now";
     if (seconds < 3600) {
@@ -151,6 +159,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const timestamp = new Date(lastUpdated.getAttribute("data-timestamp"));
     if (Number.isNaN(timestamp.getTime())) return;
     lastUpdated.textContent = formatExactDate(timestamp);
+    if (nextScan) {
+      const nextTimestamp = new Date(nextScan.getAttribute("data-timestamp"));
+      if (!Number.isNaN(nextTimestamp.getTime())) {
+        nextScan.textContent = formatClockTime(nextTimestamp);
+      }
+    }
     const ageSeconds = Math.max(0, Math.floor((Date.now() - timestamp.getTime()) / 1000));
     if (relativeAge) relativeAge.textContent = formatAge(ageSeconds);
     const staleAfter = parseInt(

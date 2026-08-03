@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from campsite_checker.runner import (
     _advance_poll_deadline,
     _combined_task_day_filter,
+    _estimate_next_dashboard_scan,
     _maybe_collect_garbage,
     print_scan_header,
     run_forever,
@@ -49,6 +50,32 @@ def test_poll_deadline_stays_anchored_and_skips_overruns():
     assert _advance_poll_deadline(100.0, 60.0, now=120.0) == 160.0
     assert _advance_poll_deadline(100.0, 60.0, now=161.0) == 220.0
     assert _advance_poll_deadline(100.0, 60.0, now=281.0) == 340.0
+
+
+def test_next_dashboard_scan_stays_anchored_to_a_fast_sweep():
+    completed_at = datetime(2026, 8, 2, 12, 0)
+
+    next_scan = _estimate_next_dashboard_scan(
+        interval_minutes=10,
+        last_started=100.0,
+        last_finished=180.0,
+        reference_time=completed_at,
+    )
+
+    assert next_scan == completed_at + timedelta(seconds=520)
+
+
+def test_next_dashboard_scan_respects_idle_gap_after_an_overrun():
+    completed_at = datetime(2026, 8, 2, 12, 0)
+
+    next_scan = _estimate_next_dashboard_scan(
+        interval_minutes=10,
+        last_started=100.0,
+        last_finished=800.0,
+        reference_time=completed_at,
+    )
+
+    assert next_scan == completed_at + timedelta(seconds=60)
 
 
 def test_combined_task_day_filter_reports_actual_criteria_days():

@@ -156,7 +156,8 @@ The masthead is compact utility chrome, not a hero.
 It contains:
 
 - the 🏕️ mark and one `Campground checker` heading;
-- latest-scan age, exact timestamp, refresh cadence, and refresh action;
+- latest dashboard-scan age and exact timestamp, scan interval, approximate next
+  scan, page-refresh cadence, and refresh action;
 - three literal summary values: open campgrounds, next opening, and failed
   scans;
 - the criteria used for the current scan.
@@ -328,7 +329,7 @@ These hooks are part of the current JavaScript contract:
 | Hook | Purpose |
 | --- | --- |
 | `.freshness-card` | Receives the `is-stale` state |
-| `#last-updated`, `#relative-age` | Freshness calculation and display |
+| `#last-updated`, `#relative-age`, `#next-scan` | Freshness and schedule display |
 | `#snapshot-stats`, `#summary-*` | Dynamic summary values |
 | `.calendar-available button` | Date filtering and selection |
 | `data-date`, `data-label`, `aria-pressed` | Calendar filter state |

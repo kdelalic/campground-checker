@@ -6,7 +6,7 @@ import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import monotonic
 
@@ -132,6 +132,20 @@ def _resolve_dashboard_interval(args, raw_config: dict) -> int:
     if yaml_val is not None:
         return int(yaml_val)
     return 60
+
+
+def _estimate_next_dashboard_scan(
+    interval_minutes: int,
+    last_started: float,
+    last_finished: float,
+    reference_time: datetime,
+) -> datetime:
+    """Translate the monotonic dashboard deadline into an approximate wall time."""
+    deadline = max(
+        last_started + interval_minutes * 60,
+        last_finished + MIN_DASHBOARD_IDLE_SECONDS,
+    )
+    return reference_time + timedelta(seconds=max(0.0, deadline - last_finished))
 
 
 def print_scan_header(
@@ -419,7 +433,11 @@ def run_forever(
 
     dashboard_publish_worker = None
     if dashboard_path:
-        from .dashboard import DashboardPublisher, build_search_filter_view
+        from .dashboard import (
+            DashboardPublisher,
+            DashboardScanScheduleView,
+            build_search_filter_view,
+        )
         from .publish_worker import DashboardPublishWorker
         from .upload import R2Uploader, get_r2_config
 
@@ -473,6 +491,8 @@ def run_forever(
     # is still below the configured interval.
     last_dashboard_started = monotonic() - dashboard_interval * 60
     last_dashboard_finished = last_dashboard_started
+    last_dashboard_completed_at: datetime | None = None
+    next_dashboard_scan_at: datetime | None = None
     cached_dashboard_results: list[ProcessedAvailability] = []
     dashboard_snapshot_ready = False
     dashboard_executor = concurrent.futures.ThreadPoolExecutor(
@@ -545,6 +565,7 @@ def run_forever(
 
                 # Collect completed dashboard work after the priority alert path.
                 if dashboard_future is not None and dashboard_future.done():
+                    completed_at = None
                     try:
                         dashboard_outcome = dashboard_future.result()
                     except Exception as exc:
@@ -564,12 +585,21 @@ def run_forever(
                         else:
                             dashboard_snapshot_ready = True
                             cached_dashboard_results = dashboard_outcome.results
+                            completed_at = dashboard_outcome.completed_at
                             scan_status.finish_dashboard_scan(
                                 duration_seconds=dashboard_outcome.duration_seconds,
                                 when=dashboard_outcome.completed_at,
                             )
                     dashboard_future = None
                     last_dashboard_finished = monotonic()
+                    if completed_at is not None:
+                        last_dashboard_completed_at = completed_at
+                        next_dashboard_scan_at = _estimate_next_dashboard_scan(
+                            dashboard_interval,
+                            last_dashboard_started,
+                            last_dashboard_finished,
+                            datetime.now(timezone.utc),
+                        )
 
                 # Start due dashboard-only work without blocking the alert scheduler.
                 now = monotonic()
@@ -604,7 +634,16 @@ def run_forever(
                     dashboard_snapshot_ready = True
                     last_dashboard_started = now
                     scan_status.start_dashboard_scan()
-                    scan_status.finish_dashboard_scan(duration_seconds=0)
+                    completed_at = datetime.now(timezone.utc)
+                    scan_status.finish_dashboard_scan(duration_seconds=0, when=completed_at)
+                    last_dashboard_finished = monotonic()
+                    last_dashboard_completed_at = completed_at
+                    next_dashboard_scan_at = _estimate_next_dashboard_scan(
+                        dashboard_interval,
+                        last_dashboard_started,
+                        last_dashboard_finished,
+                        completed_at,
+                    )
 
                 # --- Generate dashboard from merged results ---
                 if dashboard_publish_worker is not None and dashboard_snapshot_ready:
@@ -618,11 +657,22 @@ def run_forever(
                             day_filter,
                         )
                     )
+                    scan_schedule = None
+                    if (
+                        last_dashboard_completed_at is not None
+                        and next_dashboard_scan_at is not None
+                    ):
+                        scan_schedule = DashboardScanScheduleView(
+                            interval_minutes=dashboard_interval,
+                            last_scan_at=last_dashboard_completed_at,
+                            next_scan_at=next_dashboard_scan_at,
+                        )
                     replaced = dashboard_publish_worker.submit(
                         merged,
                         search_filter=build_search_filter_view(
                             publish_day_filter, window_start, window_end, merged
                         ),
+                        scan_schedule=scan_schedule,
                     )
                     if replaced:
                         logger.debug(

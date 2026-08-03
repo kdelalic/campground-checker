@@ -139,6 +139,16 @@ input:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.scan-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 7px;
+  margin: 4px 0 0;
+  color: #d2dfcf;
+  font-size: 0.72rem;
+  font-weight: 620;
+}
+.schedule-separator { opacity: 0.65; }
 .freshness-actions {
   display: flex;
   flex-wrap: wrap;
