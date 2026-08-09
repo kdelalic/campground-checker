@@ -24,61 +24,17 @@ which polls providers, sends Telegram alerts, and renders a static dashboard.
 uv sync --all-extras
 
 # Run the checker (default: campsites.yaml, next ~3 months, Sundays only)
-uv run python check_campsites.py
-
-# Common options
-uv run python check_campsites.py -c my_sites.yaml
-uv run python check_campsites.py --start 2026-06-01 --end 2026-08-31
-uv run python check_campsites.py --day Friday Saturday
-uv run python check_campsites.py --all-days
-uv run python check_campsites.py --nights 2
-uv run python check_campsites.py --forever --alert-interval 10
-uv run python check_campsites.py --workers 2 --search-delay 1  # tune for low-CPU environments
-uv run python check_campsites.py --verbose   # show camply internal logs
-uv run python check_campsites.py --dashboard              # generate dashboard.html
-uv run python check_campsites.py --dashboard /tmp/out.html # custom path
-uv run python check_campsites.py --no-dashboard           # disable even if YAML enables it
-uv run python check_campsites.py --dashboard-interval 10  # dashboard-only sites scraped every 10 min
+uv run python check_campsites.py   # see --help for date range, day, dashboard, and tuning flags
 ```
 
 ## Testing & Linting
 
-```bash
-# Run tests
-uv run pytest -v
-
-# Run a single test file
-uv run pytest tests/test_config.py -v
-
-# Run linting
-uv run ruff check .
-
-# Check formatting (does not modify files)
-uv run ruff format --check .
-
-# Auto-fix lint issues
-uv run ruff check . --fix
-
-# Auto-format code
-uv run ruff format .
-```
-
 Each `campsite_checker/<module>.py` has a matching `tests/test_<module>.py`.
 Keep that pairing when adding or splitting modules.
 
-### Pre-Push Checklist
-
-Before committing and pushing changes, **always**:
-
-1. Run `uv run ruff check .` and fix any issues
-2. Run `uv run ruff format .` to ensure consistent formatting
-3. Run `uv run pytest -v` and ensure all tests pass
-4. Do not push if any test fails or lint error remains
-
-```bash
-# Quick pre-push command:
-uv run ruff check . && uv run ruff format --check . && uv run pytest -v
-```
+Before pushing, **always** run
+`uv run ruff check . && uv run ruff format --check . && uv run pytest -v`,
+and do not push while anything fails.
 
 CI also runs these checks on every push and PR. The deploy workflow is triggered by a successful CI run on `main` (`workflow_run`), so failing checks block the deploy.
 
