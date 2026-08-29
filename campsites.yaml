@@ -53,12 +53,12 @@ campsites:
     - campground_id: 232452 # Yosemite National Park, CA - Crane Flat Campground
       latitude: 37.7638889
       longitude: -119.8444444
-      alert: true
+      alert: false
       enabled: true
     - campground_id: 232451 # Yosemite National Park, CA - Hodgdon Meadow Campground
       latitude: 37.7988889
       longitude: -119.8658333
-      alert: true
+      alert: false
       enabled: true
     - campground_id: 232769 # Lake Tahoe Basin Management Unit, CA - Fallen Leaf Campground
       latitude: 38.926376
