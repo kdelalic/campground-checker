@@ -40,27 +40,27 @@ campsites:
     - campground_id: 232447 # Yosemite National Park, CA - Upper Pines Campground
       latitude: 37.7361111
       longitude: -119.5625
-      alert: false
+      alert: true
       enabled: true
     - campground_id: 232450 # Yosemite National Park, CA - Lower Pines Campground
       latitude: 37.7408333
       longitude: -119.5666667
-      alert: false
+      alert: true
       enabled: true
     - campground_id: 232449 # Yosemite National Park, CA - North Pines Campground
       latitude: 37.7419444
       longitude: -119.5655556
-      alert: false
+      alert: true
       enabled: true
     - campground_id: 232452 # Yosemite National Park, CA - Crane Flat Campground
       latitude: 37.7638889
       longitude: -119.8444444
-      alert: false
+      alert: true
       enabled: true
     - campground_id: 232451 # Yosemite National Park, CA - Hodgdon Meadow Campground
       latitude: 37.7988889
       longitude: -119.8658333
-      alert: false
+      alert: true
       enabled: true
     - campground_id: 232769 # Lake Tahoe Basin Management Unit, CA - Fallen Leaf Campground
       latitude: 38.926376
