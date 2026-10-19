@@ -3,7 +3,7 @@ name = "campsite-checker"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "camply==0.34.2",
+    "camply==0.34.4",
     "PyYAML==6.0.3",
     "pyTelegramBotAPI==4.36.0",
     "ruamel.yaml>=0.19.1",
